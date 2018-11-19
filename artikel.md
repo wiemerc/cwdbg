@@ -6,8 +6,14 @@
 * Dritter Ansatz: STABS - erscheint erst kompliziert, ist aber nicht so wild
 Das Einlesen ist tatsa"chlich nicht so schwierig (mit ein bisschen Spicken im Quellcode der Binutils), aber das Erzeugen eines AST aus den STABS war schon tricky
 
+
 ### Disassembler
 Capstone (zum Disassemblieren) lässt sich weder mit dem GCC noch mit dem VBCC für den Amiga kompiliere(Clang fu"r macOS funktioniert), Capstone nutzt aber fu"r M68k auch nur den Code von Musashi, vielleicht kann ich den direkt verwenden
+
+
+### Wie starte ich das Programm?
+* Erster Ansatz: mit CreateNewProc() - funktioniert nicht (keine Ausgabe, CLI wird nach Beenden des Programms geschlossen, man nicht auf das Programm warten), ich brauche aber auch keinen separaten Prozess
+* Zweiter Ansatz: Aufrufen des Einstiegspunktes des Targets (als Funktion) - funktioniert
 
 
 ### Wie stoppe ich das Programm?
