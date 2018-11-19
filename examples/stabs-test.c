@@ -2,12 +2,12 @@ int a = 1;
 static short b = 2;
 static const char *dummy = "bla";
 
-int f1(const char *s)
+int main()
 {
     int a = 2;
     int c = b;
 
-    int f2()
+    int f2(const char *s)
     {
         int d = c;
 
@@ -27,7 +27,7 @@ int f1(const char *s)
         return 0;
     }
 
-    f2();
+    f2(dummy);
     ++c;
     return 0;
 }
