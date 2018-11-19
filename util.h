@@ -13,6 +13,7 @@
 #include <exec/types.h>
 #include <proto/dos.h>
 #include <stdio.h>
+#include <string.h>
 
 
 /*
@@ -42,8 +43,8 @@ extern char  g_logmsg[256];
             case CRIT:  Write(g_logfh, "CRIT: ", 5);  break; \
         }                                                    \
         sprintf(g_logmsg, fmt, ##__VA_ARGS__);               \
-        Write(g_logfh, g_logmsg, 256);                       \
-        Write(g_logfh, "\n", 1);                           \
+        Write(g_logfh, g_logmsg, strlen(g_logmsg));          \
+        Write(g_logfh, "\n", 1);                             \
     }                                                        \
 }
 #define C_TO_BCPL_PTR(ptr) ((BPTR) (((ULONG) (ptr)) >> 2))
