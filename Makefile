@@ -1,4 +1,5 @@
 CC      := /opt/m68k-amigaos/bin/m68k-amigaos-gcc
+AS      := /opt/m68k-amigaos/bin/m68k-amigaos-as
 CFLAGS  := -Wall
 LDFLAGS := -s -noixemul -L/opt/m68k-amigaos//m68k-amigaos/libnix/lib -L/opt/m68k-amigaos//m68k-amigaos/libnix/lib/libnix
 LDLIBS  := -lamiga -lnix
@@ -12,5 +13,8 @@ clean:
 
 main.o: main.c util.h
 
-cwdebug: main.o
+trap.o: trap.s
+	$(AS) -o $@ $^
+
+cwdebug: main.o trap.o
 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)

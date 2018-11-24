@@ -10,6 +10,8 @@ static const char *dummy = "bla";
 // initializations for the standard library.
 int entry(int argc, char **argv)
 {
+    asm("trap #0");
     PutStr("hello, amiga\n");
+    asm("trap #0");
     return 1;
 }
