@@ -37,8 +37,9 @@ extern void trap_handler();
 
 ULONG sig_handler()
 {
-//    LOG(INFO, "signal handler has been called");
     ++g_nsignals;
+//    LOG(INFO, "signal handler has been called - waiting for Ctrl-D");
+    Wait(SIGBREAKF_CTRL_D);
     return 1 << SIGNAL_NUM;
 }
 
