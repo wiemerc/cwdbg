@@ -19,7 +19,18 @@
  * constants
  */
 #define TRAP_NUM    0
-#define SIGNAL_NUM  31
+
+
+/*
+ * type definitions
+ */
+typedef struct {
+    APTR   tc_reg_pc;
+    APTR   tc_reg_sp;
+    USHORT tc_reg_sr;
+    ULONG  tc_reg_a[8];
+    ULONG  tc_reg_d[8];
+} TaskContext;
 
 
 /*
@@ -28,19 +39,19 @@
 BPTR                 g_logfh;                       /* for the LOG() macro */
 UBYTE                g_loglevel;
 char                 g_logmsg[256];
-ULONG                g_ntraps   = 0;                /* trap counter */
-ULONG                g_nsignals = 0;                /* signal counter */
+ULONG                g_ntraps = 0;                  /* trap counter */
+void                 *g_target_pc;
 
 
 extern void trap_handler();
 
 
-ULONG sig_handler()
+void debug_main()
 {
-    ++g_nsignals;
-//    LOG(INFO, "signal handler has been called - waiting for Ctrl-D");
+    LOG(INFO, "target has hit breakpoint at address 0x%08lx, instruction: 0x%04lx",
+        g_target_pc,
+        *((USHORT *) g_target_pc));
     Wait(SIGBREAKF_CTRL_D);
-    return 1 << SIGNAL_NUM;
 }
 
 
@@ -77,24 +88,15 @@ int main(int argc, char **argv)
         goto ERROR_NO_TRAP;
     }
 
-    self->tc_ExceptCode = sig_handler;
-    if (AllocSignal(SIGNAL_NUM) == -1) {
-        LOG(ERROR, "could not allocate signal");
-        status = RETURN_ERROR;
-        goto ERROR_NO_SIGNAL;
-    }
-    SetSignal(0, 1 << SIGNAL_NUM);
-    SetExcept(1 << SIGNAL_NUM, 1 << SIGNAL_NUM);
-
     /* seglist points to (first) code segment, code starts one long word behind pointer */
+    /* TODO: save / restore all registers */
+    /* TODO: use separate stack for target */
     entry = BCPL_TO_C_PTR(seglist + 1);
+    LOG(INFO, "starting target at address 0x%08lx", entry);
     status = entry();
     LOG(INFO, "target terminated with exit code %ld", status);
     LOG(INFO, "trap handler was called %ld times", g_ntraps);
-    LOG(INFO, "signal handler was called %ld times", g_nsignals);
 
-    FreeSignal(SIGNAL_NUM);
-ERROR_NO_SIGNAL:
     FreeTrap(TRAP_NUM);
 ERROR_NO_TRAP:
     UnLoadSeg(seglist);
