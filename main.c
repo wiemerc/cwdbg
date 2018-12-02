@@ -28,8 +28,8 @@ typedef struct {
     APTR   tc_reg_pc;
     APTR   tc_reg_sp;
     USHORT tc_reg_sr;
-    ULONG  tc_reg_a[8];
     ULONG  tc_reg_d[8];
+    ULONG  tc_reg_a[7];                             /* without A7 = SP */
 } TaskContext;
 
 
@@ -40,17 +40,38 @@ BPTR                 g_logfh;                       /* for the LOG() macro */
 UBYTE                g_loglevel;
 char                 g_logmsg[256];
 ULONG                g_ntraps = 0;                  /* trap counter */
-void                 *g_target_pc;
+TaskContext          g_target_ctx;                  /* task context of target */
 
 
 extern void trap_handler();
 
 
+void print_task_context(const TaskContext *ctx)
+{
+    int i;
+
+    /* TODO: print disassembled instruction */
+    printf("PC=0x%08lx, instruction = 0x%04lx\n", ctx->tc_reg_pc, *((USHORT *) ctx->tc_reg_pc));
+    /* TODO: pretty-print status register */
+    for (i = 0; i < 4; i++)
+        printf("D%ld=0x%08lx  ", i, ctx->tc_reg_d[i]);
+    puts("");
+    for (i = 4; i < 8; i++)
+        printf("D%ld=0x%08lx  ", i, ctx->tc_reg_d[i]);
+    puts("");
+    for (i = 0; i < 4; i++)
+        printf("A%ld=0x%08lx  ", i, ctx->tc_reg_a[i]);
+    puts("");
+    for (i = 4; i < 7; i++)
+        printf("A%ld=0x%08lx  ", i, ctx->tc_reg_a[i]);
+    printf("A7(SP)=0x%08lx\n", ctx->tc_reg_sp);
+}
+
+
 void debug_main()
 {
-    LOG(INFO, "target has hit breakpoint at address 0x%08lx, instruction: 0x%04lx",
-        g_target_pc,
-        *((USHORT *) g_target_pc));
+    LOG(INFO, "target has hit breakpoint");
+    print_task_context(&g_target_ctx);
     Wait(SIGBREAKF_CTRL_D);
 }
 

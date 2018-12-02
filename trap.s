@@ -7,7 +7,7 @@
 
  .text
  .extern _g_ntraps
- .extern _g_target_pc
+ .extern _g_target_ctx
  .extern _debug_main
 .global _trap_handler
 
@@ -16,56 +16,55 @@
  * trap handler for breakpoints and single-step mode
  */
 _trap_handler:
-    /* save registers */
-    /* TODO: save all registers in global struct */
-    move.l      d0, -(sp)
-    move.l      a0, -(sp)
+    /*
+     * save context in global struct. The current stack frame looks like this:
+     *
+     * 15                             0
+     * --------------------------------
+     * | exception number (high word) |     +0
+     * --------------------------------
+     * | exception number (low word)  |     +2
+     * --------------------------------
+     * | status register              |     +4
+     * --------------------------------
+     * | return address (high word)   |     +6
+     * --------------------------------
+     * | return address (low word)    |     +8
+     * --------------------------------
+     */
+    move.l      a0, -(sp)               /* save A0 and A1 because we use them */
+    move.l      a1, -(sp)
+    lea         _g_target_ctx, a0       /* load base address of struct */
+    move.l      14(sp), (a0)+           /* PC, offset is 6 + 8 because of saved registers */
+    move.l      usp, a1
+    move.l      a1, (a0)+               /* SP */
+    move.w      12(sp), (a0)+           /* SR, offset is 4 + 8 because of saved registers */
+    add.l       #60, a0                 /* move pointer one longword beyond the struct for the pre-decrement mode to work */
+    movem.l     d0-d7/a0-a6, -(a0)      /* save registers */
+    move.l      (sp)+, 36(a0)           /* finally store saved values of A0 and A1 */
+    move.l      (sp)+, 32(a0)
 
     /* increment trap counter */
     move.l      _g_ntraps, d0
     addq.l      #1, d0
     move.l      d0, _g_ntraps
 
-    /*
-     * now the tricky part... manipulate return address on the stack so that it
-     * points to our stub routine below. The stack frame looks like this:
-     *
-     * 15                             0
-     * --------------------------------
-     * | A0 (high word)               |     +0
-     * --------------------------------
-     * | A0 (low word)                |     +2
-     * --------------------------------
-     * | D0 (high word)               |     +4
-     * --------------------------------
-     * | D0 (low word)                |     +6
-     * --------------------------------
-     * | exception number (high word) |     +8
-     * --------------------------------
-     * | exception number (low word)  |     +10
-     * --------------------------------
-     * | status register              |     +12
-     * --------------------------------
-     * | return address (high word)   |     +14
-     * --------------------------------
-     * | return address (low word)    |     +16
-     * --------------------------------
-     */
-    move.l      usp, a0                 /* load user stack pointer */
-    move.l      14(sp), _g_target_pc    /* save original return address */
+    /* change return address on the stack so that it points to our stub routine below */
     lea         _debug_stub, a0         /* load address of stub routine */
-    move.l      a0, 14(sp)              /* replace return address with address of stub routine */
+    move.l      a0, 6(sp)               /* replace return address with address of stub routine */
 
-    /* restore registers */
-    move.l      (sp)+, a0
-    move.l      (sp)+, d0
-    
-    /* remove trap number from stack and return */
+    /* remove trap number from stack and "return" to stub routine */
     addq.l      #4, sp
     rte
 
 _debug_stub:
     jsr         _debug_main
-    /* TODO: restore all registers from global struct */
-    movea.l     _g_target_pc, a0
-    jmp         (a0)
+    /* restore all registers from global struct and return to target */
+    lea         _g_target_ctx, a0       /* load base address of struct */
+    move.l      (a0), -(sp)             /* push original return address onto stack */
+    add.l       #10, a0                 /* move pointer to D0 */
+    movem.l     (a0)+, d0-d7            /* restore data registers */
+    addq.l      #4, a0                  /* move pointer to A1
+    movem.l     (a0)+, a1-a6            /* restore address registers without A0 */
+    move.l      -28(a0), a0             /* finally restore A0 */
+    rts                                 /* jump to return address by "returning" to it */
