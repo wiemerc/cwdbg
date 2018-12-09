@@ -44,11 +44,6 @@ _trap_handler:
     move.l      (sp)+, 36(a0)           /* finally store saved values of A0 and A1 */
     move.l      (sp)+, 32(a0)
 
-    /* increment trap counter */
-    move.l      _g_ntraps, d0
-    addq.l      #1, d0
-    move.l      d0, _g_ntraps
-
     /* change return address on the stack so that it points to our stub routine below */
     lea         _debug_stub, a0         /* load address of stub routine */
     move.l      a0, 6(sp)               /* replace return address with address of stub routine */
@@ -64,7 +59,6 @@ _debug_stub:
     move.l      (a0), -(sp)             /* push original return address onto stack */
     add.l       #10, a0                 /* move pointer to D0 */
     movem.l     (a0)+, d0-d7            /* restore data registers */
-    addq.l      #4, a0                  /* move pointer to A1
-    movem.l     (a0)+, a1-a6            /* restore address registers without A0 */
+    movem.l     (a0)+, a0-a6            /* restore address registers without A0 (is skipped automatically because it contains the base address) */
     move.l      -28(a0), a0             /* finally restore A0 */
     rts                                 /* jump to return address by "returning" to it */
