@@ -19,6 +19,7 @@
  * constants
  */
 #define TRAP_NUM    0
+#define STACK_SIZE  8192
 
 
 /*
@@ -41,6 +42,8 @@ UBYTE                g_loglevel;
 char                 g_logmsg[256];
 TaskContext          g_target_ctx;       /* task context of target */
 int                  g_retcode;          /* return code of target, global so that the inline assembly code can access it */
+void                *g_our_stack;
+void                *g_target_stack;
 
 
 extern void trap_handler();
@@ -95,13 +98,14 @@ int main(int argc, char **argv)
         goto ERROR_WRONG_USAGE;
     }
 
-    LOG(INFO, "debugger is starting target '%s'", argv[1]);
+    /* load target */
     if ((seglist = LoadSeg(argv[1])) == NULL) {
         LOG(ERROR, "could not load target: %ld", IoErr());
         status = RETURN_ERROR;
         goto ERROR_LOAD_SEG_FAILED;
     }
 
+    /* allocate trap for breakpoints and install trap handler */
     self->tc_TrapCode = trap_handler;
     if (AllocTrap(TRAP_NUM) == -1) {
         LOG(ERROR, "could not allocate trap");
@@ -109,17 +113,30 @@ int main(int argc, char **argv)
         goto ERROR_NO_TRAP;
     }
 
-    /* seglist points to (first) code segment, code starts one long word behind pointer */
-    /* TODO: use separate stack for target */
+    /* allocate stack for target */
+    if ((g_target_stack = AllocVec(STACK_SIZE, 0)) == NULL) {
+        LOG(ERROR, "could not allocate stack for target");
+        status = RETURN_ERROR;
+        goto ERROR_NO_STACK;
+    }
+
+    /* start target, seglist points to (first) code segment, code starts one long word behind pointer */
     entry = BCPL_TO_C_PTR(seglist + 1);
-    LOG(INFO, "starting target at address 0x%08lx", entry);
+    LOG(INFO, "starting target at address 0x%08lx with stack pointer at 0x%08lx", entry, g_target_stack + STACK_SIZE);
     asm("movem.l     d0-d7/a0-a6, -(sp)\n"
+        "move.l      sp, _g_our_stack\n"
+        "move.l      _g_target_stack, sp\n"
+        "add.l       #8192, sp\n"
+        "move.l      #8192, -(sp)\n"
         "movea.l     %0, a0\n"
         "jsr         (a0)\n"
         "move.l      d0, _g_retcode\n"
+        "move.l      _g_our_stack, sp\n"
         "movem.l     (sp)+, d0-d7/a0-a6\n" : : "m"(entry));
     LOG(INFO, "target terminated with exit code %ld", g_retcode);
 
+    FreeVec(g_target_stack);
+ERROR_NO_STACK:
     FreeTrap(TRAP_NUM);
 ERROR_NO_TRAP:
     UnLoadSeg(seglist);
