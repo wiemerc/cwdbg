@@ -29,18 +29,18 @@ typedef struct {
     APTR   tc_reg_sp;
     USHORT tc_reg_sr;
     ULONG  tc_reg_d[8];
-    ULONG  tc_reg_a[7];                             /* without A7 = SP */
+    ULONG  tc_reg_a[7];                  /* without A7 = SP */
 } TaskContext;
 
 
 /*
  * global variables
  */
-BPTR                 g_logfh;                       /* for the LOG() macro */
+BPTR                 g_logfh;            /* for the LOG() macro */
 UBYTE                g_loglevel;
 char                 g_logmsg[256];
-ULONG                g_ntraps = 0;                  /* trap counter */
-TaskContext          g_target_ctx;                  /* task context of target */
+TaskContext          g_target_ctx;       /* task context of target */
+int                  g_retcode;          /* return code of target, global so that the inline assembly code can access it */
 
 
 extern void trap_handler();
@@ -110,13 +110,15 @@ int main(int argc, char **argv)
     }
 
     /* seglist points to (first) code segment, code starts one long word behind pointer */
-    /* TODO: save / restore all registers */
     /* TODO: use separate stack for target */
     entry = BCPL_TO_C_PTR(seglist + 1);
     LOG(INFO, "starting target at address 0x%08lx", entry);
-    status = entry();
-    LOG(INFO, "target terminated with exit code %ld", status);
-    LOG(INFO, "trap handler was called %ld times", g_ntraps);
+    asm("movem.l     d0-d7/a0-a6, -(sp)\n"
+        "movea.l     %0, a0\n"
+        "jsr         (a0)\n"
+        "move.l      d0, _g_retcode\n"
+        "movem.l     (sp)+, d0-d7/a0-a6\n" : : "m"(entry));
+    LOG(INFO, "target terminated with exit code %ld", g_retcode);
 
     FreeTrap(TRAP_NUM);
 ERROR_NO_TRAP:
