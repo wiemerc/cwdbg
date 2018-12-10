@@ -1,15 +1,41 @@
 /*
- * trap.s - part of CWDebug, a source-level debugger for AmigaOS
+ * glue.s - part of CWDebug, a source-level debugger for AmigaOS
+ *          This file contain two assembly routines that "glue" the debugger to the target.
  *
  * Copyright(C) 2018, 2019 Constantin Wiemer
  */
 
 
  .text
- .extern _g_ntraps
  .extern _g_target_ctx
  .extern _debug_main
 .global _trap_handler
+.global _run_target
+
+
+/*
+ * start target with its own stack and return exit code
+ * Contrary to several documents / articles on the Internet, the GNU tool chain for AmigaOS
+ * uses register A5 as frame pointer and *not* A6 (probably because of the use of A6 as
+ * library base address on the Amiga).
+ * TODO: pass command line
+ */
+_run_target:
+    link.w      fp, #-4                 /* set up new stack frame with room for the old stack pointer */
+    movem.l     d1-d7/a0-a4/a6, -(sp)   /* save all registers on the old stack except D0 (used for the return value) and the frame pointer A5 */
+    move.l      sp, -4(fp)              /* save old stack pointer */
+    move.l      12(fp), sp              /* load new stack pointer */
+    add.l       16(fp), sp              /* add stack size so it points to end of stack */
+    move.l      fp, -(sp)               /* save frame pointer on new stack */
+    move.l      16(fp), -(sp)           /* push stack size onto new stack (AmigaDOS calling convention) */
+    move.l      8(fp), a0               /* call entry point of target */
+    jsr         (a0)
+    addq.l      #4, sp                  /* remove stack size */
+    move.l      (sp)+, fp               /* restore frame pointer */
+    move.l      -4(fp), sp              /* restore old stack pointer */
+    movem.l     (sp)+, d1-d7/a0-a4/a6   /* restore all registers */
+    unlk        fp                      /* restore old frame pointer and return */
+    rts
 
 
 /*

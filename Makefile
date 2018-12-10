@@ -13,10 +13,10 @@ clean:
 
 main.o: main.c util.h
 
-trap.o: trap.s
+glue.o: glue.s
 	$(AS) -o $@ $^
 
-cwdebug: main.o trap.o
+cwdebug: main.o glue.o
 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 examples:

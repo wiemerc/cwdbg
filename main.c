@@ -41,9 +41,6 @@ BPTR                 g_logfh;            /* for the LOG() macro */
 UBYTE                g_loglevel;
 char                 g_logmsg[256];
 TaskContext          g_target_ctx;       /* task context of target */
-int                  g_retcode;          /* return code of target, global so that the inline assembly code can access it */
-void                *g_our_stack;
-void                *g_target_stack;
 
 
 extern void trap_handler();
@@ -85,6 +82,7 @@ int main(int argc, char **argv)
     BPTR                seglist;                    /* segment list of loaded program */
     struct Task         *self = FindTask(NULL);     /* pointer to this task */
     int (*entry)();                                 /* entry point of target */
+    void                *stack;                     /* stack for target */
 
     /* setup logging */
 //    if ((g_logfh = Open("CON:0/0/800/200/CWDebug Console", MODE_NEWFILE)) == 0)
@@ -114,7 +112,7 @@ int main(int argc, char **argv)
     }
 
     /* allocate stack for target */
-    if ((g_target_stack = AllocVec(STACK_SIZE, 0)) == NULL) {
+    if ((stack = AllocVec(STACK_SIZE, 0)) == NULL) {
         LOG(ERROR, "could not allocate stack for target");
         status = RETURN_ERROR;
         goto ERROR_NO_STACK;
@@ -122,20 +120,11 @@ int main(int argc, char **argv)
 
     /* start target, seglist points to (first) code segment, code starts one long word behind pointer */
     entry = BCPL_TO_C_PTR(seglist + 1);
-    LOG(INFO, "starting target at address 0x%08lx with stack pointer at 0x%08lx", entry, g_target_stack + STACK_SIZE);
-    asm("movem.l     d0-d7/a0-a6, -(sp)\n"
-        "move.l      sp, _g_our_stack\n"
-        "move.l      _g_target_stack, sp\n"
-        "add.l       #8192, sp\n"
-        "move.l      #8192, -(sp)\n"
-        "movea.l     %0, a0\n"
-        "jsr         (a0)\n"
-        "move.l      d0, _g_retcode\n"
-        "move.l      _g_our_stack, sp\n"
-        "movem.l     (sp)+, d0-d7/a0-a6\n" : : "m"(entry));
-    LOG(INFO, "target terminated with exit code %ld", g_retcode);
+    LOG(INFO, "starting target at address 0x%08lx with stack pointer at 0x%08lx", entry, stack + STACK_SIZE);
+    status = run_target(entry, stack, STACK_SIZE);
+    LOG(INFO, "target terminated with exit code %ld", status);
 
-    FreeVec(g_target_stack);
+    FreeVec(stack);
 ERROR_NO_STACK:
     FreeTrap(TRAP_NUM);
 ERROR_NO_TRAP:
