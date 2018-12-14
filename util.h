@@ -20,7 +20,7 @@
  * external references
  */
 extern BPTR  g_logfh;
-extern UBYTE g_level;
+extern UBYTE g_loglevel;
 extern char  g_logmsg[256];
 
 
@@ -49,5 +49,11 @@ extern char  g_logmsg[256];
 }
 #define C_TO_BCPL_PTR(ptr) ((BPTR) (((ULONG) (ptr)) >> 2))
 #define BCPL_TO_C_PTR(ptr) ((APTR) (((ULONG) (ptr)) << 2))
+
+
+/*
+ * prototypes
+ */
+void dump_memory(const UBYTE *, ULONG);
 
 #endif /* CWDEBUG_UTIL_H */
