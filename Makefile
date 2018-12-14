@@ -2,7 +2,7 @@ CC      := /opt/m68k-amigaos/bin/m68k-amigaos-gcc
 AS      := /opt/m68k-amigaos/bin/m68k-amigaos-as
 CFLAGS  := -Wall
 LDFLAGS := -s -noixemul -L/opt/m68k-amigaos//m68k-amigaos/libnix/lib -L/opt/m68k-amigaos//m68k-amigaos/libnix/lib/libnix
-LDLIBS  := -lamiga -lnix
+LDLIBS  := -lnix -lamiga
 
 .PHONY: all clean examples
 

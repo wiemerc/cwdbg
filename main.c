@@ -62,17 +62,17 @@ void print_task_context(const TaskContext *ctx)
 
     /* TODO: pretty-print status register */
     for (i = 0; i < 4; i++)
-        printf("D%ld=0x%08lx  ", i, ctx->tc_reg_d[i]);
+        printf("D%d=0x%08lx  ", i, ctx->tc_reg_d[i]);
     puts("");
     for (i = 4; i < 8; i++)
-        printf("D%ld=0x%08lx  ", i, ctx->tc_reg_d[i]);
+        printf("D%d=0x%08lx  ", i, ctx->tc_reg_d[i]);
     puts("");
     for (i = 0; i < 4; i++)
-        printf("A%ld=0x%08lx  ", i, ctx->tc_reg_a[i]);
+        printf("A%d=0x%08lx  ", i, ctx->tc_reg_a[i]);
     puts("");
     for (i = 4; i < 7; i++)
-        printf("A%ld=0x%08lx  ", i, ctx->tc_reg_a[i]);
-    printf("A7(SP)=0x%08lx\n", ctx->tc_reg_sp);
+        printf("A%d=0x%08lx  ", i, ctx->tc_reg_a[i]);
+    printf("A7(SP)=0x%08lx\n", (ULONG) ctx->tc_reg_sp);
 }
 
 
@@ -128,9 +128,9 @@ int main(int argc, char **argv)
 
     /* start target, seglist points to (first) code segment, code starts one long word behind pointer */
     entry = BCPL_TO_C_PTR(seglist + 1);
-    LOG(INFO, "starting target at address 0x%08lx with stack pointer at 0x%08lx", entry, stack + STACK_SIZE);
+    LOG(INFO, "starting target at address 0x%08lx with stack pointer at 0x%08lx", (ULONG) entry, (ULONG) stack + STACK_SIZE);
     status = run_target(entry, stack, STACK_SIZE);
-    LOG(INFO, "target terminated with exit code %ld", status);
+    LOG(INFO, "target terminated with exit code %d", status);
 
     FreeVec(stack);
 ERROR_NO_STACK:
@@ -141,5 +141,5 @@ ERROR_LOAD_SEG_FAILED:
 ERROR_WRONG_USAGE:
 //    Delay(250);
 //    Close(g_logfh);
-    return RETURN_OK;
+    return status;
 }
