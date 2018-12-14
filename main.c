@@ -13,6 +13,7 @@
 #include <proto/exec.h>
 
 #include "util.h"
+#include "m68k.h"
 
 
 /*
@@ -44,14 +45,21 @@ TaskContext          g_target_ctx;       /* task context of target */
 
 
 extern void trap_handler();
+extern int run_target(int (*)(), APTR, ULONG);
 
 
 void print_task_context(const TaskContext *ctx)
 {
-    int i;
+    UBYTE i;
+    ULONG nbytes;
+    UWORD *sp;
+    char instr[128], dump[64], *dp;
 
-    /* TODO: print disassembled instruction */
-    printf("PC=0x%08lx, instruction = 0x%04lx\n", ctx->tc_reg_pc, *((USHORT *) ctx->tc_reg_pc));
+    nbytes = m68k_disassemble(instr, (ULONG) ctx->tc_reg_pc, M68K_CPU_TYPE_68030);
+    for (sp = ctx->tc_reg_pc, dp = dump; nbytes > 0 && dp < dump + 64; nbytes -= 2, ++sp, dp += 5)
+        sprintf(dp, "%04x ", *sp);
+    printf("PC=0x%08lx: %-20s: %s\n", (ULONG) ctx->tc_reg_pc, dump, instr);
+
     /* TODO: pretty-print status register */
     for (i = 0; i < 4; i++)
         printf("D%ld=0x%08lx  ", i, ctx->tc_reg_d[i]);
@@ -82,7 +90,7 @@ int main(int argc, char **argv)
     BPTR                seglist;                    /* segment list of loaded program */
     struct Task         *self = FindTask(NULL);     /* pointer to this task */
     int (*entry)();                                 /* entry point of target */
-    void                *stack;                     /* stack for target */
+    APTR                stack;                      /* stack for target */
 
     /* setup logging */
 //    if ((g_logfh = Open("CON:0/0/800/200/CWDebug Console", MODE_NEWFILE)) == 0)

@@ -1,0 +1,27 @@
+--- m68kdasm.c.orig	2018-12-10 12:29:05.000000000 +0100
++++ m68kdasm.c	2018-12-10 19:23:55.000000000 +0100
+@@ -37,6 +37,7 @@
+ #include <stdio.h>
+ #include <string.h>
+ #include "m68k.h"
++#include "util.h"
+ 
+ #ifndef DECL_SPEC
+ #define DECL_SPEC
+@@ -231,6 +232,16 @@
+ /* =========================== UTILITY FUNCTIONS ========================== */
+ /* ======================================================================== */
+ 
++unsigned int m68k_read_disassembler_16(unsigned int address)
++{
++	return (unsigned int) *((unsigned short *) address);
++}
++
++unsigned int m68k_read_disassembler_32(unsigned int address)
++{
++	return (unsigned int) *((unsigned int *) address);
++}
++
+ #define LIMIT_CPU_TYPES(ALLOWED_CPU_TYPES)	\
+ 	if(!(g_cpu_type & ALLOWED_CPU_TYPES))	\
+ 	{										\
