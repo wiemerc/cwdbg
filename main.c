@@ -105,6 +105,7 @@ int main(int argc, char **argv)
     }
 
     // load target
+    LOG(INFO, "initializing...");
     if ((seglist = LoadSeg(argv[1])) == NULL) {
         LOG(ERROR, "could not load target: %ld", IoErr());
         status = RETURN_ERROR;
@@ -125,6 +126,9 @@ int main(int argc, char **argv)
         status = RETURN_ERROR;
         goto ERROR_NO_STACK;
     }
+
+    // initialize disassembler routines
+    m68k_build_opcode_table();
 
     // start target, seglist points to (first) code segment, code starts one long word behind pointer
     entry = BCPL_TO_C_PTR(seglist + 1);

@@ -1,14 +1,23 @@
---- m68kdasm.c.orig	2018-12-10 12:29:05.000000000 +0100
-+++ m68kdasm.c	2018-12-10 19:23:55.000000000 +0100
-@@ -37,6 +37,7 @@
- #include <stdio.h>
- #include <string.h>
- #include "m68k.h"
-+#include "util.h"
+--- m68kdasm.c.orig	2018-12-16 14:35:07.000000000 +0100
++++ m68kdasm.c	2018-12-16 14:54:25.000000000 +0100
+@@ -169,7 +169,6 @@
+ char* get_imm_str_s32(void);
  
- #ifndef DECL_SPEC
- #define DECL_SPEC
-@@ -231,6 +232,16 @@
+ /* Stuff to build the opcode handler jump table */
+-static void  build_opcode_table(void);
+ static int   valid_ea(uint opcode, uint mask);
+ static int DECL_SPEC compare_nof_true_bits(const void *aptr, const void *bptr);
+ 
+@@ -190,8 +189,6 @@
+ 
+ /* Opcode handler jump table */
+ static void (*g_instruction_table[0x10000])(void);
+-/* Flag if disassembler initialized */
+-static int  g_initialized = 0;
+ 
+ /* Address mask to simulate address lines */
+ static unsigned int g_address_mask = 0xffffffff;
+@@ -231,6 +228,16 @@
  /* =========================== UTILITY FUNCTIONS ========================== */
  /* ======================================================================== */
  
@@ -25,3 +34,53 @@
  #define LIMIT_CPU_TYPES(ALLOWED_CPU_TYPES)	\
  	if(!(g_cpu_type & ALLOWED_CPU_TYPES))	\
  	{										\
+@@ -3194,8 +3201,14 @@
+ 	return b - a; /* reversed to get greatest to least sorting */
+ }
+ 
++
++
++/* ======================================================================== */
++/* ================================= API ================================== */
++/* ======================================================================== */
++
+ /* build the opcode handler jump table */
+-static void build_opcode_table(void)
++void m68k_build_opcode_table(void)
+ {
+ 	uint i;
+ 	uint opcode;
+@@ -3233,20 +3246,9 @@
+ 	}
+ }
+ 
+-
+-
+-/* ======================================================================== */
+-/* ================================= API ================================== */
+-/* ======================================================================== */
+-
+ /* Disasemble one instruction at pc and store in str_buff */
+ unsigned int m68k_disassemble(char* str_buff, unsigned int pc, unsigned int cpu_type)
+ {
+-	if(!g_initialized)
+-	{
+-		build_opcode_table();
+-		g_initialized = 1;
+-	}
+ 	switch(cpu_type)
+ 	{
+ 		case M68K_CPU_TYPE_68000:
+@@ -3296,12 +3298,6 @@
+ /* Check if the instruction is a valid one */
+ unsigned int m68k_is_valid_instruction(unsigned int instruction, unsigned int cpu_type)
+ {
+-	if(!g_initialized)
+-	{
+-		build_opcode_table();
+-		g_initialized = 1;
+-	}
+-
+ 	instruction &= 0xffff;
+ 	if(g_instruction_table[instruction] == d68000_illegal)
+ 		return 0;

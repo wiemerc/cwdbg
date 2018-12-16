@@ -1,5 +1,5 @@
---- m68k.h.orig	2018-12-10 12:32:10.000000000 +0100
-+++ m68k.h	2018-12-10 12:36:21.000000000 +0100
+--- m68k.h.orig	2018-12-16 14:44:48.000000000 +0100
++++ m68k.h	2018-12-16 14:43:51.000000000 +0100
 @@ -32,14 +32,6 @@
  
  
@@ -15,7 +15,21 @@
  /* ============================ GENERAL DEFINES =========================== */
  
  /* ======================================================================== */
-@@ -343,15 +335,6 @@
+@@ -333,25 +325,19 @@
+ /* Poke values into the internals of the currently running CPU context */
+ void m68k_set_reg(m68k_register_t reg, unsigned int value);
+ 
++/* Build the opcode handler jump table for m68k_disassemble() */
++void m68k_build_opcode_table(void);
++
+ /* Check if an instruction is valid for the specified CPU type */
+ unsigned int m68k_is_valid_instruction(unsigned int instruction, unsigned int cpu_type);
+ 
+-/* Disassemble 1 instruction using the epecified CPU type at pc.  Stores
++/* Disassemble 1 instruction using the specified CPU type at pc.  Stores
+  * disassembly in str_buff and returns the size of the instruction in bytes.
+  */
+ unsigned int m68k_disassemble(char* str_buff, unsigned int pc, unsigned int cpu_type);
  
  
  /* ======================================================================== */
