@@ -13,11 +13,11 @@ clean:
 	$(MAKE) --directory=examples clean
 
 %.h: %.h.patch
-	wget -q https://raw.githubusercontent.com/kstenerud/Musashi/master/$@
+	rm -f $@ && wget -q https://raw.githubusercontent.com/kstenerud/Musashi/master/$@
 	patch -p0 < $@.patch
 
 %.c: %.c.patch
-	wget -q https://raw.githubusercontent.com/kstenerud/Musashi/master/$@
+	rm -f $@ && wget -q https://raw.githubusercontent.com/kstenerud/Musashi/master/$@
 	patch -p0 < $@.patch
 
 main.o: main.c util.h m68k.h
