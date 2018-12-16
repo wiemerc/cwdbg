@@ -10,6 +10,7 @@ all: cwdebug examples
 
 clean:
 	rm -f *.o m68k.h m68kdasm.c cwdebug
+	$(MAKE) --directory=examples clean
 
 %.h: %.h.patch
 	wget -q https://raw.githubusercontent.com/kstenerud/Musashi/master/$@
