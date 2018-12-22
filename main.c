@@ -76,11 +76,66 @@ void print_task_context(const TaskContext *ctx)
 }
 
 
-void debug_main()
+int debug_main(const char *target)
 {
-    LOG(INFO, "target has hit breakpoint");
-    print_task_context(&g_target_ctx);
-    Wait(SIGBREAKF_CTRL_D);
+    int                 status = RETURN_OK;         // exit status
+    BPTR                seglist;                    // segment list of target
+    int                 (*entry)();                 // entry point of target
+    APTR                stack;                      // stack for target
+    UBYTE               cmd[64];                    // command buffer
+
+    if (g_target_ctx.tc_reg_pc == NULL) {
+        // target is not yet running (called by main())
+        while(1) {
+            Write(Output(), "> ", 2);
+            WaitForChar(Input(), 0xffffffff);
+            Read(Input(), cmd, 64);
+            if (cmd[0] == 'r') {
+                // load target
+                if ((seglist = LoadSeg(target)) == NULL) {
+                    LOG(ERROR, "could not load target: %ld", IoErr());
+                    status = RETURN_ERROR;
+                    goto ERROR_LOAD_SEG_FAILED;
+                }
+
+                // allocate stack for target
+                if ((stack = AllocVec(STACK_SIZE, 0)) == NULL) {
+                    LOG(ERROR, "could not allocate stack for target");
+                    status = RETURN_ERROR;
+                    goto ERROR_NO_STACK;
+                }
+
+                // start target, seglist points to (first) code segment, code starts one long word behind pointer
+                entry = BCPL_TO_C_PTR(seglist + 1);
+                LOG(INFO, "starting target at address 0x%08lx with stack pointer at 0x%08lx", (ULONG) entry, (ULONG) stack + STACK_SIZE);
+                status = run_target(entry, stack, STACK_SIZE);
+                LOG(INFO, "target terminated with exit code %d", status);
+
+                FreeVec(stack);
+ERROR_NO_STACK:
+                UnLoadSeg(seglist);
+ERROR_LOAD_SEG_FAILED:
+                return status;
+            }
+            else {
+                LOG(ERROR, "unknown command '%c'", cmd[0]);
+            }
+        }
+    }
+    else {
+        // target has hit breakpoint (called by trap handler)
+        print_task_context(&g_target_ctx);
+        while(1) {
+            Write(Output(), "> ", 2);
+            WaitForChar(Input(), 0xffffffff);
+            Read(Input(), cmd, 64);
+            if (cmd[0] == 'c')
+                return 0;
+            else {
+                LOG(ERROR, "unknown command '%c'", cmd[0]);
+            }
+        }
+    }
 }
 
 
@@ -88,9 +143,6 @@ int main(int argc, char **argv)
 {
     int                 status = RETURN_OK;         // exit status
     struct Task         *self = FindTask(NULL);     // pointer to this task
-    BPTR                seglist;                    // segment list of target
-    int                 (*entry)();                 // entry point of target
-    APTR                stack;                      // stack for target
 
     // setup logging
 //    if ((g_logfh = Open("CON:0/0/800/200/CWDebug Console", MODE_NEWFILE)) == 0)
@@ -104,13 +156,7 @@ int main(int argc, char **argv)
         goto ERROR_WRONG_USAGE;
     }
 
-    // load target
     LOG(INFO, "initializing...");
-    if ((seglist = LoadSeg(argv[1])) == NULL) {
-        LOG(ERROR, "could not load target: %ld", IoErr());
-        status = RETURN_ERROR;
-        goto ERROR_LOAD_SEG_FAILED;
-    }
 
     // allocate trap for breakpoints and install trap handler
     self->tc_TrapCode = trap_handler;
@@ -120,28 +166,14 @@ int main(int argc, char **argv)
         goto ERROR_NO_TRAP;
     }
 
-    // allocate stack for target
-    if ((stack = AllocVec(STACK_SIZE, 0)) == NULL) {
-        LOG(ERROR, "could not allocate stack for target");
-        status = RETURN_ERROR;
-        goto ERROR_NO_STACK;
-    }
-
     // initialize disassembler routines
     m68k_build_opcode_table();
 
-    // start target, seglist points to (first) code segment, code starts one long word behind pointer
-    entry = BCPL_TO_C_PTR(seglist + 1);
-    LOG(INFO, "starting target at address 0x%08lx with stack pointer at 0x%08lx", (ULONG) entry, (ULONG) stack + STACK_SIZE);
-    status = run_target(entry, stack, STACK_SIZE);
-    LOG(INFO, "target terminated with exit code %d", status);
+    // hand over control to debug_main() which does all the work
+    status = debug_main(argv[1]);
 
-    FreeVec(stack);
-ERROR_NO_STACK:
     FreeTrap(TRAP_NUM);
 ERROR_NO_TRAP:
-    UnLoadSeg(seglist);
-ERROR_LOAD_SEG_FAILED:
 ERROR_WRONG_USAGE:
 //    Delay(250);
 //    Close(g_logfh);
