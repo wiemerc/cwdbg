@@ -21,6 +21,8 @@
  */
 #define TRAP_NUM    0
 #define STACK_SIZE  8192
+#define MODE_RUN    0
+#define MODE_TRAP   1
 
 
 /*
@@ -41,7 +43,6 @@ typedef struct {
 BPTR                 g_logfh;            // for the LOG() macro
 UBYTE                g_loglevel;
 char                 g_logmsg[256];
-TaskContext          g_target_ctx;       // task context of target
 
 
 extern void trap_handler();
@@ -76,7 +77,7 @@ void print_task_context(const TaskContext *ctx)
 }
 
 
-int debug_main(const char *target)
+int debug_main(int mode, APTR data)
 {
     int                 status = RETURN_OK;         // exit status
     BPTR                seglist;                    // segment list of target
@@ -84,7 +85,7 @@ int debug_main(const char *target)
     APTR                stack;                      // stack for target
     UBYTE               cmd[64];                    // command buffer
 
-    if (g_target_ctx.tc_reg_pc == NULL) {
+    if (mode == MODE_RUN) {
         // target is not yet running (called by main())
         while(1) {
             Write(Output(), "> ", 2);
@@ -92,7 +93,7 @@ int debug_main(const char *target)
             Read(Input(), cmd, 64);
             if (cmd[0] == 'r') {
                 // load target
-                if ((seglist = LoadSeg(target)) == NULL) {
+                if ((seglist = LoadSeg(data)) == NULL) {
                     LOG(ERROR, "could not load target: %ld", IoErr());
                     status = RETURN_ERROR;
                     goto ERROR_LOAD_SEG_FAILED;
@@ -122,20 +123,22 @@ ERROR_LOAD_SEG_FAILED:
             }
         }
     }
-    else {
+    else if (mode == MODE_TRAP) {
         // target has hit breakpoint (called by trap handler)
-        print_task_context(&g_target_ctx);
+        print_task_context(data);
         while(1) {
             Write(Output(), "> ", 2);
             WaitForChar(Input(), 0xffffffff);
             Read(Input(), cmd, 64);
-            if (cmd[0] == 'c')
+            if (cmd[0] == 'c') {
                 return 0;
+            }
             else {
                 LOG(ERROR, "unknown command '%c'", cmd[0]);
             }
         }
     }
+    return 0;
 }
 
 
@@ -170,7 +173,7 @@ int main(int argc, char **argv)
     m68k_build_opcode_table();
 
     // hand over control to debug_main() which does all the work
-    status = debug_main(argv[1]);
+    status = debug_main(MODE_RUN, argv[1]);
 
     FreeTrap(TRAP_NUM);
 ERROR_NO_TRAP:

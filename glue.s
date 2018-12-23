@@ -7,7 +7,6 @@
 
 
  .text
- .extern _g_target_ctx
  .extern _debug_main
 .global _trap_handler
 .global _run_target
@@ -39,7 +38,7 @@ _run_target:
 
 
 /*
- * trap handler for breakpoints and single-step mode
+ * trap handler for breakpoints
  */
 _trap_handler:
     /*
@@ -60,7 +59,7 @@ _trap_handler:
      */
     move.l      a0, -(sp)               /* save A0 and A1 because we use them */
     move.l      a1, -(sp)
-    lea         _g_target_ctx, a0       /* load base address of struct */
+    lea         target_ctx, a0          /* load base address of struct */
     move.l      14(sp), (a0)+           /* PC, offset is 6 + 8 because of saved registers */
     move.l      usp, a1
     move.l      a1, (a0)+               /* SP */
@@ -79,12 +78,20 @@ _trap_handler:
     rte
 
 _debug_stub:
+    /* call debug_main() */
+    pea         target_ctx              /* push target context address and mode onto stack */
+    move.l      #1, -(sp)
     jsr         _debug_main
+    addq.l      #8, sp                  /* remove target context and mode from stack */
+
     /* restore all registers from global struct and return to target */
-    lea         _g_target_ctx, a0       /* load base address of struct */
+    lea         target_ctx, a0          /* load base address of struct */
     move.l      (a0), -(sp)             /* push original return address onto stack */
     add.l       #10, a0                 /* move pointer to D0 */
     movem.l     (a0)+, d0-d7            /* restore data registers */
     movem.l     (a0)+, a0-a6            /* restore address registers without A0 (is skipped automatically because it contains the base address) */
     move.l      -28(a0), a0             /* finally restore A0 */
     rts                                 /* jump to return address by "returning" to it */
+
+.data
+    .lcomm target_ctx, 70               /* 70 == sizeof(TaskContext) */
