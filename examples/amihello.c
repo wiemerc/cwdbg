@@ -12,6 +12,5 @@ int entry(int argc, char **argv)
 {
     asm("trap #0");
     PutStr("hello, Amiga\n");
-    asm("trap #0");
     return 1;
 }
