@@ -6,12 +6,15 @@ LDLIBS  := -lamiga -lnix
 
 .PHONY: all clean
 
-all: stabs-test debug-test amihello
+all: stabs-test debug-test amihello loop
 
 clean:
 	rm -f *.o stabs-test debug-test amihello
 
 amihello: cwcrt0.o amihello.o
+	$(CC) $(LDFLAGS) -nostdlib -o $@ cwcrt0.o $@.o
+
+loop: cwcrt0.o loop.o
 	$(CC) $(LDFLAGS) -nostdlib -o $@ cwcrt0.o $@.o
 
 debug-test.o: debug-test.s
