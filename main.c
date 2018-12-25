@@ -20,7 +20,6 @@
 /*
  * constants
  */
-#define TRAP_NUM        0
 #define STACK_SIZE      8192
 #define MODE_RUN        0
 #define MODE_TRAP       1
@@ -238,12 +237,17 @@ int main(int argc, char **argv)
 
     LOG(INFO, "initializing...");
 
-    // allocate trap for breakpoints and install trap handler
+    // allocate traps for breakpoints and install trap handler
     self->tc_TrapCode = trap_handler;
-    if (AllocTrap(TRAP_NUM) == -1) {
-        LOG(ERROR, "could not allocate trap");
+    if (AllocTrap(0) == -1) {
+        LOG(ERROR, "could not allocate trap #0");
         status = RETURN_ERROR;
-        goto ERROR_NO_TRAP;
+        goto ERROR_NO_TRAP_0;
+    }
+    if (AllocTrap(1) == -1) {
+        LOG(ERROR, "could not allocate trap #1");
+        status = RETURN_ERROR;
+        goto ERROR_NO_TRAP_1;
     }
 
     // initialize disassembler routines
@@ -252,8 +256,10 @@ int main(int argc, char **argv)
     // hand over control to debug_main() which does all the work
     status = debug_main(MODE_RUN, argv[1]);
 
-    FreeTrap(TRAP_NUM);
-ERROR_NO_TRAP:
+    FreeTrap(1);
+ERROR_NO_TRAP_1:
+    FreeTrap(0);
+ERROR_NO_TRAP_0:
 ERROR_WRONG_USAGE:
 //    Delay(250);
 //    Close(g_logfh);

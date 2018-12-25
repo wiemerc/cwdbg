@@ -41,8 +41,41 @@ _run_target:
  * trap handler for breakpoints
  */
 _trap_handler:
+    /* branch depending on the exception number */
+    cmp.l       #0x00000021, (sp)
+    beq.s       trace
+    cmp.l       #0x00000009, (sp)
+    beq.s       step
+    bra.s       main                    /* let debug_main() handle breakpoints and any other exceptions */
+
+trace:
+    addq.l      #4, sp                  /* remove trap number from stack  */
+    move.l      #0, ninstr              /* initialize instruction counter */
+    ori.w       #0x8000, (sp)           /* enable trace mode in *user* mode */
+    rte
+
+step:
+    addq.l      #4, sp                  /* remove trap number from stack */
+    addq.l      #1, ninstr              /* increment number of instructions */
+    cmp.l       #2, ninstr
+    beq.s       step_restore
+    /* fall through */
+step_store:
+    /* number of instructions = 1: PC = instruction at breakpoint => store address */
+    move.l      2(sp), bp_addr
+    rte
+step_restore:
+    /* number of instructions == 2: PC = instruction past breakpoint => disable trace mode and restore breakpoint */
+    andi.w      #0x7fff, (sp)           /* disable trace mode */
+    move.l      a0, -(sp)               /* save A0 */
+    move.l      bp_addr, a0             /* load address of breakpoint */
+    move.w      #0x4e40, (a0)           /* restore breakpoint */
+    move.l      (sp)+, a0               /* restore A0 */
+    rte
+
+main:
     /*
-     * save context in global struct. The current stack frame looks like this:
+     * save target context - the current stack frame looks like this:
      *
      * 15                             0
      * --------------------------------
@@ -84,14 +117,24 @@ _debug_stub:
     jsr         _debug_main
     addq.l      #8, sp                  /* remove target context and mode from stack */
 
-    /* restore all registers from global struct and return to target */
+    /* restore all registers */
     lea         target_ctx, a0          /* load base address of struct */
     move.l      (a0), -(sp)             /* push original return address onto stack */
     add.l       #10, a0                 /* move pointer to D0 */
     movem.l     (a0)+, d0-d7            /* restore data registers */
     movem.l     (a0)+, a0-a6            /* restore address registers without A0 (is skipped automatically because it contains the base address) */
     move.l      -28(a0), a0             /* finally restore A0 */
+
+    /*
+     * We trap again to get into supervisor mode so we can set the trace bit and single-step
+     * the next two instructions - the RTS and the original instruction at the breakpoint
+     * address. This necessary to restore the breakpoint.
+     */
+    /* TODO: return flag in D0 to indicate that breakpoint should *not* be restored */
+    trap #1
     rts                                 /* jump to return address by "returning" to it */
 
 .data
     .lcomm target_ctx, 70               /* 70 == sizeof(TaskContext) */
+    .lcomm ninstr, 4
+    .lcomm bp_addr, 4
