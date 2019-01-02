@@ -54,6 +54,5 @@ extern char  g_logmsg[256];
 /*
  * prototypes
  */
-void dump_memory(const UBYTE *, ULONG);
 
 #endif /* CWDEBUG_UTIL_H */

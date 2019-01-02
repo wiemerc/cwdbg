@@ -99,6 +99,35 @@ static void print_stack(const TaskContext *ctx)
 }
 
 
+static void print_memory(const UBYTE *addr, ULONG size)
+{
+    ULONG pos = 0, i, nchars;
+    char line[256], *p;
+
+    while (pos < size) {
+        printf("%04lx: ", pos);
+        for (i = pos, p = line, nchars = 0; (i < pos + 16) && (i < size); ++i, ++p, ++nchars) {
+            printf("%02x ", addr[i]);
+            if (addr[i] >= 0x20 && addr[i] <= 0x7e) {
+                sprintf(p, "%c", addr[i]);
+            }
+            else {
+                sprintf(p, ".");
+            }
+        }
+        if (nchars < 16) {
+            for (i = 1; i <= (3 * (16 - nchars)); ++i, ++p, ++nchars) {
+                sprintf(p, " ");
+            }
+        }
+        *p = '\0';
+
+        printf("\t%s\n", line);
+        pos += 16;
+    }
+}
+
+
 static BreakPoint *find_bpoint_by_addr(struct List *bpoints, APTR baddr)
 {
     BreakPoint *bpoint;
@@ -129,9 +158,11 @@ int debug_main(int mode, APTR data)
 
     int command_loop()
     {
-        UBYTE               cmd[64];                    // command buffer
-        UBYTE               *args;                      // pointer to command arguments
-        ULONG               boffset;                    // offset from entry point
+        UBYTE               cmd[64];                // command buffer
+        UBYTE               *args;                  // pointer to command arguments
+        ULONG               boffset;                // offset from entry point
+        APTR                maddr;                  // address of memory block to print
+        ULONG               msize;                  // size of memory block
 
         while(1) {
             Write(Output(), "> ", 2);
@@ -207,6 +238,18 @@ int debug_main(int mode, APTR data)
                     // TODO: implement separate commands 'ir' and 'is'
                     print_registers(data);
                     print_stack(data);
+                    break;
+
+                case 'p':
+                    if (!running) {
+                        LOG(ERROR, "target is not yet running");
+                        break;
+                    }
+                    if (sscanf(args, "%lx %ld", &maddr, &msize) == 0) {
+                        LOG(ERROR, "invalid format for address / size");
+                        break;
+                    }
+                    print_memory(maddr, msize);
                     break;
 
                 default:
