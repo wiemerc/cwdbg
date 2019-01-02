@@ -20,10 +20,13 @@
 /*
  * constants
  */
+#define TRAP_NUM        0
+#define TRAP_OPCODE     0x4e40
 #define STACK_SIZE      8192
 #define MODE_RUN        0
 #define MODE_TRAP       1
-#define OPCODE_TRAP_0   0x4e40
+#define MODE_STEP       2
+#define MODE_RESTORE    3
 
 
 /*
@@ -57,9 +60,8 @@ extern void trap_handler();
 extern int run_target(int (*)(), APTR, ULONG);
 
 
-static void print_task_context(const TaskContext *ctx)
+static void print_instr(const TaskContext *ctx)
 {
-    UBYTE i;
     ULONG nbytes;
     UWORD *sp;
     char instr[128], dump[64], *dp;
@@ -68,6 +70,12 @@ static void print_task_context(const TaskContext *ctx)
     for (sp = ctx->tc_reg_pc, dp = dump; nbytes > 0 && dp < dump + 64; nbytes -= 2, ++sp, dp += 5)
         sprintf(dp, "%04x ", *sp);
     printf("PC=0x%08lx: %-20s: %s\n", (ULONG) ctx->tc_reg_pc, dump, instr);
+}
+
+
+static void print_registers(const TaskContext *ctx)
+{
+    UBYTE i;
 
     // TODO: pretty-print status register
     for (i = 0; i < 4; i++)
@@ -82,6 +90,12 @@ static void print_task_context(const TaskContext *ctx)
     for (i = 4; i < 7; i++)
         printf("A%d=0x%08lx  ", i, ctx->tc_reg_a[i]);
     printf("A7(SP)=0x%08lx\n", (ULONG) ctx->tc_reg_sp);
+}
+
+
+static void print_stack(const TaskContext *ctx)
+{
+    // TODO
 }
 
 
@@ -104,37 +118,20 @@ static BreakPoint *find_bpoint_by_addr(struct List *bpoints, APTR baddr)
 int debug_main(int mode, APTR data)
 {
     int                 status = RETURN_OK;         // exit status
+    static int          running = 0;
     BPTR                seglist;                    // segment list of target
     static int          (*entry)();                 // entry point of target
-    static struct List  bpoints;                    // list of breakpoints
     APTR                stack;                      // stack for target
-    UBYTE               cmd[64];                    // command buffer
-    UBYTE               *args;                      // pointer to command arguments
-    BreakPoint          *bpoint;                    // breakpoint structure
-    APTR                baddr;                      // address of breakpoint
-    ULONG               boffset;                    // offset from entry point
+    static struct List  bpoints;                    // list of breakpoints
+    BreakPoint          *bpoint;                    // current breakpoint
+    APTR                baddr;                      // address of current breakpoint
 
-    if (mode == MODE_RUN) {
-        // target is not yet running (called by main())
-        // load target
-        if ((seglist = LoadSeg(data)) == NULL) {
-            LOG(ERROR, "could not load target: %ld", IoErr());
-            status = RETURN_ERROR;
-            goto ERROR_LOAD_SEG_FAILED;
-        }
-        // seglist points to (first) code segment, code starts one long word behind pointer
-        entry = BCPL_TO_C_PTR(seglist + 1);
 
-        // allocate stack for target
-        if ((stack = AllocVec(STACK_SIZE, 0)) == NULL) {
-            LOG(ERROR, "could not allocate stack for target");
-            status = RETURN_ERROR;
-            goto ERROR_NO_STACK;
-        }
-
-        // initialize list of breakpoints, lh_Type is used as number of breakpoints
-        NewList(&bpoints);
-        bpoints.lh_Type = 0;
+    int command_loop()
+    {
+        UBYTE               cmd[64];                    // command buffer
+        UBYTE               *args;                      // pointer to command arguments
+        ULONG               boffset;                    // offset from entry point
 
         while(1) {
             Write(Output(), "> ", 2);
@@ -143,15 +140,17 @@ int debug_main(int mode, APTR data)
             args = cmd + 1;
             switch (cmd[0]) {
                 case 'r':
+                    if (running) {
+                        LOG(ERROR, "target is already running");
+                        break;
+                    }
+                    // TODO: reset breakpoint count
                     LOG(INFO, "starting target at address 0x%08lx with stack pointer at 0x%08lx", (ULONG) entry, (ULONG) stack + STACK_SIZE);
+                    running = 1;
                     status = run_target(entry, stack, STACK_SIZE);
+                    running = 0;
                     LOG(INFO, "target terminated with exit code %d", status);
-
-                    FreeVec(stack);
-                ERROR_NO_STACK:
-                    UnLoadSeg(seglist);
-                ERROR_LOAD_SEG_FAILED:
-                    return status;
+                    break;
 
                 case 'b':
                     if (sscanf(args, "%lx", &boffset) == 0) {
@@ -168,19 +167,78 @@ int debug_main(int mode, APTR data)
                     bpoint->bp_count        = 0;
                     bpoint->bp_node.ln_Type = ++bpoints.lh_Type;
                     AddTail(&bpoints, (struct Node *) bpoint);
-                    *((USHORT *) baddr) = OPCODE_TRAP_0;
+                    *((USHORT *) baddr) = TRAP_OPCODE;
                     LOG(INFO, "breakpoint set at entry + 0x%08lx", boffset);
                     break;
 
                 case 'q':
+                    if (running) {
+                        // TODO: handle that case as well
+                        LOG(ERROR, "target is still running");
+                        break;
+                    }
                     LOG(INFO, "exiting...");
+                    // TODO: free breakpoints
+                    FreeVec(stack);
+                    UnLoadSeg(seglist);
+                    return RETURN_OK;
+
+                case 'c':
+                    if (!running) {
+                        LOG(ERROR, "target is not yet running");
+                        break;
+                    }
                     return 0;
+
+                case 's':
+                    if (!running) {
+                        LOG(ERROR, "target is not yet running");
+                        break;
+                    }
+                    // TODO
+                    LOG(ERROR, "single-stepping not yet implemented");
+                    break;
+
+                case 'i':
+                    if (!running) {
+                        LOG(ERROR, "target is not yet running");
+                        break;
+                    }
+                    // TODO: implement separate commands 'ir' and 'is'
+                    print_registers(data);
+                    print_stack(data);
+                    break;
 
                 default:
                     LOG(ERROR, "unknown command '%c'", cmd[0]);
                     break;
             }
         }
+    }
+
+
+    if (mode == MODE_RUN) {
+        // target is not yet running (called by main())
+        // load target
+        if ((seglist = LoadSeg(data)) == NULL) {
+            LOG(ERROR, "could not load target: %ld", IoErr());
+            return RETURN_ERROR;
+        }
+        // seglist points to (first) code segment, code starts one long word behind pointer
+        entry = BCPL_TO_C_PTR(seglist + 1);
+
+        // allocate stack for target
+        if ((stack = AllocVec(STACK_SIZE, 0)) == NULL) {
+            LOG(ERROR, "could not allocate stack for target");
+            UnLoadSeg(seglist);
+            return RETURN_ERROR;
+        }
+
+        // initialize list of breakpoints, lh_Type is used as number of breakpoints
+        NewList(&bpoints);
+        bpoints.lh_Type = 0;
+
+        return command_loop();
     }
     else if (mode == MODE_TRAP) {
         // target has hit breakpoint or an exception occurred (called by trap handler)
@@ -195,24 +253,15 @@ int debug_main(int mode, APTR data)
         }
         else {
             LOG(INFO, "unhandled exception occurred at entry + 0x%08lx", ((ULONG) baddr - (ULONG) entry));
+            // TODO: use different return code in this case to prevent the exception handler from restoring the "breakpoint"
         }
-        while(1) {
-            Write(Output(), "> ", 2);
-            WaitForChar(Input(), 0xffffffff);
-            Read(Input(), cmd, 64);
-            switch (cmd[0]) {
-                case 'c':
-                    return 0;
 
-                case 'i':
-                    print_task_context(data);
-                    break;
-
-                default:
-                    LOG(ERROR, "unknown command '%c'", cmd[0]);
-                    break;
-            }
-        }
+        print_instr(data);
+        return command_loop();
+    }
+    else if (mode == MODE_STEP) {
+        print_instr(data);
+        return command_loop();
     }
     return 0;
 }
@@ -224,8 +273,6 @@ int main(int argc, char **argv)
     struct Task         *self = FindTask(NULL);     // pointer to this task
 
     // setup logging
-//    if ((g_logfh = Open("CON:0/0/800/200/CWDebug Console", MODE_NEWFILE)) == 0)
-//        return RETURN_ERROR;
     g_logfh = Output();
     g_loglevel = DEBUG;
 
@@ -237,17 +284,12 @@ int main(int argc, char **argv)
 
     LOG(INFO, "initializing...");
 
-    // allocate traps for breakpoints and install trap handler
+    // allocate trap for breakpoints and install trap handler
     self->tc_TrapCode = trap_handler;
-    if (AllocTrap(0) == -1) {
-        LOG(ERROR, "could not allocate trap #0");
+    if (AllocTrap(TRAP_NUM) == -1) {
+        LOG(ERROR, "could not allocate trap");
         status = RETURN_ERROR;
-        goto ERROR_NO_TRAP_0;
-    }
-    if (AllocTrap(1) == -1) {
-        LOG(ERROR, "could not allocate trap #1");
-        status = RETURN_ERROR;
-        goto ERROR_NO_TRAP_1;
+        goto ERROR_NO_TRAP;
     }
 
     // initialize disassembler routines
@@ -256,12 +298,8 @@ int main(int argc, char **argv)
     // hand over control to debug_main() which does all the work
     status = debug_main(MODE_RUN, argv[1]);
 
-    FreeTrap(1);
-ERROR_NO_TRAP_1:
-    FreeTrap(0);
-ERROR_NO_TRAP_0:
+    FreeTrap(TRAP_NUM);
+ERROR_NO_TRAP:
 ERROR_WRONG_USAGE:
-//    Delay(250);
-//    Close(g_logfh);
     return status;
 }
