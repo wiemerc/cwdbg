@@ -9,16 +9,19 @@ LDLIBS  := -lamiga -lnix
 all: stabs-test debug-test amihello loop
 
 clean:
-	rm -f *.o stabs-test debug-test amihello
+	rm -f *.o stabs-test debug-test amihello loop
 
 amihello: cwcrt0.o amihello.o
 	$(CC) $(LDFLAGS) -nostdlib -o $@ cwcrt0.o $@.o
 
-loop: cwcrt0.o loop.o
-	$(CC) $(LDFLAGS) -nostdlib -o $@ cwcrt0.o $@.o
+%.o: %.s
+	$(AS) -o $@ $^
 
 debug-test.o: debug-test.s
 	$(AS) -o $@ $^
 
 debug-test: debug-test.o
 	$(CC) $(LDFLAGS) -nostdlib -o $@.bad $^ && python3 -c 'import sys; data = open(sys.argv[1] + ".bad", "rb").read(); fh = open(sys.argv[1], "wb"); pos = data.find(b"trap\x0a"); fh.write(data[0:pos + 8]); fh.write(data[pos + 12:]); fh.close()' $@ && rm $@.bad
+
+loop: loop.o
+	$(CC) $(LDFLAGS) -nostdlib -o $@.bad $^ && python3 -c 'import sys; data = open(sys.argv[1] + ".bad", "rb").read(); fh = open(sys.argv[1], "wb"); pos = data.find(b"possible\x0a"); fh.write(data[0:pos + 12]); fh.write(data[pos + 16:]); fh.close()' $@ && rm $@.bad
