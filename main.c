@@ -23,10 +23,13 @@
 #define TRAP_NUM        0
 #define TRAP_OPCODE     0x4e40
 #define STACK_SIZE      8192
-#define MODE_RUN        0
-#define MODE_TRAP       1
+#define MODE_BREAKPOINT 0
+#define MODE_RUN        1
 #define MODE_STEP       2
-#define MODE_RESTORE    3
+#define MODE_EXCEPTION  3
+#define MODE_CONTINUE   4
+#define MODE_RESTORE    5
+#define MODE_KILL       6
 
 
 /*
@@ -42,6 +45,7 @@ typedef struct {
 
 typedef struct {
     struct Node  bp_node;
+    ULONG        bp_num;
     APTR         bp_addr;
     USHORT       bp_opcode;
     ULONG        bp_count;
@@ -56,8 +60,9 @@ UBYTE                g_loglevel;
 char                 g_logmsg[256];
 
 
-extern void trap_handler();
 extern int run_target(int (*)(), APTR, ULONG);
+extern void exc_handler();
+extern ULONG g_dummy;
 
 
 static void print_instr(const TaskContext *ctx)
@@ -146,16 +151,22 @@ static BreakPoint *find_bpoint_by_addr(struct List *bpoints, APTR baddr)
 
 int debug_main(int mode, APTR data)
 {
-    int                 status = RETURN_OK;         // exit status
-    static int          running = 0;
+    // regular local variables
+    int                 status;                     // exit status
     BPTR                seglist;                    // segment list of target
-    static int          (*entry)();                 // entry point of target
     APTR                stack;                      // stack for target
-    static struct List  bpoints;                    // list of breakpoints
     BreakPoint          *bpoint;                    // current breakpoint
     APTR                baddr;                      // address of current breakpoint
 
+    // variables that need to survive accross calls
+    static int          (*entry)();                 // entry point of target
+    static struct List  bpoints;                    // list of breakpoints
+    static BreakPoint   *prev_bpoint = NULL;        // previous breakpoint that needs to be restored
+    static int          running = 0;                // target running?
+    static int          stepping = 0;               // in single-step mode?
 
+
+    // nested function to save passing state (has access to all local variables in debug_main())
     int command_loop()
     {
         UBYTE               cmd[64];                // command buffer
@@ -167,8 +178,11 @@ int debug_main(int mode, APTR data)
         while(1) {
             Write(Output(), "> ", 2);
             WaitForChar(Input(), 0xffffffff);
+            // TODO: implement real parser with generic argument vector
             Read(Input(), cmd, 64);
             args = cmd + 1;
+
+            // commands are very similar to the ones in GDB
             switch (cmd[0]) {
                 case 'r':
                     if (running) {
@@ -181,6 +195,7 @@ int debug_main(int mode, APTR data)
                     status = run_target(entry, stack, STACK_SIZE);
                     running = 0;
                     LOG(INFO, "target terminated with exit code %d", status);
+//                    LOG(DEBUG, "value of dummy: 0x%08lx", g_dummy);
                     break;
 
                 case 'b':
@@ -193,18 +208,22 @@ int debug_main(int mode, APTR data)
                         break;
                     }
                     baddr = (APTR) ((ULONG) entry) + boffset;
+                    bpoint->bp_num          = ++bpoints.lh_Type;
                     bpoint->bp_addr         = baddr;
                     bpoint->bp_opcode       = *((USHORT *) baddr);
                     bpoint->bp_count        = 0;
-                    bpoint->bp_node.ln_Type = ++bpoints.lh_Type;
                     AddTail(&bpoints, (struct Node *) bpoint);
                     *((USHORT *) baddr) = TRAP_OPCODE;
                     LOG(INFO, "breakpoint set at entry + 0x%08lx", boffset);
                     break;
 
+                case 'k':
+                    // kill target
+                    stepping = 0;
+                    return MODE_KILL;
+
                 case 'q':
                     if (running) {
-                        // TODO: handle that case as well
                         LOG(ERROR, "target is still running");
                         break;
                     }
@@ -215,41 +234,53 @@ int debug_main(int mode, APTR data)
                     return RETURN_OK;
 
                 case 'c':
+                    // continue execution
                     if (!running) {
                         LOG(ERROR, "target is not yet running");
                         break;
                     }
-                    return 0;
+                    // If we continue from a breakpoint, it has to be restored first, so we
+                    // single-step the original instruction at the breakpoint and remember
+                    // to restore the breakpoint afterwards (see code for MODE_STEP below).
+                    // In trace mode, *all* interrupts must be disabled (except for the NMI),
+                    // otherwise OS code could be executed while the trace bit is still set,
+                    // which would cause the OS exception handler (an alert) to be executed instead
+                    // of ours => value 0xa700 is ORed with the SR.
+                    // TODO: just continue in case of a deleted breakpoint
+                    stepping = 0;
+                    if (mode == MODE_BREAKPOINT)
+                        ((TaskContext *) data)->tc_reg_sr |= 0x8700;
+                    return MODE_CONTINUE;
 
                 case 's':
                     if (!running) {
                         LOG(ERROR, "target is not yet running");
                         break;
                     }
-                    // TODO
-                    LOG(ERROR, "single-stepping not yet implemented");
-                    break;
+                    stepping = 1;
+                    ((TaskContext *) data)->tc_reg_sr |= 0x8700;
+                    return MODE_CONTINUE;
 
                 case 'i':
                     if (!running) {
                         LOG(ERROR, "target is not yet running");
                         break;
                     }
-                    // TODO: implement separate commands 'ir' and 'is'
+                    // TODO: implement separate commands 'i r' and 'i s'
                     print_registers(data);
                     print_stack(data);
                     break;
 
                 case 'p':
-                    if (!running) {
-                        LOG(ERROR, "target is not yet running");
-                        break;
-                    }
-                    if (sscanf(args, "%lx %ld", &maddr, &msize) == 0) {
+                    if (sscanf(args, "%p %ld", &maddr, &msize) == 0) {
                         LOG(ERROR, "invalid format for address / size");
                         break;
                     }
                     print_memory(maddr, msize);
+                    break;
+
+                case 'd':
+                    // TODO
                     break;
 
                 default:
@@ -260,53 +291,76 @@ int debug_main(int mode, APTR data)
     }
 
 
-    if (mode == MODE_RUN) {
-        // target is not yet running (called by main())
-        // load target
-        if ((seglist = LoadSeg(data)) == NULL) {
-            LOG(ERROR, "could not load target: %ld", IoErr());
-            return RETURN_ERROR;
-        }
-        // seglist points to (first) code segment, code starts one long word behind pointer
-        entry = BCPL_TO_C_PTR(seglist + 1);
+    switch (mode) {
+        case MODE_RUN:
+            // target is not yet running (called by main())
+            // load target
+            if ((seglist = LoadSeg(data)) == NULL) {
+                LOG(ERROR, "could not load target: %ld", IoErr());
+                return RETURN_ERROR;
+            }
+            // seglist points to (first) code segment, code starts one long word behind pointer
+            entry = BCPL_TO_C_PTR(seglist + 1);
 
-        // allocate stack for target
-        if ((stack = AllocVec(STACK_SIZE, 0)) == NULL) {
-            LOG(ERROR, "could not allocate stack for target");
-            UnLoadSeg(seglist);
-            return RETURN_ERROR;
-        }
+            // allocate stack for target
+            if ((stack = AllocVec(STACK_SIZE, 0)) == NULL) {
+                LOG(ERROR, "could not allocate stack for target");
+                UnLoadSeg(seglist);
+                return RETURN_ERROR;
+            }
 
-        // initialize list of breakpoints, lh_Type is used as number of breakpoints
-        NewList(&bpoints);
-        bpoints.lh_Type = 0;
+            // initialize list of breakpoints, lh_Type is used as number of breakpoints
+            NewList(&bpoints);
+            bpoints.lh_Type = 0;
 
-        return command_loop();
-    }
-    else if (mode == MODE_TRAP) {
-        // target has hit breakpoint or an exception occurred (called by trap handler)
-        baddr = ((TaskContext *) data)->tc_reg_pc - 2;
-        if ((bpoint = find_bpoint_by_addr(&bpoints, baddr)) != NULL) {
-            // rewind PC by 2 bytes and replace trap instruction with original instruction
-            ((TaskContext *) data)->tc_reg_pc = baddr;
-            *((USHORT *) baddr) = bpoint->bp_opcode;
-            ++bpoint->bp_count;
-            LOG(INFO, "target has hit breakpoint #%d at entry + 0x%08lx, hit count = %ld", 
-                bpoint->bp_node.ln_Type, ((ULONG) baddr - (ULONG) entry), bpoint->bp_count);
-        }
-        else {
+            return command_loop();
+
+        case MODE_BREAKPOINT:
+            // target has hit breakpoint (called by exception handler)
+            baddr = ((TaskContext *) data)->tc_reg_pc - 2;
+            if ((bpoint = find_bpoint_by_addr(&bpoints, baddr)) != NULL) {
+                prev_bpoint = bpoint;
+                // rewind PC by 2 bytes and replace trap instruction with original instruction
+                ((TaskContext *) data)->tc_reg_pc = baddr;
+                *((USHORT *) baddr) = bpoint->bp_opcode;
+                ++bpoint->bp_count;
+                LOG(INFO, "target has hit breakpoint #%ld at entry + 0x%08lx, hit count = %ld", 
+                    bpoint->bp_num, ((ULONG) baddr - (ULONG) entry), bpoint->bp_count);
+            }
+            else {
+                LOG(CRIT, "INTERNAL ERROR: target has hit unknown breakpoint at entry + 0x%08lx", ((ULONG) baddr - (ULONG) entry));
+                return MODE_KILL;
+            }
+
+            print_instr(data);
+            return command_loop();
+
+        case MODE_STEP:
+            if (prev_bpoint) {
+                // previous breakpoint needs to be restored
+                LOG(DEBUG, "restoring breakpoint #%ld at entry + 0x%08lx", prev_bpoint->bp_num, ((ULONG) baddr - (ULONG) entry));
+                *((USHORT *) prev_bpoint->bp_addr) = TRAP_OPCODE;
+                prev_bpoint = NULL;
+            }
+            if (stepping) {
+                // in single-step mode
+                print_instr(data);
+                return command_loop();
+            }
+            else
+                return MODE_CONTINUE;
+
+        case MODE_EXCEPTION:
+            // unhandled exception occurred (called by exception handler)
+            // TODO: add exception number to task context and log it here
             LOG(INFO, "unhandled exception occurred at entry + 0x%08lx", ((ULONG) baddr - (ULONG) entry));
-            // TODO: use different return code in this case to prevent the exception handler from restoring the "breakpoint"
-        }
+            print_instr(data);
+            return command_loop();
 
-        print_instr(data);
-        return command_loop();
+        default:
+            LOG(CRIT, "INTERNAL ERROR: unknown mode %d returned by exception handler", mode);
+            return MODE_KILL;
     }
-    else if (mode == MODE_STEP) {
-        print_instr(data);
-        return command_loop();
-    }
-    return 0;
 }
 
 
@@ -327,8 +381,8 @@ int main(int argc, char **argv)
 
     LOG(INFO, "initializing...");
 
-    // allocate trap for breakpoints and install trap handler
-    self->tc_TrapCode = trap_handler;
+    // allocate trap and install exception handler
+    self->tc_TrapCode = exc_handler;
     if (AllocTrap(TRAP_NUM) == -1) {
         LOG(ERROR, "could not allocate trap");
         status = RETURN_ERROR;

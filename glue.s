@@ -6,10 +6,34 @@
  */
 
 
- .text
- .extern _debug_main
-.global _trap_handler
+/*
+ * constants
+ */
+.set TRAP_NUM,          0
+.set TRAP_OPCODE,       0x4e40
+.set EXC_NUM_TRAP,      0x00000020
+.set EXC_NUM_TRACE,     0x00000009
+.set MODE_BREAKPOINT,   0
+.set MODE_RUN,          1
+.set MODE_STEP,         2
+.set MODE_EXCEPTION,    3
+.set MODE_CONTINUE,     4
+.set MODE_RESTORE,      5
+.set MODE_KILL,         6
+
+/* see TaskContext structure in main.c */
+.set tc_reg_pc,  0
+.set tc_reg_sp,  4
+.set tc_reg_sr,  8
+.set tc_reg_d,  10
+.set tc_reg_a,  42
+
+
+.text
+.extern _debug_main
+.global _exc_handler
 .global _run_target
+.global _g_dummy
 
 
 /*
@@ -25,7 +49,7 @@ _run_target:
     move.l      sp, -4(fp)              /* save old stack pointer */
     move.l      12(fp), sp              /* load new stack pointer */
     add.l       16(fp), sp              /* add stack size so it points to end of stack */
-    move.l      fp, -(sp)               /* save frame pointer on new stack */
+    move.l      fp, -(sp)               /* save frame pointer on new stack (so that we can restore the old stack pointer later) */
     move.l      16(fp), -(sp)           /* push stack size onto new stack (AmigaDOS calling convention) */
     move.l      8(fp), a0               /* call entry point of target */
     jsr         (a0)
@@ -38,42 +62,35 @@ _run_target:
 
 
 /*
- * trap handler for breakpoints
+ * general exception handler
  */
-_trap_handler:
+_exc_handler:
     /* branch depending on the exception number */
-    cmp.l       #0x00000021, (sp)
-    beq.s       trace
-    cmp.l       #0x00000009, (sp)
-    beq.s       step
-    bra.s       main                    /* let debug_main() handle breakpoints and any other exceptions */
+    cmp.l       #EXC_NUM_TRAP, (sp)
+    beq.s       exc_trap
+    cmp.l       #EXC_NUM_TRACE, (sp)
+    beq.s       exc_trace
+    bra.w       exc_exc                 /* any other exception */
 
-trace:
-    addq.l      #4, sp                  /* remove trap number from stack  */
-    move.l      #0, ninstr              /* initialize instruction counter */
-    ori.w       #0x8000, (sp)           /* enable trace mode in *user* mode */
-    rte
 
-step:
-    addq.l      #4, sp                  /* remove trap number from stack */
-    addq.l      #1, ninstr              /* increment number of instructions */
-    cmp.l       #2, ninstr
-    beq.s       step_restore
+exc_trap:
+    cmp.l       #MODE_BREAKPOINT, mode
+    beq.s       exc_call_main
     /* fall through */
-step_store:
-    /* number of instructions = 1: PC = instruction at breakpoint => store address */
-    move.l      2(sp), bp_addr
-    rte
-step_restore:
-    /* number of instructions == 2: PC = instruction past breakpoint => disable trace mode and restore breakpoint */
-    andi.w      #0x7fff, (sp)           /* disable trace mode */
-    move.l      a0, -(sp)               /* save A0 */
-    move.l      bp_addr, a0             /* load address of breakpoint */
-    move.w      #0x4e40, (a0)           /* restore breakpoint */
-    move.l      (sp)+, a0               /* restore A0 */
+
+
+exc_restore:
+    /* restore status register from saved context */
+    move.l      a0, -(sp)
+    lea         target_ctx, a0
+    move.w      tc_reg_sr(a0), 8(sp)    /* offset is 4 + 4 because of saved A0 */
+    move.l      (sp)+, a0
+
+    addq.l      #4, sp
     rte
 
-main:
+
+exc_call_main:
     /*
      * save target context - the current stack frame looks like this:
      *
@@ -90,6 +107,7 @@ main:
      * | return address (low word)    |     +8
      * --------------------------------
      */
+    /* TODO: save exception number as well */
     move.l      a0, -(sp)               /* save A0 and A1 because we use them */
     move.l      a1, -(sp)
     lea         target_ctx, a0          /* load base address of struct */
@@ -110,14 +128,38 @@ main:
     addq.l      #4, sp
     rte
 
+
+exc_trace:
+    /* trace exception */
+    addq.l      #1, ninstr
+    cmp.l       #3, ninstr
+    beq.s       exc_trace_call_main
+    /* fall through */
+    addq.l      #4, sp                  /* 1st (MOVE) / 2nd (RTS) instruction => remove trap number and return */
+    rte
+
+exc_trace_call_main:
+    andi.w       #0x78ff, 4(sp)          /* disable trace mode and re-enable interrupts */ 
+    move.l       #MODE_STEP, mode
+    bra.s        exc_call_main           /* 3rd instruction => call debug_main() in the same way as with a breakpoint */
+
+
+exc_exc:
+    /* another exception => just call debug_main() */
+    move.l      #MODE_EXCEPTION, mode
+    bra.s       exc_call_main
+
+
 _debug_stub:
     /* call debug_main() */
+    /* TODO: abort target if mode == MODE_KILL */
     pea         target_ctx              /* push target context address and mode onto stack */
-    move.l      #1, -(sp)
+    move.l      mode, -(sp)
     jsr         _debug_main
     addq.l      #8, sp                  /* remove target context and mode from stack */
+    clr.l       ninstr                  /* reset instruction counter in case we're in single-step mode */
 
-    /* restore all registers */
+    /* restore normal registers */
     lea         target_ctx, a0          /* load base address of struct */
     move.l      (a0), -(sp)             /* push original return address onto stack */
     add.l       #10, a0                 /* move pointer to D0 */
@@ -125,16 +167,16 @@ _debug_stub:
     movem.l     (a0)+, a0-a6            /* restore address registers without A0 (is skipped automatically because it contains the base address) */
     move.l      -28(a0), a0             /* finally restore A0 */
 
-    /*
-     * We trap again to get into supervisor mode so we can set the trace bit and single-step
-     * the next two instructions - the RTS and the original instruction at the breakpoint
-     * address. This necessary to restore the breakpoint.
-     */
-    /* TODO: return flag in D0 to indicate that breakpoint should *not* be restored */
-    trap #1
+    /* trap again to restore the SR which can only be done in supervisor mode */
+    move.l      #MODE_RESTORE, mode
+    trap        #TRAP_NUM
+    move.l      #MODE_BREAKPOINT, mode
+
     rts                                 /* jump to return address by "returning" to it */
 
+
 .data
-    .lcomm target_ctx, 70               /* 70 == sizeof(TaskContext) */
-    .lcomm ninstr, 4
-    .lcomm bp_addr, 4
+    .lcomm mode, 4                      /* mode, initialized with 0 == MODE_BREAKPOINT */
+    .lcomm target_ctx, 70               /* target context, 70 == sizeof(TaskContext) */
+    .lcomm ninstr, 4                    /* number of instructions for single-step mode */
+    .comm _g_dummy, 4
