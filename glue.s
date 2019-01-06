@@ -63,6 +63,21 @@ _run_target:
 
 /*
  * general exception handler
+ *
+ * An exception stack frame looks like this:
+ *
+ * 15                             0
+ * --------------------------------
+ * | exception number (high word) |     +0
+ * --------------------------------
+ * | exception number (low word)  |     +2
+ * --------------------------------
+ * | status register              |     +4
+ * --------------------------------
+ * | return address (high word)   |     +6
+ * --------------------------------
+ * | return address (low word)    |     +8
+ * --------------------------------
  */
 _exc_handler:
     /* branch depending on the exception number */
@@ -80,33 +95,20 @@ exc_trap:
 
 
 exc_restore:
-    /* restore status register from saved context */
-    move.l      a0, -(sp)
-    lea         target_ctx, a0
-    move.w      tc_reg_sr(a0), 8(sp)    /* offset is 4 + 4 because of saved A0 */
-    move.l      (sp)+, a0
-
-    addq.l      #4, sp
+    /* restore all registers and resume target */
+    addq.l      #4, sp                  /* remove trap number from stack */
+    lea         target_ctx, a0          /* load base address of struct */
+    move.l      tc_reg_pc(a0), 2(sp)    /* replace return address on the stack with target PC */
+    move.w      tc_reg_sr(a0), (sp)     /* restore status register */
+    add.l       #10, a0                 /* move pointer to D0 */
+    movem.l     (a0)+, d0-d7            /* restore data registers */
+    movem.l     (a0)+, a0-a6            /* restore address registers without A0 (is skipped automatically because it contains the base address) */
+    move.l      -28(a0), a0             /* finally restore A0 */
+    move.l      #MODE_BREAKPOINT, mode  /* restore mode for next breakpoint */
     rte
 
 
 exc_call_main:
-    /*
-     * save target context - the current stack frame looks like this:
-     *
-     * 15                             0
-     * --------------------------------
-     * | exception number (high word) |     +0
-     * --------------------------------
-     * | exception number (low word)  |     +2
-     * --------------------------------
-     * | status register              |     +4
-     * --------------------------------
-     * | return address (high word)   |     +6
-     * --------------------------------
-     * | return address (low word)    |     +8
-     * --------------------------------
-     */
     /* TODO: save exception number as well */
     move.l      a0, -(sp)               /* save A0 and A1 because we use them */
     move.l      a1, -(sp)
@@ -121,7 +123,7 @@ exc_call_main:
     move.l      (sp)+, 32(a0)
 
     /* change return address on the stack so that it points to our stub routine below */
-    lea         _debug_stub, a0         /* load address of stub routine */
+    lea         debug_stub, a0          /* load address of stub routine */
     move.l      a0, 6(sp)               /* replace return address with address of stub routine */
 
     /* remove trap number from stack and "return" to stub routine */
@@ -131,17 +133,9 @@ exc_call_main:
 
 exc_trace:
     /* trace exception */
-    addq.l      #1, ninstr
-    cmp.l       #3, ninstr
-    beq.s       exc_trace_call_main
-    /* fall through */
-    addq.l      #4, sp                  /* 1st (MOVE) / 2nd (RTS) instruction => remove trap number and return */
-    rte
-
-exc_trace_call_main:
     andi.w       #0x78ff, 4(sp)          /* disable trace mode and re-enable interrupts */ 
     move.l       #MODE_STEP, mode
-    bra.s        exc_call_main           /* 3rd instruction => call debug_main() in the same way as with a breakpoint */
+    bra.s        exc_call_main           /* call debug_main() in the same way as with a breakpoint */
 
 
 exc_exc:
@@ -150,33 +144,21 @@ exc_exc:
     bra.s       exc_call_main
 
 
-_debug_stub:
+debug_stub:
     /* call debug_main() */
     /* TODO: abort target if mode == MODE_KILL */
     pea         target_ctx              /* push target context address and mode onto stack */
     move.l      mode, -(sp)
     jsr         _debug_main
     addq.l      #8, sp                  /* remove target context and mode from stack */
-    clr.l       ninstr                  /* reset instruction counter in case we're in single-step mode */
 
-    /* restore normal registers */
-    lea         target_ctx, a0          /* load base address of struct */
-    move.l      (a0), -(sp)             /* push original return address onto stack */
-    add.l       #10, a0                 /* move pointer to D0 */
-    movem.l     (a0)+, d0-d7            /* restore data registers */
-    movem.l     (a0)+, a0-a6            /* restore address registers without A0 (is skipped automatically because it contains the base address) */
-    move.l      -28(a0), a0             /* finally restore A0 */
-
-    /* trap again to restore the SR which can only be done in supervisor mode */
+    /* trap again to restore all registers, including the SR which can only be done in
+     * supervisor mode, and resume target */
     move.l      #MODE_RESTORE, mode
     trap        #TRAP_NUM
-    move.l      #MODE_BREAKPOINT, mode
-
-    rts                                 /* jump to return address by "returning" to it */
 
 
 .data
     .lcomm mode, 4                      /* mode, initialized with 0 == MODE_BREAKPOINT */
     .lcomm target_ctx, 70               /* target context, 70 == sizeof(TaskContext) */
-    .lcomm ninstr, 4                    /* number of instructions for single-step mode */
     .comm _g_dummy, 4
