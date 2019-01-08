@@ -12,6 +12,9 @@ clean:
 	rm -f *.o m68k.h m68kdasm.c cwdebug
 	$(MAKE) --directory=examples clean
 
+history:
+	git log --format="format:%h %ci %s"
+
 %.h: %.h.patch
 	rm -f $@ && wget -q https://raw.githubusercontent.com/kstenerud/Musashi/master/$@
 	patch -p0 < $@.patch
