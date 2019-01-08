@@ -249,8 +249,10 @@ int debug_main(int mode, APTR data)
                     // of ours => value 0xa700 is ORed with the SR.
                     // TODO: just continue in case of a deleted breakpoint
                     stepping = 0;
-                    if (mode == MODE_BREAKPOINT)
-                        ((TaskContext *) data)->tc_reg_sr |= 0x8700;
+                    if (mode == MODE_BREAKPOINT) {
+                        ((TaskContext *) data)->tc_reg_sr &= 0xbfff;    // clear T0
+                        ((TaskContext *) data)->tc_reg_sr |= 0x8700;    // set T1 and interrupt mask
+                    }
                     return MODE_CONTINUE;
 
                 case 's':
@@ -259,7 +261,8 @@ int debug_main(int mode, APTR data)
                         break;
                     }
                     stepping = 1;
-                    ((TaskContext *) data)->tc_reg_sr |= 0x8700;
+                    ((TaskContext *) data)->tc_reg_sr &= 0xbfff;    // clear T0
+                    ((TaskContext *) data)->tc_reg_sr |= 0x8700;    // set T1 and interrupt mask
                     return MODE_CONTINUE;
 
                 case 'i':
@@ -339,7 +342,7 @@ int debug_main(int mode, APTR data)
         case MODE_STEP:
             if (prev_bpoint) {
                 // previous breakpoint needs to be restored
-                LOG(DEBUG, "restoring breakpoint #%ld at entry + 0x%08lx", prev_bpoint->bp_num, ((ULONG) baddr - (ULONG) entry));
+                LOG(DEBUG, "restoring breakpoint #%ld at entry + 0x%08lx", prev_bpoint->bp_num, ((ULONG) prev_bpoint->bp_addr - (ULONG) entry));
                 *((USHORT *) prev_bpoint->bp_addr) = TRAP_OPCODE;
                 prev_bpoint = NULL;
             }
@@ -353,8 +356,9 @@ int debug_main(int mode, APTR data)
 
         case MODE_EXCEPTION:
             // unhandled exception occurred (called by exception handler)
-            // TODO: add exception number to task context and log it here
-            LOG(INFO, "unhandled exception occurred at entry + 0x%08lx", ((ULONG) baddr - (ULONG) entry));
+            LOG(INFO, "unhandled exception #%ld occurred at entry + 0x%08lx",
+                ((TaskContext *) data)->tc_exc_num,
+                ((ULONG) ((TaskContext *) data)->tc_reg_pc - (ULONG) entry));
             print_instr(data);
             return command_loop();
 
@@ -395,6 +399,8 @@ int main(int argc, char **argv)
 
     // hand over control to debug_main() which does all the work
     status = debug_main(MODE_RUN, argv[1]);
+
+    // TODO: remove exception handler
 
     FreeTrap(TRAP_NUM);
 ERROR_NO_TRAP:
