@@ -229,7 +229,8 @@ int debug_main(int mode, APTR data)
                         break;
                     }
                     LOG(INFO, "exiting...");
-                    // TODO: free breakpoints
+                    while ((bpoint = (BreakPoint *) RemHead(&bpoints)))
+                        FreeVec(bpoint);
                     FreeVec(stack);
                     UnLoadSeg(seglist);
                     return RETURN_OK;
@@ -243,10 +244,6 @@ int debug_main(int mode, APTR data)
                     // If we continue from a breakpoint, it has to be restored first, so we
                     // single-step the original instruction at the breakpoint and remember
                     // to restore the breakpoint afterwards (see code for MODE_STEP below).
-                    // In trace mode, *all* interrupts must be disabled (except for the NMI),
-                    // otherwise OS code could be executed while the trace bit is still set,
-                    // which would cause the OS exception handler (an alert) to be executed instead
-                    // of ours => value 0xa700 is ORed with the SR.
                     // TODO: just continue in case of a deleted breakpoint
                     stepping = 0;
                     if (mode == MODE_BREAKPOINT) {
@@ -256,11 +253,16 @@ int debug_main(int mode, APTR data)
                     return MODE_CONTINUE;
 
                 case 's':
+                case '\n':
                     if (!running) {
                         LOG(ERROR, "target is not yet running");
                         break;
                     }
                     stepping = 1;
+                    // In trace mode, *all* interrupts must be disabled (except for the NMI),
+                    // otherwise OS code could be executed while the trace bit is still set,
+                    // which would cause the OS exception handler (an alert) to be executed instead
+                    // of ours => value 0x8700 is ORed with the SR.
                     ((TaskContext *) data)->tc_reg_sr &= 0xbfff;    // clear T0
                     ((TaskContext *) data)->tc_reg_sr |= 0x8700;    // set T1 and interrupt mask
                     return MODE_CONTINUE;
@@ -373,6 +375,7 @@ int main(int argc, char **argv)
 {
     int                 status = RETURN_OK;         // exit status
     struct Task         *self = FindTask(NULL);     // pointer to this task
+    APTR                old_exc_handler;            // previous execption handler
 
     // setup logging
     g_logfh = Output();
@@ -387,6 +390,7 @@ int main(int argc, char **argv)
     LOG(INFO, "initializing...");
 
     // allocate trap and install exception handler
+    old_exc_handler   = self->tc_TrapCode;
     self->tc_TrapCode = exc_handler;
     if (AllocTrap(TRAP_NUM) == -1) {
         LOG(ERROR, "could not allocate trap");
@@ -400,10 +404,9 @@ int main(int argc, char **argv)
     // hand over control to debug_main() which does all the work
     status = debug_main(MODE_RUN, argv[1]);
 
-    // TODO: remove exception handler
-
     FreeTrap(TRAP_NUM);
 ERROR_NO_TRAP:
+    self->tc_TrapCode = old_exc_handler;
 ERROR_WRONG_USAGE:
     return status;
 }
