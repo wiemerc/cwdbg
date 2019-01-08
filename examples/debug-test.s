@@ -39,9 +39,8 @@ set_loop_end_a:
 set_loop_end_d:
     movem.l     (sp)+, d0-d7            /* pop all data registers */
 
-    /* trap to debugger, push defined value onto stack before */
+    /* push defined value onto stack */
     move.l      #0xdeadbeef, -(sp)
-    trap        #0
 
     /* check if all registers contain the previous values */
     movem.l     d0-d7/a0-a6, -(sp)      /* push all registers onto stack */
