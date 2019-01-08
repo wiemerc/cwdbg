@@ -1,6 +1,7 @@
 /*
  * glue.s - part of CWDebug, a source-level debugger for AmigaOS
- *          This file contain two assembly routines that "glue" the debugger to the target.
+ *          This file contains the exception handler and a routine that starts the target,
+ *          that "glue" the debugger to the target.
  *
  * Copyright(C) 2018, 2019 Constantin Wiemer
  */
@@ -9,24 +10,26 @@
 /*
  * constants
  */
-.set TRAP_NUM,          0
-.set TRAP_OPCODE,       0x4e40
-.set EXC_NUM_TRAP,      0x00000020
-.set EXC_NUM_TRACE,     0x00000009
-.set MODE_BREAKPOINT,   0
-.set MODE_RUN,          1
-.set MODE_STEP,         2
-.set MODE_EXCEPTION,    3
-.set MODE_CONTINUE,     4
-.set MODE_RESTORE,      5
-.set MODE_KILL,         6
+.set TRAP_NUM_BP,           0
+.set TRAP_NUM_RESTORE,      1
+.set EXC_NUM_TRAP_BP,       0x00000020
+.set EXC_NUM_TRAP_RESTORE,  0x00000021
+.set EXC_NUM_TRACE,         0x00000009
+.set MODE_BREAKPOINT,       0
+.set MODE_RUN,              1
+.set MODE_STEP,             2
+.set MODE_EXCEPTION,        3
+.set MODE_CONTINUE,         4
+.set MODE_RESTORE,          5
+.set MODE_KILL,             6
 
 /* see TaskContext structure in main.c */
-.set tc_reg_pc,  0
-.set tc_reg_sp,  4
+.set tc_reg_sp,  0
+.set tc_exc_num, 4
 .set tc_reg_sr,  8
-.set tc_reg_d,  10
-.set tc_reg_a,  42
+.set tc_reg_pc, 10
+.set tc_reg_d,  14
+.set tc_reg_a,  46
 
 
 .text
@@ -80,62 +83,56 @@ _run_target:
  * --------------------------------
  */
 _exc_handler:
+    move.l      #MODE_BREAKPOINT, mode  /* default mode, changed later if necessary */
     /* branch depending on the exception number */
-    cmp.l       #EXC_NUM_TRAP, (sp)
-    beq.s       exc_trap
+    cmp.l       #EXC_NUM_TRAP_BP, (sp)
+    beq.s       exc_call_main
+    cmp.l       #EXC_NUM_TRAP_RESTORE, (sp)
+    beq.s       exc_restore
     cmp.l       #EXC_NUM_TRACE, (sp)
     beq.s       exc_trace
-    bra.w       exc_exc                 /* any other exception */
-
-
-exc_trap:
-    cmp.l       #MODE_BREAKPOINT, mode
-    beq.s       exc_call_main
-    /* fall through */
+    bra.w       exc_exc                         /* any other exception */
 
 
 exc_restore:
     /* restore all registers and resume target */
-    addq.l      #4, sp                  /* remove trap number from stack */
-    lea         target_ctx, a0          /* load base address of struct */
-    move.l      tc_reg_pc(a0), 2(sp)    /* replace return address on the stack with target PC */
-    move.w      tc_reg_sr(a0), (sp)     /* restore status register */
-    add.l       #10, a0                 /* move pointer to D0 */
-    movem.l     (a0)+, d0-d7            /* restore data registers */
-    movem.l     (a0)+, a0-a6            /* restore address registers without A0 (is skipped automatically because it contains the base address) */
-    move.l      -28(a0), a0             /* finally restore A0 */
-    move.l      #MODE_BREAKPOINT, mode  /* restore mode for next breakpoint */
+    add.l       #10, sp                         /* remove trap number, status register and return address from stack */
+    lea         target_tc, a0                   /* load base address of struct */
+    move.l      tc_reg_pc(a0), -(sp)            /* push saved target PC and status register onto stack */
+    move.w      tc_reg_sr(a0), -(sp)
+    add.l       #tc_reg_d, a0                   /* move pointer to D0 */
+    movem.l     (a0)+, d0-d7                    /* restore data registers */
+    movem.l     (a0)+, a0-a6                    /* restore address registers without A0 (is skipped automatically because it contains the base address) */
+    lea         target_tc + tc_reg_a, a0        /* finally restore A0 */
+    move.l      (a0), a0
     rte
 
 
 exc_call_main:
-    /* TODO: save exception number as well */
-    move.l      a0, -(sp)               /* save A0 and A1 because we use them */
-    move.l      a1, -(sp)
-    lea         target_ctx, a0          /* load base address of struct */
-    move.l      14(sp), (a0)+           /* PC, offset is 6 + 8 because of saved registers */
-    move.l      usp, a1
-    move.l      a1, (a0)+               /* SP */
-    move.w      12(sp), (a0)+           /* SR, offset is 4 + 8 because of saved registers */
-    add.l       #60, a0                 /* move pointer one longword beyond the struct for the pre-decrement mode to work */
-    movem.l     d0-d7/a0-a6, -(a0)      /* save registers */
-    move.l      (sp)+, 36(a0)           /* finally store saved values of A0 and A1 */
-    move.l      (sp)+, 32(a0)
-
-    /* change return address on the stack so that it points to our stub routine below */
-    lea         debug_stub, a0          /* load address of stub routine */
-    move.l      a0, 6(sp)               /* replace return address with address of stub routine */
-
-    /* remove trap number from stack and "return" to stub routine */
-    addq.l      #4, sp
+    move.l      a0, target_tc + tc_reg_a        /* save A0 first so we can use it as base / scratch register */
+    move.l      usp, a0                         /* push user SP onto our stack */
+    move.l      a0, -(sp)
+    /* now pop all items from the stack and save them in the target's task context */
+    lea         target_tc, a0                   /* load base address of struct */
+    move.l      (sp)+, (a0)+                    /* SP */
+    move.l      (sp)+, (a0)+                    /* exception number */
+    move.w      (sp)+, (a0)+                    /* SR */
+    move.l      (sp)+, (a0)+                    /* PC (return address) */
+    lea         target_tc + tc_reg_d + 32, a0   /* move pointer one longword beyond data registers for the pre-decrement mode to work */
+    movem.l     d0-d7, -(a0)                    /* save data registers */
+    lea         target_tc + tc_reg_a + 28, a0   /* move pointer one longword beyond address registers */
+    movem.l     a1-a6, -(a0)                    /* save address registers without A0 because it has already been saved */
+    /* push again return address (our stub routine) and a "clean" SR onto stack and "return" to stub routine */
+    pea         debug_stub
+    move.w      #0x0000, -(sp)
     rte
 
 
 exc_trace:
     /* trace exception */
-    andi.w       #0x78ff, 4(sp)          /* disable trace mode and re-enable interrupts */ 
-    move.l       #MODE_STEP, mode
-    bra.s        exc_call_main           /* call debug_main() in the same way as with a breakpoint */
+    andi.w      #0x78ff, 4(sp)                  /* disable trace mode and re-enable interrupts */ 
+    move.l      #MODE_STEP, mode
+    bra.s       exc_call_main                   /* call debug_main() in the same way as with a breakpoint */
 
 
 exc_exc:
@@ -147,18 +144,17 @@ exc_exc:
 debug_stub:
     /* call debug_main() */
     /* TODO: abort target if mode == MODE_KILL */
-    pea         target_ctx              /* push target context address and mode onto stack */
+    pea         target_tc                       /* push target context address and mode onto stack */
     move.l      mode, -(sp)
     jsr         _debug_main
-    addq.l      #8, sp                  /* remove target context and mode from stack */
+    addq.l      #8, sp                          /* remove target context and mode from stack */
 
-    /* trap again to restore all registers, including the SR which can only be done in
+    /* trap again to restore all registers, including the SR, which can only be done in
      * supervisor mode, and resume target */
-    move.l      #MODE_RESTORE, mode
-    trap        #TRAP_NUM
+    trap        #TRAP_NUM_RESTORE
 
 
 .data
-    .lcomm mode, 4                      /* mode, initialized with 0 == MODE_BREAKPOINT */
-    .lcomm target_ctx, 70               /* target context, 70 == sizeof(TaskContext) */
+    .lcomm mode, 4                              /* mode, initialized with 0 == MODE_BREAKPOINT */
+    .lcomm target_tc, 74                        /* target context, 74 == sizeof(TaskContext) */
     .comm _g_dummy, 4

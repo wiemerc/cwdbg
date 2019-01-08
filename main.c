@@ -36,9 +36,10 @@
  * type definitions
  */
 typedef struct {
-    APTR   tc_reg_pc;
     APTR   tc_reg_sp;
+    ULONG  tc_exc_num;
     USHORT tc_reg_sr;
+    APTR   tc_reg_pc;
     ULONG  tc_reg_d[8];
     ULONG  tc_reg_a[7];                  // without A7 = SP
 } TaskContext;
