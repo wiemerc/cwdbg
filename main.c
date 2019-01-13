@@ -170,27 +170,38 @@ int debug_main(int mode, APTR data)
     // nested function to save passing state (has access to all local variables in debug_main())
     int command_loop()
     {
-        UBYTE               cmd[64];                // command buffer
-        UBYTE               *args;                  // pointer to command arguments
+        char                cmd[64];                // command buffer
+        char                *args[5];               // argument vector
+        char                *token;                 // pointer to one token
+        UBYTE               nargs;                  // number of arguments
         ULONG               boffset;                // offset from entry point
         APTR                maddr;                  // address of memory block to print
         ULONG               msize;                  // size of memory block
 
         while(1) {
+            // read command from standard input (and ignore errors and commands >= 64 characters)
             Write(Output(), "> ", 2);
             WaitForChar(Input(), 0xffffffff);
-            // TODO: implement real parser with generic argument vector
-            Read(Input(), cmd, 64);
-            args = cmd + 1;
+            cmd[Read(Input(), cmd, 64)] = 0;
+
+            // split command into tokens, up to 3
+            token = strtok(cmd, " \t");
+            nargs = 0;
+            while ((nargs < 3) && (token != NULL)) {
+                args[nargs] = token;
+                token = strtok(NULL, " \t");
+                ++nargs;
+            }
+            args[nargs] = NULL;
 
             // commands are very similar to the ones in GDB
-            switch (cmd[0]) {
+            switch (args[0][0]) {
                 case 'r':
                     if (running) {
                         LOG(ERROR, "target is already running");
                         break;
                     }
-                    // TODO: reset breakpoint count
+                    // TODO: reset breakpoint count for each run
                     LOG(INFO, "starting target at address 0x%08lx with stack pointer at 0x%08lx", (ULONG) entry, (ULONG) stack + STACK_SIZE);
                     running = 1;
                     status = run_target(entry, stack, STACK_SIZE);
@@ -200,7 +211,11 @@ int debug_main(int mode, APTR data)
                     break;
 
                 case 'b':
-                    if (sscanf(args, "%lx", &boffset) == 0) {
+                    if (nargs != 2) {
+                        LOG(ERROR, "command 'b' requires an address");
+                        break;
+                    }
+                    if (sscanf(args[1], "%lx", &boffset) == 0) {
                         LOG(ERROR, "invalid format for breakpoint offset");
                         break;
                     }
@@ -272,13 +287,28 @@ int debug_main(int mode, APTR data)
                         LOG(ERROR, "target is not yet running");
                         break;
                     }
-                    // TODO: implement separate commands 'i r' and 'i s'
-                    print_registers(data);
-                    print_stack(data);
+                    if (nargs != 2) {
+                        LOG(ERROR, "command 'i' requires a subcommand, either 'r' or 's'");
+                        break;
+                    }
+                    switch (args[1][0]) {
+                        case 'r':
+                            print_registers(data);
+                            break;
+                        case 's':
+                            print_stack(data);
+                            break;
+                        default:
+                            LOG(ERROR, "unknown command 'i %c'", args[1][0]);
+                    }
                     break;
 
                 case 'p':
-                    if (sscanf(args, "%p %ld", &maddr, &msize) == 0) {
+                    if (nargs != 3) {
+                        LOG(ERROR, "command 'p' requires address and size");
+                        break;
+                    }
+                    if ((sscanf(args[1], "%p", &maddr) == 0) || (sscanf(args[2], "%ld", &msize) == 0)) {
                         LOG(ERROR, "invalid format for address / size");
                         break;
                     }
@@ -290,7 +320,7 @@ int debug_main(int mode, APTR data)
                     break;
 
                 default:
-                    LOG(ERROR, "unknown command '%c'", cmd[0]);
+                    LOG(ERROR, "unknown command '%c'", args[0][0]);
                     break;
             }
         }
