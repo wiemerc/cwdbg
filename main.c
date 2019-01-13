@@ -201,7 +201,15 @@ int debug_main(int mode, APTR data)
                         LOG(ERROR, "target is already running");
                         break;
                     }
-                    // TODO: reset breakpoint count for each run
+
+                    // reset breakpoint counters for each run
+                    if (!IsListEmpty(&bpoints)) {
+                        for (bpoint = (BreakPoint *) bpoints.lh_Head;
+                            bpoint != (BreakPoint *) bpoints.lh_Tail;
+                            bpoint = (BreakPoint *) bpoint->bp_node.ln_Succ)
+                            bpoint->bp_count = 0;
+                    }
+
                     LOG(INFO, "starting target at address 0x%08lx with stack pointer at 0x%08lx", (ULONG) entry, (ULONG) stack + STACK_SIZE);
                     running = 1;
                     status = run_target(entry, stack, STACK_SIZE);
