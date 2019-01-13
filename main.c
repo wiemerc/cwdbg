@@ -99,9 +99,15 @@ static void print_registers(const TaskContext *ctx)
 }
 
 
-static void print_stack(const TaskContext *ctx)
+static void print_stack(const TaskContext *ctx, APTR initial_sp)
 {
-    // TODO
+    UBYTE i;
+    APTR  sp;
+
+    printf("initial SP = 0x%08lx, current SP = 0x%08lx\n", (ULONG) initial_sp, (ULONG) ctx->tc_reg_sp);
+    for (i = 1, sp = ctx->tc_reg_sp; (i <= 10) && (sp <= initial_sp); ++i, sp += 4) {
+        printf("0x%08lx:\t0x%08lx\n", (ULONG) sp, *((ULONG *) sp));
+    }
 }
 
 
@@ -153,14 +159,14 @@ static BreakPoint *find_bpoint_by_addr(struct List *bpoints, APTR baddr)
 int debug_main(int mode, APTR data)
 {
     // regular local variables
-    int                 status;                     // exit status
-    BPTR                seglist;                    // segment list of target
-    APTR                stack;                      // stack for target
+    int                 status;                     // exit status of target
     BreakPoint          *bpoint;                    // current breakpoint
     APTR                baddr;                      // address of current breakpoint
 
     // variables that need to survive accross calls
+    static BPTR         seglist;                    // segment list of target
     static int          (*entry)();                 // entry point of target
+    static APTR         stack;                      // stack for target
     static struct List  bpoints;                    // list of breakpoints
     static BreakPoint   *prev_bpoint = NULL;        // previous breakpoint that needs to be restored
     static int          running = 0;                // target running?
@@ -210,7 +216,7 @@ int debug_main(int mode, APTR data)
                             bpoint->bp_count = 0;
                     }
 
-                    LOG(INFO, "starting target at address 0x%08lx with stack pointer at 0x%08lx", (ULONG) entry, (ULONG) stack + STACK_SIZE);
+                    LOG(INFO, "starting target at address 0x%08lx with inital stack pointer at 0x%08lx", (ULONG) entry, (ULONG) stack + STACK_SIZE);
                     running = 1;
                     status = run_target(entry, stack, STACK_SIZE);
                     running = 0;
@@ -304,7 +310,7 @@ int debug_main(int mode, APTR data)
                             print_registers(data);
                             break;
                         case 's':
-                            print_stack(data);
+                            print_stack(data, stack + STACK_SIZE);
                             break;
                         default:
                             LOG(ERROR, "unknown command 'i %c'", args[1][0]);
