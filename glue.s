@@ -83,6 +83,16 @@ _run_target:
  * --------------------------------
  */
 _exc_handler:
+    ori.w       #0x0700, sr                     /* disable interrupts in supervisor mode */
+
+    /* log exception via serial port */
+    movem.l     d0-d1/a0-a1, -(sp)              /* save registers that are modified by _kprintf */
+    move.l      16(sp), -(sp)                   /* exception number */
+    move.l      #msg, -(sp)                     /* format string */
+    jsr         _kprintf
+    add.l       #8, sp
+    movem.l     (sp)+, d0-d1/a0-a1
+
     move.l      #MODE_BREAKPOINT, mode  /* default mode, changed later if necessary */
     /* branch depending on the exception number */
     cmp.l       #EXC_NUM_TRAP_BP, (sp)
@@ -130,7 +140,7 @@ exc_call_main:
 
 exc_trace:
     /* trace exception */
-    andi.w      #0x78ff, 4(sp)                  /* disable trace mode and re-enable interrupts */ 
+    andi.w      #0x78ff, 4(sp)                  /* disable trace mode and re-enable interrupts in user mode */
     move.l      #MODE_STEP, mode
     bra.s       exc_call_main                   /* call debug_main() in the same way as with a breakpoint */
 
@@ -158,3 +168,4 @@ debug_stub:
     .lcomm mode, 4                              /* mode, initialized with 0 == MODE_BREAKPOINT */
     .lcomm target_tc, 74                        /* target context, 74 == sizeof(TaskContext) */
     .comm _g_dummy, 4
+    msg:        .asciz "exception #%ld occurred\n"

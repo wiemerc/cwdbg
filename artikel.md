@@ -8,7 +8,7 @@ Das Einlesen ist tatsächlich nicht so schwierig (mit ein bisschen Spicken im Qu
 
 
 ### Disassembler
-Capstone (zum Disassemblieren) lässt sich weder mit dem GCC noch mit dem VBCC für den Amiga kompiliere(Clang für macOS funktioniert), Capstone nutzt aber für M68k auch nur den Code von Musashi, vielleicht kann ich den direkt verwenden
+Capstone (zum Disassemblieren) lässt sich weder mit dem GCC noch mit dem VBCC für den Amiga compilieren (Clang für macOS funktioniert), Capstone nutzt aber für M68k auch nur den Code von Musashi, vielleicht kann ich den direkt verwenden
 
 Integration war ganz einfach, man braucht nur zwei Dateien patchen.
 
@@ -30,18 +30,18 @@ Neuer Ansatz: Trap Handler setzt Rücksprungadresse im Exception Stack Frame auf
 
 Statusregister muss im Supervisor Mode wiederhergestellt werden und danach muss *direkt* in das Target zurückgesprungen werden. Jede Anweisung im User Mode könnte das Statusregister schon wieder verändern, auch z. B. ein move.
 
-Sporadisch kommt es immer noch zu Abstürzen (Exception #9 = Trace), im Einzelschrittmodus werden Anweisungen mehrfach ausgeführt (nur Branch-Anweisungen) oder Breakpoints werden "übersprungen", Ursache unbekannt.
+Auch im Supervisor Mode müssen die Interrupts gesperrt werden, sonst kommt es zu verschiedenen, nicht reproduzierbaren Fehlern.
+
+Sporadisch werden im Einzelschrittmodus (auf Assembler-Ebene) Anweisungen "übersprungen", anscheinend im Zusammenhang mit (immer nach?) Branch-Anweisungen. Nicht reproduzierbar, Ursache unbekannt, vielleicht ein Fehler in Musashi.
 
 
 ## Meilensteine
-* Projektstart: 28.10.2018
-* Einlesen und Auswerten der STABS in Python: 10.11.2018
-* Laden eines Programms mit LoadSeg(), Ausführen, Setzen von Breakpoints, schrittweises Ausführen, Disassembler, Anzeigen von Registern und Stack: 13.01.2019
-* Remote Debugging mit Client in Python, Kommunikation über serielle Schnittstelle: 
-* Schrittweises Ausführen und Setzen von Breakpoints auf C-Ebene: 
-* Ausgeben von Variablen: 
-* ARexx Port und Integration mit Editor (DME? XDME? GoldED? CygnusEd?)?
-* GUI?
+* 28.10.2018:   Projektstart
+* 10.11.2018:   Einlesen und Auswerten der STABS in Python
+* 13.01.2019:   Laden eines Programms mit LoadSeg(), Ausführen, Setzen von Breakpoints, schrittweises Ausführen, Disassembler, Anzeigen von Registern und Stack
+* ??.??.2019:   Remote Debugging mit Client in Python, Kommunikation über serielle Schnittstelle
+* ??.??.2019:   Schrittweises Ausführen und Setzen von Breakpoints auf C-Ebene
+* ??.??.2019:   Ausgeben von Variablen
 
 
 ## Links
