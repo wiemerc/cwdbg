@@ -29,12 +29,14 @@ m68kdasm.o: m68kdasm.c m68k.h
 
 main.o: main.c util.h m68k.h
 
+serio.o: serio.c serio.h util.h
+
 util.o: util.c util.h
 
 glue.o: glue.s
 	$(AS) -o $@ $^
 
-cwdebug: debugger.o m68kdasm.o main.o util.o glue.o
+cwdebug: debugger.o m68kdasm.o main.o serio.o util.o glue.o
 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 examples:

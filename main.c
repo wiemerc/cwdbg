@@ -15,6 +15,7 @@
 
 #include "debugger.h"
 #include "m68k.h"
+#include "serio.h"
 #include "util.h"
 
 
@@ -36,6 +37,8 @@ int main(int argc, char **argv)
     APTR                old_exc_handler;            // previous execption handler
 
     // setup logging
+    // TODO: get rid of g_logfh
+    // TODO: specify log level via command-line switch
     g_logfh = Output();
     g_loglevel = DEBUG;
 
@@ -59,9 +62,21 @@ int main(int argc, char **argv)
     // initialize disassembler routines
     m68k_build_opcode_table();
 
+    // initialize serial IO
+    if (serio_init() == DOSFALSE) {
+        LOG(ERROR, "could not initialize serial IO");
+        status = RETURN_ERROR;
+        goto ERROR_NO_SERIAL_IO;
+    }
+    else {
+        LOG(INFO, "serial IO initialized");
+    }
+
     // hand over control to debug_main() which does all the work
     status = debug_main(MODE_RUN, argv[1]);
 
+    serio_exit();
+ERROR_NO_SERIAL_IO:
     FreeTrap(TRAP_NUM);
 ERROR_NO_TRAP:
     self->tc_TrapCode = old_exc_handler;

@@ -6,6 +6,7 @@
 
 
 #include "debugger.h"
+#include "serio.h"
 
 
 extern int run_target(int (*)(), APTR, ULONG);
@@ -105,6 +106,7 @@ static BreakPoint *find_bpoint_by_addr(struct List *bpoints, APTR baddr)
 int debug_main(int mode, APTR data)
 {
     // regular local variables
+    Buffer              *p_frame;
     int                 status;                     // exit status of target
     BreakPoint          *bpoint;                    // current breakpoint
     APTR                baddr;                      // address of current breakpoint
@@ -290,6 +292,10 @@ int debug_main(int mode, APTR data)
     switch (mode) {
         case MODE_RUN:
             // target is not yet running (called by main())
+            p_frame = create_buffer(MAX_BUFFER_SIZE);
+            LOG(INFO, "waiting for host to connect...");
+            recv_slip_frame(p_frame);
+
             // load target
             if ((seglist = LoadSeg(data)) == NULL) {
                 LOG(ERROR, "could not load target: %ld", IoErr());
