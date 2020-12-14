@@ -23,6 +23,10 @@ history:
 	rm -f $@ && wget -q https://raw.githubusercontent.com/kstenerud/Musashi/master/$@
 	patch -p0 < $@.patch
 
+debugger.o: debugger.c debugger.h util.h
+
+m68kdasm.o: m68kdasm.c m68k.h
+
 main.o: main.c util.h m68k.h
 
 util.o: util.c util.h
@@ -30,9 +34,7 @@ util.o: util.c util.h
 glue.o: glue.s
 	$(AS) -o $@ $^
 
-m68kdasm.o: m68kdasm.c m68k.h
-
-cwdebug: main.o util.o glue.o m68kdasm.o
+cwdebug: debugger.o m68kdasm.o main.o util.o glue.o
 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 examples:

@@ -32,6 +32,7 @@ extern char  g_logmsg[256];
 #define WARN  30
 #define ERROR 40
 #define CRIT  50
+// TODO: rewrite as function with vsprintf()
 #define LOG(level, fmt, ...)                                 \
 {                                                            \
     if (level >= g_loglevel) {                               \
