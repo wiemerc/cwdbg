@@ -50,10 +50,21 @@ typedef struct {
 typedef struct {
     struct Node  bp_node;
     ULONG        bp_num;
-    APTR         bp_addr;
-    USHORT       bp_opcode;
-    ULONG        bp_count;
+    APTR         bp_addr;                // address in code segment
+    USHORT       bp_opcode;              // original opcode at this address
+    ULONG        bp_count;               // number of times it has been hit
 } BreakPoint;
+
+typedef struct {
+    BPTR         ds_p_seglist;           // segment list of target
+    int          (*ds_p_entry)();        // entry point of target
+    APTR         ds_p_stack;             // stack for target
+    int          ds_status;              // exit status of target
+    struct List  ds_bpoints;             // list of breakpoints
+    BreakPoint   *ds_p_prev_bpoint;      // previous breakpoint that needs to be restored
+    int          ds_f_running;           // target running?
+    int          ds_f_stepping;          // in single-step mode?
+} DebuggerState;
 
 
 /*
