@@ -73,7 +73,7 @@ int main(int argc, char **argv)
     }
 
     // hand over control to debug_main() which does all the work
-    status = debug_main(MODE_RUN, argv[1]);
+    status = load_and_init_target(argv[1]);
 
     serio_exit();
 ERROR_NO_SERIAL_IO:

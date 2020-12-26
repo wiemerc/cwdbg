@@ -1,5 +1,5 @@
-#ifndef CWNET_DEBUGGER_H
-#define CWNET_DEBUGGER_H
+#ifndef CWDEBUG_DEBUGGER_H
+#define CWDEBUG_DEBUGGER_H
 /*
  * debugger.h - part of CWDebug, a source-level debugger for the AmigaOS
  *
@@ -70,6 +70,9 @@ typedef struct {
 /*
  * exported functions
  */
-int debug_main(int mode, APTR data);
+int load_and_init_target(const char *p_program_path);
+int handle_breakpoint(TaskContext *p_task_ctx);
+int handle_single_step(TaskContext *p_task_ctx);
+int handle_exception(TaskContext *p_task_ctx);
 
-#endif /* CWNET_DEBUGGER_H */
+#endif /* CWDEBUG_DEBUGGER_H */

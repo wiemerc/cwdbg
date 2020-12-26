@@ -11,6 +11,7 @@
 
 extern int run_target(int (*)(), APTR, ULONG);
 extern ULONG g_dummy;
+DebuggerState g_dstate;
 
 
 static void print_instr(const TaskContext *ctx)
@@ -103,7 +104,7 @@ static BreakPoint *find_bpoint_by_addr(struct List *bpoints, APTR baddr)
 }
 
 
-static int process_cli_commands(DebuggerState *p_dstate, TaskContext *p_task_ctx, int mode)
+static int process_cli_commands(TaskContext *p_task_ctx, int mode)
 {
     char                cmd[64];                // command buffer
     char                *p_args[5];             // argument list
@@ -133,26 +134,27 @@ static int process_cli_commands(DebuggerState *p_dstate, TaskContext *p_task_ctx
         p_args[nargs] = NULL;
 
         // commands are very similar to the ones in GDB
+        // TODO: split function into functions for the individual commands
         switch (p_args[0][0]) {
             case 'r':
-                if (p_dstate->ds_f_running) {
+                if (g_dstate.ds_f_running) {
                     LOG(ERROR, "target is already running");
                     break;
                 }
 
                 // reset breakpoint counters for each run
-                if (!IsListEmpty(&p_dstate->ds_bpoints)) {
-                    for (p_bpoint = (BreakPoint *) p_dstate->ds_bpoints.lh_Head;
-                        p_bpoint != (BreakPoint *) p_dstate->ds_bpoints.lh_Tail;
+                if (!IsListEmpty(&g_dstate.ds_bpoints)) {
+                    for (p_bpoint = (BreakPoint *) g_dstate.ds_bpoints.lh_Head;
+                        p_bpoint != (BreakPoint *) g_dstate.ds_bpoints.lh_Tail;
                         p_bpoint = (BreakPoint *) p_bpoint->bp_node.ln_Succ)
                         p_bpoint->bp_count = 0;
                 }
 
-                LOG(INFO, "starting target at address 0x%08lx with inital stack pointer at 0x%08lx", (ULONG) p_dstate->ds_p_entry, (ULONG) p_dstate->ds_p_stack + STACK_SIZE);
-                p_dstate->ds_f_running = 1;
-                p_dstate->ds_status = run_target(p_dstate->ds_p_entry, p_dstate->ds_p_stack, STACK_SIZE);
-                p_dstate->ds_f_running = 0;
-                LOG(INFO, "target terminated with exit code %d", p_dstate->ds_status);
+                LOG(INFO, "starting target at address 0x%08lx with inital stack pointer at 0x%08lx", (ULONG) g_dstate.ds_p_entry, (ULONG) g_dstate.ds_p_stack + STACK_SIZE);
+                g_dstate.ds_f_running = 1;
+                g_dstate.ds_status = run_target(g_dstate.ds_p_entry, g_dstate.ds_p_stack, STACK_SIZE);
+                g_dstate.ds_f_running = 0;
+                LOG(INFO, "target terminated with exit code %d", g_dstate.ds_status);
 //                    LOG(DEBUG, "value of dummy: 0x%08lx", g_dummy);
                 break;
 
@@ -169,36 +171,38 @@ static int process_cli_commands(DebuggerState *p_dstate, TaskContext *p_task_ctx
                     LOG(ERROR, "could not allocate memory for breakpoint");
                     break;
                 }
-                p_baddr = (APTR) ((ULONG) p_dstate->ds_p_entry) + boffset;
-                p_bpoint->bp_num          = ++p_dstate->ds_bpoints.lh_Type;
+                p_baddr = (APTR) ((ULONG) g_dstate.ds_p_entry) + boffset;
+                p_bpoint->bp_num          = ++g_dstate.ds_bpoints.lh_Type;
                 p_bpoint->bp_addr         = p_baddr;
                 p_bpoint->bp_opcode       = *((USHORT *) p_baddr);
                 p_bpoint->bp_count        = 0;
-                AddTail(&p_dstate->ds_bpoints, (struct Node *) p_bpoint);
+                AddTail(&g_dstate.ds_bpoints, (struct Node *) p_bpoint);
                 *((USHORT *) p_baddr) = TRAP_OPCODE;
                 LOG(INFO, "breakpoint set at entry + 0x%08lx", boffset);
                 break;
 
             case 'k':
-                // kill target
-                p_dstate->ds_f_stepping = 0;
+                // kill (abort) target
+                // TODO: restore breakpoint if necessary
+                g_dstate.ds_f_running = 0;
+                g_dstate.ds_f_stepping = 0;
                 return MODE_KILL;
 
             case 'q':
-                if (p_dstate->ds_f_running) {
+                if (g_dstate.ds_f_running) {
                     LOG(ERROR, "target is still running");
                     break;
                 }
                 LOG(INFO, "exiting...");
-                while ((p_bpoint = (BreakPoint *) RemHead(&p_dstate->ds_bpoints)))
+                while ((p_bpoint = (BreakPoint *) RemHead(&g_dstate.ds_bpoints)))
                     FreeVec(p_bpoint);
-                FreeVec(p_dstate->ds_p_stack);
-                UnLoadSeg(p_dstate->ds_p_seglist);
+                FreeVec(g_dstate.ds_p_stack);
+                UnLoadSeg(g_dstate.ds_p_seglist);
                 return RETURN_OK;
 
             case 'c':
                 // continue execution
-                if (!p_dstate->ds_f_running) {
+                if (!g_dstate.ds_f_running) {
                     LOG(ERROR, "target is not yet running");
                     break;
                 }
@@ -206,7 +210,7 @@ static int process_cli_commands(DebuggerState *p_dstate, TaskContext *p_task_ctx
                 // single-step the original instruction at the breakpoint and remember
                 // to restore the breakpoint afterwards (see code for MODE_STEP below).
                 // TODO: just continue in case of a deleted breakpoint
-                p_dstate->ds_f_stepping = 0;
+                g_dstate.ds_f_stepping = 0;
                 if (mode == MODE_BREAKPOINT) {
                     p_task_ctx->tc_reg_sr &= 0xbfff;    // clear T0
                     p_task_ctx->tc_reg_sr |= 0x8700;    // set T1 and interrupt mask
@@ -215,11 +219,11 @@ static int process_cli_commands(DebuggerState *p_dstate, TaskContext *p_task_ctx
 
             case 's':
             case '\n':
-                if (!p_dstate->ds_f_running) {
+                if (!g_dstate.ds_f_running) {
                     LOG(ERROR, "target is not yet running");
                     break;
                 }
-                p_dstate->ds_f_stepping = 1;
+                g_dstate.ds_f_stepping = 1;
                 // In trace mode, *all* interrupts must be disabled (except for the NMI),
                 // otherwise OS code could be executed while the trace bit is still set,
                 // which would cause the OS exception handler (an alert) to be executed instead
@@ -229,7 +233,7 @@ static int process_cli_commands(DebuggerState *p_dstate, TaskContext *p_task_ctx
                 return MODE_CONTINUE;
 
             case 'i':
-                if (!p_dstate->ds_f_running) {
+                if (!g_dstate.ds_f_running) {
                     LOG(ERROR, "target is not yet running");
                     break;
                 }
@@ -242,7 +246,7 @@ static int process_cli_commands(DebuggerState *p_dstate, TaskContext *p_task_ctx
                         print_registers(p_task_ctx);
                         break;
                     case 's':
-                        print_stack(p_task_ctx, p_dstate->ds_p_stack + STACK_SIZE);
+                        print_stack(p_task_ctx, g_dstate.ds_p_stack + STACK_SIZE);
                         break;
                     default:
                         LOG(ERROR, "unknown command 'i %c'", p_args[1][0]);
@@ -273,108 +277,93 @@ static int process_cli_commands(DebuggerState *p_dstate, TaskContext *p_task_ctx
 }
 
 
-//
-// debug_main - main function of the debugger (server) which is called by both main() and the exception handler
-//
-// TODO: split into separate functions: load_and_init_target(), handle_breakpoint(), handle_single_step() and handle_exception()
-//       debugger context has to be a global var then
-int debug_main(
-    int mode,           // mode of operation
-    APTR p_data         // pointer to data, meaning depends on mode
-)
+int load_and_init_target(const char *p_program_path)
 {
-    // regular local variables
     Buffer              *p_frame;
-    BreakPoint          *bpoint;                    // current breakpoint
-    APTR                baddr;                      // address of current breakpoint
 
-    // variables that need to survive accross calls
-    static DebuggerState dstate;
+    // TODO: move to process_remote_commands()
+    p_frame = create_buffer(MAX_BUFFER_SIZE);
+    LOG(INFO, "waiting for host to connect...");
+    recv_slip_frame(p_frame);
 
+    // initialize state
+    g_dstate.ds_f_running = 0;
+    g_dstate.ds_f_stepping = 0;
+    g_dstate.ds_p_prev_bpoint = NULL;
 
-    switch (mode) {
-        //
-        // target is not yet running (called by main())
-        //
-        case MODE_RUN:
-            // TODO: move to process_remote_commands()
-            p_frame = create_buffer(MAX_BUFFER_SIZE);
-            LOG(INFO, "waiting for host to connect...");
-            recv_slip_frame(p_frame);
-
-            // initialize state
-            dstate.ds_f_running = 0;
-            dstate.ds_f_stepping = 0;
-            dstate.ds_p_prev_bpoint = NULL;
-
-            // load target
-            if ((dstate.ds_p_seglist = LoadSeg(p_data)) == NULL) {
-                LOG(ERROR, "could not load target: %ld", IoErr());
-                return RETURN_ERROR;
-            }
-            // seglist points to (first) code segment, code starts one long word behind pointer
-            dstate.ds_p_entry = BCPL_TO_C_PTR(dstate.ds_p_seglist + 1);
-
-            // allocate stack for target
-            if ((dstate.ds_p_stack = AllocVec(STACK_SIZE, 0)) == NULL) {
-                LOG(ERROR, "could not allocate stack for target");
-                UnLoadSeg(dstate.ds_p_seglist);
-                return RETURN_ERROR;
-            }
-
-            // initialize list of breakpoints, lh_Type is used as number of breakpoints
-            NewList(&dstate.ds_bpoints);
-            dstate.ds_bpoints.lh_Type = 0;
-
-            return process_cli_commands(&dstate, NULL, mode);
-
-        case MODE_BREAKPOINT:
-            // target has hit breakpoint (called by exception handler)
-            baddr = ((TaskContext *) p_data)->tc_reg_pc - 2;
-            if ((bpoint = find_bpoint_by_addr(&dstate.ds_bpoints, baddr)) != NULL) {
-                dstate.ds_p_prev_bpoint = bpoint;
-                // rewind PC by 2 bytes and replace trap instruction with original instruction
-                ((TaskContext *) p_data)->tc_reg_pc = baddr;
-                *((USHORT *) baddr) = bpoint->bp_opcode;
-                ++bpoint->bp_count;
-                LOG(INFO, "target has hit breakpoint #%ld at entry + 0x%08lx, hit count = %ld", 
-                    bpoint->bp_num, ((ULONG) baddr - (ULONG) dstate.ds_p_entry), bpoint->bp_count);
-            }
-            else {
-                LOG(CRIT, "INTERNAL ERROR: target has hit unknown breakpoint at entry + 0x%08lx", ((ULONG) baddr - (ULONG) dstate.ds_p_entry));
-                return MODE_KILL;
-            }
-
-            print_instr(p_data);
-            return process_cli_commands(&dstate, ((TaskContext *) p_data), mode);
-
-        case MODE_STEP:
-            if (dstate.ds_p_prev_bpoint) {
-                // previous breakpoint needs to be restored
-                LOG(DEBUG, "restoring breakpoint #%ld at entry + 0x%08lx", dstate.ds_p_prev_bpoint->bp_num, ((ULONG) dstate.ds_p_prev_bpoint->bp_addr - (ULONG) dstate.ds_p_entry));
-                *((USHORT *) dstate.ds_p_prev_bpoint->bp_addr) = TRAP_OPCODE;
-                dstate.ds_p_prev_bpoint = NULL;
-            }
-            if (dstate.ds_f_stepping) {
-                // in single-step mode
-                print_instr(p_data);
-                return process_cli_commands(&dstate, ((TaskContext *) p_data), mode);
-            }
-            else
-                return MODE_CONTINUE;
-
-        case MODE_EXCEPTION:
-            // unhandled exception occurred (called by exception handler)
-            LOG(INFO, "unhandled exception #%ld occurred at entry + 0x%08lx",
-                ((TaskContext *) p_data)->tc_exc_num,
-                ((ULONG) ((TaskContext *) p_data)->tc_reg_pc - (ULONG) dstate.ds_p_entry));
-            print_instr(p_data);
-            return process_cli_commands(&dstate, ((TaskContext *) p_data), mode);
-
-        default:
-            LOG(CRIT, "INTERNAL ERROR: unknown mode %d returned by exception handler", mode);
-            return MODE_KILL;
+    // load target
+    if ((g_dstate.ds_p_seglist = LoadSeg(p_program_path)) == NULL) {
+        LOG(ERROR, "could not load target: %ld", IoErr());
+        return RETURN_ERROR;
     }
+    // seglist points to (first) code segment, code starts one long word behind pointer
+    g_dstate.ds_p_entry = BCPL_TO_C_PTR(g_dstate.ds_p_seglist + 1);
+
+    // allocate stack for target
+    if ((g_dstate.ds_p_stack = AllocVec(STACK_SIZE, 0)) == NULL) {
+        LOG(ERROR, "could not allocate stack for target");
+        UnLoadSeg(g_dstate.ds_p_seglist);
+        return RETURN_ERROR;
+    }
+
+    // initialize list of breakpoints, lh_Type is used as number of breakpoints
+    NewList(&g_dstate.ds_bpoints);
+    g_dstate.ds_bpoints.lh_Type = 0;
+
+    return process_cli_commands(NULL, MODE_RUN);
 }
 
 
+int handle_breakpoint(TaskContext *p_task_ctx)
+{
+    BreakPoint          *p_bpoint;
+    APTR                p_baddr;
+
+    p_baddr = p_task_ctx->tc_reg_pc - 2;
+    if ((p_bpoint = find_bpoint_by_addr(&g_dstate.ds_bpoints, p_baddr)) != NULL) {
+        g_dstate.ds_p_prev_bpoint = p_bpoint;
+        // rewind PC by 2 bytes and replace trap instruction with original instruction
+        p_task_ctx->tc_reg_pc = p_baddr;
+        *((USHORT *) p_baddr) = p_bpoint->bp_opcode;
+        ++p_bpoint->bp_count;
+        LOG(INFO, "target has hit breakpoint #%ld at entry + 0x%08lx, hit count = %ld", 
+            p_bpoint->bp_num, ((ULONG) p_baddr - (ULONG) g_dstate.ds_p_entry), p_bpoint->bp_count);
+    }
+    else {
+        LOG(CRIT, "INTERNAL ERROR: target has hit unknown breakpoint at entry + 0x%08lx", ((ULONG) p_baddr - (ULONG) g_dstate.ds_p_entry));
+        return MODE_KILL;
+    }
+
+    print_instr(p_task_ctx);
+    return process_cli_commands(p_task_ctx, MODE_BREAKPOINT);
+}
+
+
+int handle_single_step(TaskContext *p_task_ctx)
+{
+    if (g_dstate.ds_p_prev_bpoint) {
+        // previous breakpoint needs to be restored
+        LOG(DEBUG, "restoring breakpoint #%ld at entry + 0x%08lx",
+            g_dstate.ds_p_prev_bpoint->bp_num, ((ULONG) g_dstate.ds_p_prev_bpoint->bp_addr - (ULONG) g_dstate.ds_p_entry));
+        *((USHORT *) g_dstate.ds_p_prev_bpoint->bp_addr) = TRAP_OPCODE;
+        g_dstate.ds_p_prev_bpoint = NULL;
+    }
+    if (g_dstate.ds_f_stepping) {
+        // in single-step mode
+        print_instr(p_task_ctx);
+        return process_cli_commands(p_task_ctx, MODE_STEP);
+    }
+    else
+        return MODE_CONTINUE;
+}
+
+
+int handle_exception(TaskContext *p_task_ctx)
+{
+    // unhandled exception occurred (called by exception handler)
+    LOG(INFO, "unhandled exception #%ld occurred at entry + 0x%08lx",
+        p_task_ctx->tc_exc_num,
+        ((ULONG) p_task_ctx->tc_reg_pc - (ULONG) g_dstate.ds_p_entry));
+    print_instr(p_task_ctx);
+    return process_cli_commands(p_task_ctx, MODE_EXCEPTION);
+}

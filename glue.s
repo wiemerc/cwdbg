@@ -33,7 +33,9 @@
 
 
 .text
-.extern _debug_main
+.extern _handle_breakpoint
+.extern _handle_single_step
+.extern _handle_exception
 .global _exc_handler
 .global _run_target
 .global _g_dummy
@@ -45,6 +47,7 @@
  * uses register A5 as frame pointer and *not* A6 (probably because of the use of A6 as
  * library base address on the Amiga).
  * TODO: pass command line
+ * TODO: store old frame pointer / context somewhere so that we can continue with it if want to abort the program
  */
 _run_target:
     link.w      fp, #-4                 /* set up new stack frame with room for the old stack pointer */
@@ -93,7 +96,9 @@ _exc_handler:
     add.l       #8, sp
     movem.l     (sp)+, d0-d1/a0-a1
 
-    move.l      #MODE_BREAKPOINT, mode  /* default mode, changed later if necessary */
+    /* default entry point into debugger, changed later if necessary */
+    move.l      #_handle_breakpoint, debugger_entry_point
+
     /* branch depending on the exception number */
     cmp.l       #EXC_NUM_TRAP_BP, (sp)
     beq.s       exc_call_main
@@ -133,7 +138,7 @@ exc_call_main:
     lea         target_tc + tc_reg_a + 28, a0   /* move pointer one longword beyond address registers */
     movem.l     a1-a6, -(a0)                    /* save address registers without A0 because it has already been saved */
     /* push again return address (our stub routine) and a "clean" SR onto stack and "return" to stub routine */
-    pea         debug_stub
+    pea         debugger_stub
     move.w      #0x0000, -(sp)
     rte
 
@@ -141,23 +146,23 @@ exc_call_main:
 exc_trace:
     /* trace exception */
     andi.w      #0x78ff, 4(sp)                  /* disable trace mode and re-enable interrupts in user mode */
-    move.l      #MODE_STEP, mode
-    bra.s       exc_call_main                   /* call debug_main() in the same way as with a breakpoint */
+    move.l      #_handle_single_step, debugger_entry_point
+    bra.s       exc_call_main                   /* call debugger in the same way as with a breakpoint */
 
 
 exc_exc:
-    /* another exception => just call debug_main() */
-    move.l      #MODE_EXCEPTION, mode
+    /* another exception => just call debugger */
+    move.l      #_handle_exception, debugger_entry_point
     bra.s       exc_call_main
 
 
-debug_stub:
-    /* call debug_main() */
-    /* TODO: abort target if mode == MODE_KILL */
-    pea         target_tc                       /* push target context address and mode onto stack */
-    move.l      mode, -(sp)
-    jsr         _debug_main
-    addq.l      #8, sp                          /* remove target context and mode from stack */
+debugger_stub:
+    /* call the entry point into the debugger corresponding to the type of exception that occurred */
+    /* TODO: abort target if mode == MODE_KILL by continuing with context stored in _run_target */
+    pea         target_tc                       /* push target context address onto stack */
+    move.l      debugger_entry_point, a0
+    jsr         (a0)
+    addq.l      #4, sp                          /* remove target context from stack */
 
     /* trap again to restore all registers, including the SR, which can only be done in
      * supervisor mode, and resume target */
@@ -165,7 +170,7 @@ debug_stub:
 
 
 .data
-    .lcomm mode, 4                              /* mode, initialized with 0 == MODE_BREAKPOINT */
+    .lcomm debugger_entry_point, 4              /* entry point into the debugger */
     .lcomm target_tc, 74                        /* target context, 74 == sizeof(TaskContext) */
     .comm _g_dummy, 4
     msg:        .asciz "exception #%ld occurred\n"
