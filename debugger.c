@@ -10,8 +10,6 @@
 
 
 extern int run_target(int (*)(), APTR, ULONG);
-// TODO: get red of g_dummy
-extern ULONG g_dummy;
 DebuggerState g_dstate;
 
 
@@ -165,7 +163,6 @@ static int process_cli_commands(TaskContext *p_task_ctx, int mode)
                 g_dstate.ds_status = run_target(g_dstate.ds_p_entry, g_dstate.ds_p_stack, STACK_SIZE);
                 g_dstate.ds_f_running = 0;
                 LOG(INFO, "target terminated with exit code %d", g_dstate.ds_status);
-//                    LOG(DEBUG, "value of dummy: 0x%08lx", g_dummy);
                 break;
 
             case 'b':

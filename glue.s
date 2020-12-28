@@ -3,7 +3,7 @@
  *          This file contains the exception handler and a routine that starts the target,
  *          that "glue" the debugger to the target.
  *
- * Copyright(C) 2018, 2019 Constantin Wiemer
+ * Copyright(C) 2018-2021 Constantin Wiemer
  */
 
 
@@ -39,7 +39,6 @@
 .extern _handle_exception
 .global _exc_handler
 .global _run_target
-.global _g_dummy
 
 
 /*
@@ -173,5 +172,4 @@ debugger_stub:
 .data
     .lcomm debugger_entry_point, 4              /* entry point into the debugger */
     .lcomm target_tc, 74                        /* target context, 74 == sizeof(TaskContext) */
-    .comm _g_dummy, 4
     msg:        .asciz "exception #%ld occurred\n"
