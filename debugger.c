@@ -10,10 +10,12 @@
 
 
 extern int run_target(int (*)(), APTR, ULONG);
+// TODO: get red of g_dummy
 extern ULONG g_dummy;
 DebuggerState g_dstate;
 
 
+// TODO: move routines to cli.c
 static void print_instr(const TaskContext *ctx)
 {
     ULONG nbytes;
@@ -186,7 +188,7 @@ static int process_cli_commands(TaskContext *p_task_ctx, int mode)
                 // TODO: restore breakpoint if necessary
                 g_dstate.ds_f_running = 0;
                 g_dstate.ds_f_stepping = 0;
-                return MODE_KILL;
+                return CMD_KILL;
 
             case 'q':
                 if (g_dstate.ds_f_running) {
@@ -198,7 +200,7 @@ static int process_cli_commands(TaskContext *p_task_ctx, int mode)
                     FreeVec(p_bpoint);
                 FreeVec(g_dstate.ds_p_stack);
                 UnLoadSeg(g_dstate.ds_p_seglist);
-                return RETURN_OK;
+                return CMD_QUIT;
 
             case 'c':
                 // continue execution
@@ -208,14 +210,14 @@ static int process_cli_commands(TaskContext *p_task_ctx, int mode)
                 }
                 // If we continue from a breakpoint, it has to be restored first, so we
                 // single-step the original instruction at the breakpoint and remember
-                // to restore the breakpoint afterwards (see code for MODE_STEP below).
+                // to restore the breakpoint afterwards (see code for CMD_STEP below).
                 // TODO: just continue in case of a deleted breakpoint
                 g_dstate.ds_f_stepping = 0;
-                if (mode == MODE_BREAKPOINT) {
+                if (mode == CMD_BREAKPOINT) {
                     p_task_ctx->tc_reg_sr &= 0xbfff;    // clear T0
                     p_task_ctx->tc_reg_sr |= 0x8700;    // set T1 and interrupt mask
                 }
-                return MODE_CONTINUE;
+                return CMD_CONTINUE;
 
             case 's':
             case '\n':
@@ -230,7 +232,7 @@ static int process_cli_commands(TaskContext *p_task_ctx, int mode)
                 // of ours => value 0x8700 is ORed with the SR.
                 p_task_ctx->tc_reg_sr &= 0xbfff;    // clear T0
                 p_task_ctx->tc_reg_sr |= 0x8700;    // set T1 and interrupt mask
-                return MODE_CONTINUE;
+                return CMD_CONTINUE;
 
             case 'i':
                 if (!g_dstate.ds_f_running) {
@@ -266,7 +268,7 @@ static int process_cli_commands(TaskContext *p_task_ctx, int mode)
                 break;
 
             case 'd':
-                // TODO
+                // TODO: implement disassembling the next n instructions
                 break;
 
             default:
@@ -310,7 +312,7 @@ int load_and_init_target(const char *p_program_path)
     NewList(&g_dstate.ds_bpoints);
     g_dstate.ds_bpoints.lh_Type = 0;
 
-    return process_cli_commands(NULL, MODE_RUN);
+    return process_cli_commands(NULL, CMD_RUN);
 }
 
 
@@ -331,11 +333,11 @@ int handle_breakpoint(TaskContext *p_task_ctx)
     }
     else {
         LOG(CRIT, "INTERNAL ERROR: target has hit unknown breakpoint at entry + 0x%08lx", ((ULONG) p_baddr - (ULONG) g_dstate.ds_p_entry));
-        return MODE_KILL;
+        return CMD_KILL;
     }
 
     print_instr(p_task_ctx);
-    return process_cli_commands(p_task_ctx, MODE_BREAKPOINT);
+    return process_cli_commands(p_task_ctx, CMD_BREAKPOINT);
 }
 
 
@@ -351,10 +353,10 @@ int handle_single_step(TaskContext *p_task_ctx)
     if (g_dstate.ds_f_stepping) {
         // in single-step mode
         print_instr(p_task_ctx);
-        return process_cli_commands(p_task_ctx, MODE_STEP);
+        return process_cli_commands(p_task_ctx, CMD_STEP);
     }
     else
-        return MODE_CONTINUE;
+        return CMD_CONTINUE;
 }
 
 
@@ -365,5 +367,5 @@ int handle_exception(TaskContext *p_task_ctx)
         p_task_ctx->tc_exc_num,
         ((ULONG) p_task_ctx->tc_reg_pc - (ULONG) g_dstate.ds_p_entry));
     print_instr(p_task_ctx);
-    return process_cli_commands(p_task_ctx, MODE_EXCEPTION);
+    return process_cli_commands(p_task_ctx, CMD_EXCEPTION);
 }

@@ -26,13 +26,14 @@
 #define TRAP_NUM        0
 #define TRAP_OPCODE     0x4e40
 #define STACK_SIZE      8192
-#define MODE_BREAKPOINT 0
-#define MODE_RUN        1
-#define MODE_STEP       2
-#define MODE_EXCEPTION  3
-#define MODE_CONTINUE   4
-#define MODE_RESTORE    5
-#define MODE_KILL       6
+#define CMD_BREAKPOINT  0
+#define CMD_RUN         1
+#define CMD_STEP        2
+#define CMD_EXCEPTION   3
+#define CMD_CONTINUE    4
+#define CMD_RESTORE     5
+#define CMD_KILL        6
+#define CMD_QUIT        7
 
 
 /*

@@ -15,13 +15,14 @@
 .set EXC_NUM_TRAP_BP,       0x00000020
 .set EXC_NUM_TRAP_RESTORE,  0x00000021
 .set EXC_NUM_TRACE,         0x00000009
-.set MODE_BREAKPOINT,       0
-.set MODE_RUN,              1
-.set MODE_STEP,             2
-.set MODE_EXCEPTION,        3
-.set MODE_CONTINUE,         4
-.set MODE_RESTORE,          5
-.set MODE_KILL,             6
+.set CMD_BREAKPOINT,        0
+.set CMD_RUN,               1
+.set CMD_STEP,              2
+.set CMD_EXCEPTION,         3
+.set CMD_CONTINUE,          4
+.set CMD_RESTORE,           5
+.set CMD_KILL,              6
+.set CMD_QUIT,              7
 
 /* see TaskContext structure in main.c */
 .set tc_reg_sp,  0
@@ -158,7 +159,7 @@ exc_exc:
 
 debugger_stub:
     /* call the entry point into the debugger corresponding to the type of exception that occurred */
-    /* TODO: abort target if mode == MODE_KILL by continuing with context stored in _run_target */
+    /* TODO: abort target if command is CMD_KILL by continuing with context stored in _run_target */
     pea         target_tc                       /* push target context address onto stack */
     move.l      debugger_entry_point, a0
     jsr         (a0)
