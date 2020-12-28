@@ -181,6 +181,24 @@ static void quit_debugger()
 }
 
 
+static void continue_target(TaskContext *p_task_ctx, int mode)
+{
+    if (!g_dstate.ds_f_running) {
+        LOG(ERROR, "target is not yet running");
+        return;
+    }
+    // If we continue from a breakpoint, it has to be restored first, so we
+    // single-step the original instruction at the breakpoint and remember
+    // to restore the breakpoint afterwards (see handle_single_step() below).
+    // TODO: just continue in case of a deleted breakpoint
+    g_dstate.ds_f_stepping = 0;
+    if (mode == CMD_BREAKPOINT) {
+        p_task_ctx->tc_reg_sr &= 0xbfff;    // clear T0
+        p_task_ctx->tc_reg_sr |= 0x8700;    // set T1 and interrupt mask
+    }
+}
+
+
 static int process_cli_commands(TaskContext *p_task_ctx, int mode)
 {
     char                cmd[64];                // command buffer
@@ -202,11 +220,11 @@ static int process_cli_commands(TaskContext *p_task_ctx, int mode)
         // commands are very similar to the ones in GDB
         // TODO: split function into functions for the individual commands
         switch (p_args[0][0]) {
-            case 'r':
+            case 'r':   // run target
                 run_target();
                 break;
 
-            case 'b':
+            case 'b':   // set breakpoint
                 if (nargs != 2) {
                     LOG(ERROR, "command 'b' requires an address");
                     break;
@@ -218,35 +236,21 @@ static int process_cli_commands(TaskContext *p_task_ctx, int mode)
                 set_breakpoint(offset);
                 break;
 
-            case 'k':
-                // kill (abort) target
+            case 'k':   // kill (abort) target
                 // TODO: restore breakpoint if necessary
                 g_dstate.ds_f_running = 0;
                 g_dstate.ds_f_stepping = 0;
                 return CMD_KILL;
 
-            case 'q':
+            case 'q':   // quit debugger
                 quit_debugger();
                 return CMD_QUIT;
 
-            case 'c':
-                // continue execution
-                if (!g_dstate.ds_f_running) {
-                    LOG(ERROR, "target is not yet running");
-                    break;
-                }
-                // If we continue from a breakpoint, it has to be restored first, so we
-                // single-step the original instruction at the breakpoint and remember
-                // to restore the breakpoint afterwards (see code for CMD_STEP below).
-                // TODO: just continue in case of a deleted breakpoint
-                g_dstate.ds_f_stepping = 0;
-                if (mode == CMD_BREAKPOINT) {
-                    p_task_ctx->tc_reg_sr &= 0xbfff;    // clear T0
-                    p_task_ctx->tc_reg_sr |= 0x8700;    // set T1 and interrupt mask
-                }
+            case 'c':   // continue target
+                continue_target(p_task_ctx, mode);
                 return CMD_CONTINUE;
 
-            case 's':
+            case 's':   // single step target
             case '\n':
                 if (!g_dstate.ds_f_running) {
                     LOG(ERROR, "target is not yet running");
@@ -261,7 +265,7 @@ static int process_cli_commands(TaskContext *p_task_ctx, int mode)
                 p_task_ctx->tc_reg_sr |= 0x8700;    // set T1 and interrupt mask
                 return CMD_CONTINUE;
 
-            case 'i':
+            case 'i':   // inspect ...
                 if (!g_dstate.ds_f_running) {
                     LOG(ERROR, "target is not yet running");
                     break;
@@ -271,10 +275,10 @@ static int process_cli_commands(TaskContext *p_task_ctx, int mode)
                     break;
                 }
                 switch (p_args[1][0]) {
-                    case 'r':
+                    case 'r':   // ... registers
                         print_registers(p_task_ctx);
                         break;
-                    case 's':
+                    case 's':   // ... stack
                         print_stack(p_task_ctx, g_dstate.ds_p_stack + STACK_SIZE);
                         break;
                     default:
@@ -282,7 +286,7 @@ static int process_cli_commands(TaskContext *p_task_ctx, int mode)
                 }
                 break;
 
-            case 'p':
+            case 'p':   // print memory
                 if (nargs != 3) {
                     LOG(ERROR, "command 'p' requires address and size");
                     break;
@@ -294,7 +298,7 @@ static int process_cli_commands(TaskContext *p_task_ctx, int mode)
                 print_memory(p_maddr, msize);
                 break;
 
-            case 'd':
+            case 'd':   // disassemble memory
                 // TODO: implement disassembling the next n instructions
                 break;
 
