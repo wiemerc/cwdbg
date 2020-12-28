@@ -105,8 +105,8 @@ static BreakPoint *find_bpoint_by_addr(struct List *bpoints, APTR baddr)
 
 static UBYTE parse_args(char *p_cmd, char **pp_args)
 {
-    char                *p_token;               // pointer to one token
-    UBYTE               nargs;                  // number of arguments
+    char    *p_token;               // pointer to one token
+    UBYTE   nargs;                  // number of arguments
 
     p_token = strtok(p_cmd, " \t");
     nargs = 0;
@@ -122,7 +122,7 @@ static UBYTE parse_args(char *p_cmd, char **pp_args)
 
 static void run_target()
 {
-    BreakPoint          *p_bpoint;
+    BreakPoint *p_bpoint;
 
     if (g_dstate.ds_f_running) {
         LOG(ERROR, "target is already running");
@@ -147,8 +147,8 @@ static void run_target()
 
 static BreakPoint *set_breakpoint(ULONG offset)
 {
-    BreakPoint          *p_bpoint;
-    APTR                p_baddr;
+    BreakPoint  *p_bpoint;
+    APTR        p_baddr;
 
     if ((p_bpoint = AllocVec(sizeof(BreakPoint), 0)) == NULL) {
         LOG(ERROR, "could not allocate memory for breakpoint");
@@ -166,12 +166,26 @@ static BreakPoint *set_breakpoint(ULONG offset)
 }
 
 
+static void quit_debugger()
+{
+    BreakPoint *p_bpoint;
+    if (g_dstate.ds_f_running) {
+        LOG(ERROR, "target is still running");
+        return;
+    }
+    LOG(INFO, "exiting...");
+    while ((p_bpoint = (BreakPoint *) RemHead(&g_dstate.ds_bpoints)))
+        FreeVec(p_bpoint);
+    FreeVec(g_dstate.ds_p_stack);
+    UnLoadSeg(g_dstate.ds_p_seglist);
+}
+
+
 static int process_cli_commands(TaskContext *p_task_ctx, int mode)
 {
     char                cmd[64];                // command buffer
     char                *p_args[5];             // argument list
     UBYTE               nargs;                  // number of arguments
-    BreakPoint          *p_bpoint;              // current breakpoint
     ULONG               offset;                 // offset from entry point
     APTR                p_maddr;                // address of memory block to print
     ULONG               msize;                  // size of memory block
@@ -212,15 +226,7 @@ static int process_cli_commands(TaskContext *p_task_ctx, int mode)
                 return CMD_KILL;
 
             case 'q':
-                if (g_dstate.ds_f_running) {
-                    LOG(ERROR, "target is still running");
-                    break;
-                }
-                LOG(INFO, "exiting...");
-                while ((p_bpoint = (BreakPoint *) RemHead(&g_dstate.ds_bpoints)))
-                    FreeVec(p_bpoint);
-                FreeVec(g_dstate.ds_p_stack);
-                UnLoadSeg(g_dstate.ds_p_seglist);
+                quit_debugger();
                 return CMD_QUIT;
 
             case 'c':
