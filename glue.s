@@ -38,7 +38,7 @@
 .extern _handle_single_step
 .extern _handle_exception
 .global _exc_handler
-.global _run_target
+.global _start_target
 
 
 /*
@@ -49,7 +49,7 @@
  * TODO: pass command line
  * TODO: store old frame pointer / context somewhere so that we can continue with it if want to abort the program
  */
-_run_target:
+_start_target:
     link.w      fp, #-4                 /* set up new stack frame with room for the old stack pointer */
     movem.l     d1-d7/a0-a4/a6, -(sp)   /* save all registers on the old stack except D0 (used for the return value) and the frame pointer A5 */
     move.l      sp, -4(fp)              /* save old stack pointer */

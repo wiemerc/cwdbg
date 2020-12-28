@@ -69,6 +69,12 @@ typedef struct {
 
 
 /*
+ * external functions
+ */
+extern int start_target(int (*)(), APTR, ULONG);
+
+
+/*
  * exported functions
  */
 int load_and_init_target(const char *p_program_path);

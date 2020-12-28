@@ -9,7 +9,6 @@
 #include "serio.h"
 
 
-extern int run_target(int (*)(), APTR, ULONG);
 DebuggerState g_dstate;
 
 
@@ -121,6 +120,31 @@ static UBYTE parse_args(char *p_cmd, char **pp_args)
 }
 
 
+static void run_target()
+{
+    BreakPoint          *p_bpoint;
+
+    if (g_dstate.ds_f_running) {
+        LOG(ERROR, "target is already running");
+        return;
+    }
+
+    // reset breakpoint counters for each run
+    if (!IsListEmpty(&g_dstate.ds_bpoints)) {
+        for (p_bpoint = (BreakPoint *) g_dstate.ds_bpoints.lh_Head;
+            p_bpoint != (BreakPoint *) g_dstate.ds_bpoints.lh_Tail;
+            p_bpoint = (BreakPoint *) p_bpoint->bp_node.ln_Succ)
+            p_bpoint->bp_count = 0;
+    }
+
+    LOG(INFO, "starting target at address 0x%08lx with inital stack pointer at 0x%08lx", (ULONG) g_dstate.ds_p_entry, (ULONG) g_dstate.ds_p_stack + STACK_SIZE);
+    g_dstate.ds_f_running = 1;
+    g_dstate.ds_status = start_target(g_dstate.ds_p_entry, g_dstate.ds_p_stack, STACK_SIZE);
+    g_dstate.ds_f_running = 0;
+    LOG(INFO, "target terminated with exit code %d", g_dstate.ds_status);
+}
+
+
 static int process_cli_commands(TaskContext *p_task_ctx, int mode)
 {
     char                cmd[64];                // command buffer
@@ -145,24 +169,7 @@ static int process_cli_commands(TaskContext *p_task_ctx, int mode)
         // TODO: split function into functions for the individual commands
         switch (p_args[0][0]) {
             case 'r':
-                if (g_dstate.ds_f_running) {
-                    LOG(ERROR, "target is already running");
-                    break;
-                }
-
-                // reset breakpoint counters for each run
-                if (!IsListEmpty(&g_dstate.ds_bpoints)) {
-                    for (p_bpoint = (BreakPoint *) g_dstate.ds_bpoints.lh_Head;
-                        p_bpoint != (BreakPoint *) g_dstate.ds_bpoints.lh_Tail;
-                        p_bpoint = (BreakPoint *) p_bpoint->bp_node.ln_Succ)
-                        p_bpoint->bp_count = 0;
-                }
-
-                LOG(INFO, "starting target at address 0x%08lx with inital stack pointer at 0x%08lx", (ULONG) g_dstate.ds_p_entry, (ULONG) g_dstate.ds_p_stack + STACK_SIZE);
-                g_dstate.ds_f_running = 1;
-                g_dstate.ds_status = run_target(g_dstate.ds_p_entry, g_dstate.ds_p_stack, STACK_SIZE);
-                g_dstate.ds_f_running = 0;
-                LOG(INFO, "target terminated with exit code %d", g_dstate.ds_status);
+                run_target();
                 break;
 
             case 'b':
