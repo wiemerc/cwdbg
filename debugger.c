@@ -199,6 +199,21 @@ static void quit_debugger()
 }
 
 
+static int is_correct_target_state_for_command(char cmd)
+{
+    // keep list of commands (the 1st argument of strchr()) in sync with process_cli_commands()
+    if (!g_dstate.ds_f_running && (strchr("cs\nik", cmd) != NULL)) {
+        LOG(ERROR, "incorrect state for command '%c': target is not yet running", cmd);
+        return 0;
+    }
+    if (g_dstate.ds_f_running && (strchr("rq", cmd) != NULL)) {
+        LOG(ERROR, "incorrect state for command '%c': target is already / still running", cmd);
+        return 0;
+    }
+    return 1;
+}
+
+
 static int process_cli_commands(TaskContext *p_task_ctx, int mode)
 {
     char                cmd[64];                // command buffer
@@ -210,18 +225,16 @@ static int process_cli_commands(TaskContext *p_task_ctx, int mode)
 
     while(1) {
         // read command from standard input (and ignore errors and commands >= 64 characters)
-        // commands are very similar to the ones in GDB
         Write(Output(), "> ", 2);
         WaitForChar(Input(), 0xffffffff);
         cmd[Read(Input(), cmd, 64)] = 0;
         nargs = parse_args(cmd, p_args);
 
+        if (!is_correct_target_state_for_command(p_args[0][0]))
+            continue;
+
         switch (p_args[0][0]) {
             case 'r':   // run target
-                if (g_dstate.ds_f_running) {
-                    LOG(ERROR, "target is already running");
-                    break;
-                }
                 run_target();
                 break;
 
@@ -244,35 +257,19 @@ static int process_cli_commands(TaskContext *p_task_ctx, int mode)
                 return CMD_KILL;
 
             case 'q':   // quit debugger
-                if (g_dstate.ds_f_running) {
-                    LOG(ERROR, "target is still running");
-                    break;
-                }
                 quit_debugger();
                 return CMD_QUIT;
 
             case 'c':   // continue target
-                if (!g_dstate.ds_f_running) {
-                    LOG(ERROR, "target is not yet running");
-                    break;
-                }
                 continue_target(p_task_ctx, mode);
                 return CMD_CONTINUE;
 
             case 's':   // single step target
             case '\n':
-                if (!g_dstate.ds_f_running) {
-                    LOG(ERROR, "target is not yet running");
-                    break;
-                }
                 single_step_target(p_task_ctx);
                 return CMD_CONTINUE;
 
             case 'i':   // inspect ...
-                if (!g_dstate.ds_f_running) {
-                    LOG(ERROR, "target is not yet running");
-                    break;
-                }
                 if (nargs != 2) {
                     LOG(ERROR, "command 'i' requires a subcommand, either 'r' or 's'");
                     break;
