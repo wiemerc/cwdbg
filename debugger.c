@@ -166,21 +166,6 @@ static BreakPoint *set_breakpoint(ULONG offset)
 }
 
 
-static void quit_debugger()
-{
-    BreakPoint *p_bpoint;
-    if (g_dstate.ds_f_running) {
-        LOG(ERROR, "target is still running");
-        return;
-    }
-    LOG(INFO, "exiting...");
-    while ((p_bpoint = (BreakPoint *) RemHead(&g_dstate.ds_bpoints)))
-        FreeVec(p_bpoint);
-    FreeVec(g_dstate.ds_p_stack);
-    UnLoadSeg(g_dstate.ds_p_seglist);
-}
-
-
 static void continue_target(TaskContext *p_task_ctx, int mode)
 {
     if (!g_dstate.ds_f_running) {
@@ -199,6 +184,37 @@ static void continue_target(TaskContext *p_task_ctx, int mode)
 }
 
 
+static void single_step_target(TaskContext *p_task_ctx)
+{
+    if (!g_dstate.ds_f_running) {
+        LOG(ERROR, "target is not yet running");
+        return;
+    }
+    g_dstate.ds_f_stepping = 1;
+    // In trace mode, *all* interrupts must be disabled (except for the NMI),
+    // otherwise OS code could be executed while the trace bit is still set,
+    // which would cause the OS exception handler (an alert) to be executed instead
+    // of ours => value 0x8700 is ORed with the SR.
+    p_task_ctx->tc_reg_sr &= 0xbfff;    // clear T0
+    p_task_ctx->tc_reg_sr |= 0x8700;    // set T1 and interrupt mask
+}
+
+
+static void quit_debugger()
+{
+    BreakPoint *p_bpoint;
+    if (g_dstate.ds_f_running) {
+        LOG(ERROR, "target is still running");
+        return;
+    }
+    LOG(INFO, "exiting...");
+    while ((p_bpoint = (BreakPoint *) RemHead(&g_dstate.ds_bpoints)))
+        FreeVec(p_bpoint);
+    FreeVec(g_dstate.ds_p_stack);
+    UnLoadSeg(g_dstate.ds_p_seglist);
+}
+
+
 static int process_cli_commands(TaskContext *p_task_ctx, int mode)
 {
     char                cmd[64];                // command buffer
@@ -210,15 +226,12 @@ static int process_cli_commands(TaskContext *p_task_ctx, int mode)
 
     while(1) {
         // read command from standard input (and ignore errors and commands >= 64 characters)
+        // commands are very similar to the ones in GDB
         Write(Output(), "> ", 2);
         WaitForChar(Input(), 0xffffffff);
         cmd[Read(Input(), cmd, 64)] = 0;
-
-        // split command into tokens, up to 3
         nargs = parse_args(cmd, p_args);
 
-        // commands are very similar to the ones in GDB
-        // TODO: split function into functions for the individual commands
         switch (p_args[0][0]) {
             case 'r':   // run target
                 run_target();
@@ -252,17 +265,7 @@ static int process_cli_commands(TaskContext *p_task_ctx, int mode)
 
             case 's':   // single step target
             case '\n':
-                if (!g_dstate.ds_f_running) {
-                    LOG(ERROR, "target is not yet running");
-                    break;
-                }
-                g_dstate.ds_f_stepping = 1;
-                // In trace mode, *all* interrupts must be disabled (except for the NMI),
-                // otherwise OS code could be executed while the trace bit is still set,
-                // which would cause the OS exception handler (an alert) to be executed instead
-                // of ours => value 0x8700 is ORed with the SR.
-                p_task_ctx->tc_reg_sr &= 0xbfff;    // clear T0
-                p_task_ctx->tc_reg_sr |= 0x8700;    // set T1 and interrupt mask
+                single_step_target(p_task_ctx);
                 return CMD_CONTINUE;
 
             case 'i':   // inspect ...
