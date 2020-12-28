@@ -106,11 +106,27 @@ static BreakPoint *find_bpoint_by_addr(struct List *bpoints, APTR baddr)
 }
 
 
+static UBYTE parse_args(char *p_cmd, char **pp_args)
+{
+    char                *p_token;               // pointer to one token
+    UBYTE               nargs;                  // number of arguments
+
+    p_token = strtok(p_cmd, " \t");
+    nargs = 0;
+    while ((nargs < 3) && (p_token != NULL)) {
+        pp_args[nargs] = p_token;
+        p_token = strtok(NULL, " \t");
+        ++nargs;
+    }
+    pp_args[nargs] = NULL;
+    return nargs;
+}
+
+
 static int process_cli_commands(TaskContext *p_task_ctx, int mode)
 {
     char                cmd[64];                // command buffer
     char                *p_args[5];             // argument list
-    char                *p_token;               // pointer to one token
     UBYTE               nargs;                  // number of arguments
     BreakPoint          *p_bpoint;              // current breakpoint
     APTR                p_baddr;                // code address of current breakpoint
@@ -125,15 +141,7 @@ static int process_cli_commands(TaskContext *p_task_ctx, int mode)
         cmd[Read(Input(), cmd, 64)] = 0;
 
         // split command into tokens, up to 3
-        // TODO: move to parse_p_args()
-        p_token = strtok(cmd, " \t");
-        nargs = 0;
-        while ((nargs < 3) && (p_token != NULL)) {
-            p_args[nargs] = p_token;
-            p_token = strtok(NULL, " \t");
-            ++nargs;
-        }
-        p_args[nargs] = NULL;
+        nargs = parse_args(cmd, p_args);
 
         // commands are very similar to the ones in GDB
         // TODO: split function into functions for the individual commands
