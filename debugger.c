@@ -145,14 +145,34 @@ static void run_target()
 }
 
 
+static BreakPoint *set_breakpoint(ULONG offset)
+{
+    BreakPoint          *p_bpoint;
+    APTR                p_baddr;
+
+    if ((p_bpoint = AllocVec(sizeof(BreakPoint), 0)) == NULL) {
+        LOG(ERROR, "could not allocate memory for breakpoint");
+        return NULL;
+    }
+    p_baddr = (APTR) ((ULONG) g_dstate.ds_p_entry) + offset;
+    p_bpoint->bp_num          = ++g_dstate.ds_bpoints.lh_Type;
+    p_bpoint->bp_addr         = p_baddr;
+    p_bpoint->bp_opcode       = *((USHORT *) p_baddr);
+    p_bpoint->bp_count        = 0;
+    AddTail(&g_dstate.ds_bpoints, (struct Node *) p_bpoint);
+    *((USHORT *) p_baddr) = TRAP_OPCODE;
+    LOG(INFO, "breakpoint set at entry + 0x%08lx", offset);
+    return p_bpoint;
+}
+
+
 static int process_cli_commands(TaskContext *p_task_ctx, int mode)
 {
     char                cmd[64];                // command buffer
     char                *p_args[5];             // argument list
     UBYTE               nargs;                  // number of arguments
     BreakPoint          *p_bpoint;              // current breakpoint
-    APTR                p_baddr;                // code address of current breakpoint
-    ULONG               boffset;                // offset from entry point
+    ULONG               offset;                 // offset from entry point
     APTR                p_maddr;                // address of memory block to print
     ULONG               msize;                  // size of memory block
 
@@ -177,22 +197,11 @@ static int process_cli_commands(TaskContext *p_task_ctx, int mode)
                     LOG(ERROR, "command 'b' requires an address");
                     break;
                 }
-                if (sscanf(p_args[1], "%lx", &boffset) == 0) {
-                    LOG(ERROR, "invalid format for breakpoint offset");
+                if (sscanf(p_args[1], "%lx", &offset) == 0) {
+                    LOG(ERROR, "invalid format of breakpoint offset");
                     break;
                 }
-                if ((p_bpoint = AllocVec(sizeof(BreakPoint), 0)) == NULL) {
-                    LOG(ERROR, "could not allocate memory for breakpoint");
-                    break;
-                }
-                p_baddr = (APTR) ((ULONG) g_dstate.ds_p_entry) + boffset;
-                p_bpoint->bp_num          = ++g_dstate.ds_bpoints.lh_Type;
-                p_bpoint->bp_addr         = p_baddr;
-                p_bpoint->bp_opcode       = *((USHORT *) p_baddr);
-                p_bpoint->bp_count        = 0;
-                AddTail(&g_dstate.ds_bpoints, (struct Node *) p_bpoint);
-                *((USHORT *) p_baddr) = TRAP_OPCODE;
-                LOG(INFO, "breakpoint set at entry + 0x%08lx", boffset);
+                set_breakpoint(offset);
                 break;
 
             case 'k':
