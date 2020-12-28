@@ -124,11 +124,6 @@ static void run_target()
 {
     BreakPoint *p_bpoint;
 
-    if (g_dstate.ds_f_running) {
-        LOG(ERROR, "target is already running");
-        return;
-    }
-
     // reset breakpoint counters for each run
     if (!IsListEmpty(&g_dstate.ds_bpoints)) {
         for (p_bpoint = (BreakPoint *) g_dstate.ds_bpoints.lh_Head;
@@ -168,10 +163,6 @@ static BreakPoint *set_breakpoint(ULONG offset)
 
 static void continue_target(TaskContext *p_task_ctx, int mode)
 {
-    if (!g_dstate.ds_f_running) {
-        LOG(ERROR, "target is not yet running");
-        return;
-    }
     // If we continue from a breakpoint, it has to be restored first, so we
     // single-step the original instruction at the breakpoint and remember
     // to restore the breakpoint afterwards (see handle_single_step() below).
@@ -186,10 +177,6 @@ static void continue_target(TaskContext *p_task_ctx, int mode)
 
 static void single_step_target(TaskContext *p_task_ctx)
 {
-    if (!g_dstate.ds_f_running) {
-        LOG(ERROR, "target is not yet running");
-        return;
-    }
     g_dstate.ds_f_stepping = 1;
     // In trace mode, *all* interrupts must be disabled (except for the NMI),
     // otherwise OS code could be executed while the trace bit is still set,
@@ -203,10 +190,7 @@ static void single_step_target(TaskContext *p_task_ctx)
 static void quit_debugger()
 {
     BreakPoint *p_bpoint;
-    if (g_dstate.ds_f_running) {
-        LOG(ERROR, "target is still running");
-        return;
-    }
+
     LOG(INFO, "exiting...");
     while ((p_bpoint = (BreakPoint *) RemHead(&g_dstate.ds_bpoints)))
         FreeVec(p_bpoint);
@@ -234,6 +218,10 @@ static int process_cli_commands(TaskContext *p_task_ctx, int mode)
 
         switch (p_args[0][0]) {
             case 'r':   // run target
+                if (g_dstate.ds_f_running) {
+                    LOG(ERROR, "target is already running");
+                    break;
+                }
                 run_target();
                 break;
 
@@ -256,15 +244,27 @@ static int process_cli_commands(TaskContext *p_task_ctx, int mode)
                 return CMD_KILL;
 
             case 'q':   // quit debugger
+                if (g_dstate.ds_f_running) {
+                    LOG(ERROR, "target is still running");
+                    break;
+                }
                 quit_debugger();
                 return CMD_QUIT;
 
             case 'c':   // continue target
+                if (!g_dstate.ds_f_running) {
+                    LOG(ERROR, "target is not yet running");
+                    break;
+                }
                 continue_target(p_task_ctx, mode);
                 return CMD_CONTINUE;
 
             case 's':   // single step target
             case '\n':
+                if (!g_dstate.ds_f_running) {
+                    LOG(ERROR, "target is not yet running");
+                    break;
+                }
                 single_step_target(p_task_ctx);
                 return CMD_CONTINUE;
 
