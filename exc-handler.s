@@ -1,7 +1,6 @@
 /*
- * glue.s - part of CWDebug, a source-level debugger for AmigaOS
- *          This file contains the exception handler and a routine that starts the target,
- *          that "glue" the debugger to the target.
+ * exc-handler.s - part of CWDebug, a source-level debugger for AmigaOS
+ *                 This file contains the exception handler that does the "low level" work.
  *
  * Copyright(C) 2018-2021 Constantin Wiemer
  */

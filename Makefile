@@ -1,5 +1,5 @@
 CC      := /opt/m68k-amigaos/bin/m68k-amigaos-gcc
-AS      := /opt/m68k-amigaos/bin/m68k-amigaos-as
+AS      := /opt/m68k-amigaos/bin/m68k-amigaos-gcc
 CFLAGS  := -Wall
 LDFLAGS := -s -noixemul -L/opt/m68k-amigaos//m68k-amigaos/libnix/lib -L/opt/m68k-amigaos//m68k-amigaos/libnix/lib/libnix
 LDLIBS  := -lnix -lamiga -ldebug
@@ -33,10 +33,10 @@ serio.o: serio.c serio.h util.h
 
 util.o: util.c util.h
 
-glue.o: glue.s
-	$(AS) -o $@ $^
+exc-handler.o: exc-handler.s
+	$(AS) -c -o $@ $^
 
-cwdebug: debugger.o m68kdasm.o main.o serio.o util.o glue.o
+cwdebug: debugger.o m68kdasm.o main.o serio.o util.o exc-handler.o
 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 examples:
