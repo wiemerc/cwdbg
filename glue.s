@@ -15,16 +15,8 @@
 .set EXC_NUM_TRAP_BP,       0x00000020
 .set EXC_NUM_TRAP_RESTORE,  0x00000021
 .set EXC_NUM_TRACE,         0x00000009
-.set CMD_BREAKPOINT,        0
-.set CMD_RUN,               1
-.set CMD_STEP,              2
-.set CMD_EXCEPTION,         3
-.set CMD_CONTINUE,          4
-.set CMD_RESTORE,           5
-.set CMD_KILL,              6
-.set CMD_QUIT,              7
 
-/* see TaskContext structure in main.c */
+/* see TaskContext structure in debugger.c */
 .set tc_reg_sp,  0
 .set tc_exc_num, 4
 .set tc_reg_sr,  8
@@ -38,33 +30,6 @@
 .extern _handle_single_step
 .extern _handle_exception
 .global _exc_handler
-.global _start_target
-
-
-/*
- * start target with its own stack and return exit code
- * Contrary to several documents / articles on the Internet, the GNU tool chain for AmigaOS
- * uses register A5 as frame pointer and *not* A6 (probably because of the use of A6 as
- * library base address on the Amiga).
- * TODO: pass command line
- * TODO: store old frame pointer / context somewhere so that we can continue with it if want to abort the program
- */
-_start_target:
-    link.w      fp, #-4                 /* set up new stack frame with room for the old stack pointer */
-    movem.l     d1-d7/a0-a4/a6, -(sp)   /* save all registers on the old stack except D0 (used for the return value) and the frame pointer A5 */
-    move.l      sp, -4(fp)              /* save old stack pointer */
-    move.l      12(fp), sp              /* load new stack pointer */
-    add.l       16(fp), sp              /* add stack size so it points to end of stack */
-    move.l      fp, -(sp)               /* save frame pointer on new stack (so that we can restore the old stack pointer later) */
-    move.l      16(fp), -(sp)           /* push stack size onto new stack (AmigaDOS calling convention) */
-    move.l      8(fp), a0               /* call entry point of target */
-    jsr         (a0)
-    addq.l      #4, sp                  /* remove stack size */
-    move.l      (sp)+, fp               /* restore frame pointer */
-    move.l      -4(fp), sp              /* restore old stack pointer */
-    movem.l     (sp)+, d1-d7/a0-a4/a6   /* restore all registers */
-    unlk        fp                      /* restore old frame pointer and return */
-    rts
 
 
 /*
@@ -158,7 +123,6 @@ exc_exc:
 
 debugger_stub:
     /* call the entry point into the debugger corresponding to the type of exception that occurred */
-    /* TODO: abort target if command is CMD_KILL by continuing with context stored in _run_target */
     pea         target_tc                       /* push target context address onto stack */
     move.l      debugger_entry_point, a0
     jsr         (a0)

@@ -10,6 +10,7 @@
 /*
  * included files
  */
+#include <dos/dostags.h>
 #include <exec/types.h>
 #include <proto/alib.h>
 #include <proto/dos.h>
@@ -23,9 +24,11 @@
 /*
  * constants
  */
-#define TRAP_NUM        0
-#define TRAP_OPCODE     0x4e40
-#define STACK_SIZE      8192
+#define TRAP_NUM            0
+#define TRAP_OPCODE         0x4e40
+#define TARGET_STACK_SIZE   8192
+#define SIG_TARGET_EXITED   1
+
 #define CMD_BREAKPOINT  0
 #define CMD_RUN         1
 #define CMD_STEP        2
@@ -57,10 +60,11 @@ typedef struct {
 } BreakPoint;
 
 typedef struct {
+    struct Task  *ds_p_debugger_task;    // our own task - for the target to signal us
+    struct Task  *ds_p_target_task;      // task of target
     BPTR         ds_p_seglist;           // segment list of target
     int          (*ds_p_entry)();        // entry point of target
-    APTR         ds_p_stack;             // stack for target
-    int          ds_status;              // exit status of target
+    int          ds_exit_code;           // exit code of target
     struct List  ds_bpoints;             // list of breakpoints
     BreakPoint   *ds_p_prev_bpoint;      // previous breakpoint that needs to be restored
     int          ds_f_running;           // target running?
@@ -71,7 +75,7 @@ typedef struct {
 /*
  * external functions
  */
-extern int start_target(int (*)(), APTR, ULONG);
+extern void exc_handler();
 
 
 /*

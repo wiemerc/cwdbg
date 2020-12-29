@@ -51,6 +51,7 @@ static void print_stack(const TaskContext *ctx, APTR initial_sp)
     UBYTE i;
     APTR  sp;
 
+    // TODO: Should we print words instead of dwords?
     printf("initial SP = 0x%08lx, current SP = 0x%08lx\n", (ULONG) initial_sp, (ULONG) ctx->tc_reg_sp);
     for (i = 1, sp = ctx->tc_reg_sp; (i <= 10) && (sp <= initial_sp); ++i, sp += 4) {
         printf("0x%08lx:\t0x%08lx\n", (ULONG) sp, *((ULONG *) sp));
@@ -120,6 +121,28 @@ static UBYTE parse_args(char *p_cmd, char **pp_args)
 }
 
 
+static void wrap_target()
+{
+    // allocate trap and install exception handler
+    g_dstate.ds_p_target_task->tc_TrapCode = exc_handler;
+    if (AllocTrap(TRAP_NUM) == -1) {
+        LOG(ERROR, "could not allocate trap");
+        return;
+    }
+
+    LOG(
+        DEBUG,
+        "calling entry point of target, initial PC = 0x%08lx, initial SP = 0x%08lx",
+        (ULONG) g_dstate.ds_p_entry,
+        (ULONG) g_dstate.ds_p_target_task->tc_SPUpper - 2
+    );
+    g_dstate.ds_exit_code = g_dstate.ds_p_entry();
+
+    // signal debugger that target has finished
+    Signal(g_dstate.ds_p_debugger_task, SIG_TARGET_EXITED);
+}
+
+
 static void run_target()
 {
     BreakPoint *p_bpoint;
@@ -132,11 +155,23 @@ static void run_target()
             p_bpoint->bp_count = 0;
     }
 
-    LOG(INFO, "starting target at address 0x%08lx with inital stack pointer at 0x%08lx", (ULONG) g_dstate.ds_p_entry, (ULONG) g_dstate.ds_p_stack + STACK_SIZE);
+    LOG(INFO, "starting target");
     g_dstate.ds_f_running = 1;
-    g_dstate.ds_status = start_target(g_dstate.ds_p_entry, g_dstate.ds_p_stack, STACK_SIZE);
+    if ((g_dstate.ds_p_target_task = (struct Task *) CreateNewProcTags(
+        NP_Name, (ULONG) "debugme",
+        NP_Entry, (ULONG) wrap_target,
+        NP_StackSize, TARGET_STACK_SIZE,
+        NP_Input, Input(),
+        NP_Output, Output(),
+        NP_CloseInput, FALSE,
+        NP_CloseOutput, FALSE
+        )) == NULL) {
+        LOG(ERROR, "could not start target as process");
+        return;
+    }
+    Wait(SIG_TARGET_EXITED);
     g_dstate.ds_f_running = 0;
-    LOG(INFO, "target terminated with exit code %d", g_dstate.ds_status);
+    LOG(INFO, "target terminated with exit code %d", g_dstate.ds_exit_code);
 }
 
 
@@ -194,7 +229,6 @@ static void quit_debugger()
     LOG(INFO, "exiting...");
     while ((p_bpoint = (BreakPoint *) RemHead(&g_dstate.ds_bpoints)))
         FreeVec(p_bpoint);
-    FreeVec(g_dstate.ds_p_stack);
     UnLoadSeg(g_dstate.ds_p_seglist);
 }
 
@@ -214,6 +248,7 @@ static int is_correct_target_state_for_command(char cmd)
 }
 
 
+// TODO: store state in debugger state instead of passing it around
 static int process_cli_commands(TaskContext *p_task_ctx, int mode)
 {
     char                cmd[64];                // command buffer
@@ -254,6 +289,8 @@ static int process_cli_commands(TaskContext *p_task_ctx, int mode)
                 // TODO: restore breakpoint if necessary
                 g_dstate.ds_f_running = 0;
                 g_dstate.ds_f_stepping = 0;
+                Signal(g_dstate.ds_p_debugger_task, SIG_TARGET_EXITED);
+                RemTask(NULL);
                 return CMD_KILL;
 
             case 'q':   // quit debugger
@@ -279,7 +316,7 @@ static int process_cli_commands(TaskContext *p_task_ctx, int mode)
                         print_registers(p_task_ctx);
                         break;
                     case 's':   // ... stack
-                        print_stack(p_task_ctx, g_dstate.ds_p_stack + STACK_SIZE);
+                        print_stack(p_task_ctx, g_dstate.ds_p_target_task->tc_SPUpper - 2);
                         break;
                     default:
                         LOG(ERROR, "unknown command 'i %c'", p_args[1][0]);
@@ -320,6 +357,7 @@ int load_and_init_target(const char *p_program_path)
     recv_slip_frame(p_frame);
 
     // initialize state
+    g_dstate.ds_p_debugger_task = FindTask(NULL);
     g_dstate.ds_f_running = 0;
     g_dstate.ds_f_stepping = 0;
     g_dstate.ds_p_prev_bpoint = NULL;
@@ -331,13 +369,6 @@ int load_and_init_target(const char *p_program_path)
     }
     // seglist points to (first) code segment, code starts one long word behind pointer
     g_dstate.ds_p_entry = BCPL_TO_C_PTR(g_dstate.ds_p_seglist + 1);
-
-    // allocate stack for target
-    if ((g_dstate.ds_p_stack = AllocVec(STACK_SIZE, 0)) == NULL) {
-        LOG(ERROR, "could not allocate stack for target");
-        UnLoadSeg(g_dstate.ds_p_seglist);
-        return RETURN_ERROR;
-    }
 
     // initialize list of breakpoints, lh_Type is used as number of breakpoints
     NewList(&g_dstate.ds_bpoints);
