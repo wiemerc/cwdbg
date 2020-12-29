@@ -53,12 +53,12 @@ _exc_handler:
     ori.w       #0x0700, sr                     /* disable interrupts in supervisor mode */
 
     /* log exception via serial port */
-    movem.l     d0-d1/a0-a1, -(sp)              /* save registers that are modified by _kprintf */
-    move.l      16(sp), -(sp)                   /* exception number */
-    move.l      #msg, -(sp)                     /* format string */
-    jsr         _kprintf
-    add.l       #8, sp
-    movem.l     (sp)+, d0-d1/a0-a1
+#    movem.l     d0-d1/a0-a1, -(sp)              /* save registers that are modified by _kprintf */
+#    move.l      16(sp), -(sp)                   /* exception number */
+#    move.l      #msg, -(sp)                     /* format string */
+#    jsr         _kprintf
+#    add.l       #8, sp
+#    movem.l     (sp)+, d0-d1/a0-a1
 
     /* default entry point into debugger, changed later if necessary */
     move.l      #_handle_breakpoint, debugger_entry_point
