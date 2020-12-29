@@ -156,7 +156,7 @@ static void run_target()
     }
 
     LOG(INFO, "starting target");
-    gp_dstate->ds_f_running = 1;
+    gp_dstate->ds_target_state = TS_RUNNING;
     if ((gp_dstate->ds_p_target_task = (struct Task *) CreateNewProcTags(
         NP_Name, (ULONG) "debugme",
         NP_Entry, (ULONG) wrap_target,
@@ -170,7 +170,7 @@ static void run_target()
         return;
     }
     Wait(SIG_TARGET_EXITED);
-    gp_dstate->ds_f_running = 0;
+    gp_dstate->ds_target_state = TS_EXITED;
     LOG(INFO, "target terminated with exit code %d", gp_dstate->ds_exit_code);
 }
 
@@ -196,14 +196,14 @@ static BreakPoint *set_breakpoint(ULONG offset)
 }
 
 
-static void continue_target(TaskContext *p_task_ctx, int mode)
+static void continue_target(TaskContext *p_task_ctx)
 {
     // If we continue from a breakpoint, it has to be restored first, so we
     // single-step the original instruction at the breakpoint and remember
     // to restore the breakpoint afterwards (see handle_single_step() below).
     // TODO: just continue in case of a deleted breakpoint
-    gp_dstate->ds_f_stepping = 0;
-    if (mode == CMD_BREAKPOINT) {
+    gp_dstate->ds_target_state &= ~TS_SINGLE_STEPPING;
+    if (gp_dstate->ds_target_state & TS_STOPPED_BY_BREAKPOINT) {
         p_task_ctx->tc_reg_sr &= 0xbfff;    // clear T0
         p_task_ctx->tc_reg_sr |= 0x8700;    // set T1 and interrupt mask
     }
@@ -212,7 +212,7 @@ static void continue_target(TaskContext *p_task_ctx, int mode)
 
 static void single_step_target(TaskContext *p_task_ctx)
 {
-    gp_dstate->ds_f_stepping = 1;
+    gp_dstate->ds_target_state |= TS_SINGLE_STEPPING;
     // In trace mode, *all* interrupts must be disabled (except for the NMI),
     // otherwise OS code could be executed while the trace bit is still set,
     // which would cause the OS exception handler (an alert) to be executed instead
@@ -236,11 +236,11 @@ static void quit_debugger()
 static int is_correct_target_state_for_command(char cmd)
 {
     // keep list of commands (the 1st argument of strchr()) in sync with process_cli_commands()
-    if (!gp_dstate->ds_f_running && (strchr("cs\nik", cmd) != NULL)) {
+    if (!(gp_dstate->ds_target_state & TS_RUNNING) && (strchr("cs\nik", cmd) != NULL)) {
         LOG(ERROR, "incorrect state for command '%c': target is not yet running", cmd);
         return 0;
     }
-    if (gp_dstate->ds_f_running && (strchr("rq", cmd) != NULL)) {
+    if ((gp_dstate->ds_target_state & TS_RUNNING) && (strchr("rq", cmd) != NULL)) {
         LOG(ERROR, "incorrect state for command '%c': target is already / still running", cmd);
         return 0;
     }
@@ -248,8 +248,7 @@ static int is_correct_target_state_for_command(char cmd)
 }
 
 
-// TODO: store state in debugger state instead of passing it around
-static int process_cli_commands(TaskContext *p_task_ctx, int mode)
+static void process_cli_commands(TaskContext *p_task_ctx)
 {
     char                cmd[64];                // command buffer
     char                *p_args[5];             // argument list
@@ -287,24 +286,23 @@ static int process_cli_commands(TaskContext *p_task_ctx, int mode)
 
             case 'k':   // kill (abort) target
                 // TODO: restore breakpoint if necessary
-                gp_dstate->ds_f_running = 0;
-                gp_dstate->ds_f_stepping = 0;
+                gp_dstate->ds_target_state = TS_EXITED;
                 Signal(gp_dstate->ds_p_debugger_task, SIG_TARGET_EXITED);
                 RemTask(NULL);
-                return CMD_KILL;
+                return;  // We don't get here anyway...
 
             case 'q':   // quit debugger
                 quit_debugger();
-                return CMD_QUIT;
+                return;
 
             case 'c':   // continue target
-                continue_target(p_task_ctx, mode);
-                return CMD_CONTINUE;
+                continue_target(p_task_ctx);
+                return;
 
             case 's':   // single step target
             case '\n':
                 single_step_target(p_task_ctx);
-                return CMD_CONTINUE;
+                return;
 
             case 'i':   // inspect ...
                 if (nargs != 2) {
@@ -363,8 +361,7 @@ int load_and_init_target(const char *p_program_path)
         return RETURN_ERROR;
     }
     gp_dstate->ds_p_debugger_task = FindTask(NULL);
-    gp_dstate->ds_f_running = 0;
-    gp_dstate->ds_f_stepping = 0;
+    gp_dstate->ds_target_state = TS_IDLE;
     gp_dstate->ds_p_prev_bpoint = NULL;
 
     // load target
@@ -379,15 +376,21 @@ int load_and_init_target(const char *p_program_path)
     NewList(&gp_dstate->ds_bpoints);
     gp_dstate->ds_bpoints.lh_Type = 0;
 
-    return process_cli_commands(NULL, CMD_RUN);
+    process_cli_commands(NULL);
+    return RETURN_OK;
 }
 
 
-int handle_breakpoint(TaskContext *p_task_ctx)
+//
+// routines called by the exception handler
+//
+
+void handle_breakpoint(TaskContext *p_task_ctx)
 {
     BreakPoint          *p_bpoint;
     APTR                p_baddr;
 
+    gp_dstate->ds_target_state |= TS_STOPPED_BY_BREAKPOINT;
     p_baddr = p_task_ctx->tc_reg_pc - 2;
     if ((p_bpoint = find_bpoint_by_addr(&gp_dstate->ds_bpoints, p_baddr)) != NULL) {
         gp_dstate->ds_p_prev_bpoint = p_bpoint;
@@ -400,16 +403,18 @@ int handle_breakpoint(TaskContext *p_task_ctx)
     }
     else {
         LOG(CRIT, "INTERNAL ERROR: target has hit unknown breakpoint at entry + 0x%08lx", ((ULONG) p_baddr - (ULONG) gp_dstate->ds_p_entry));
-        return CMD_KILL;
+        return;
     }
 
     print_instr(p_task_ctx);
-    return process_cli_commands(p_task_ctx, CMD_BREAKPOINT);
+    process_cli_commands(p_task_ctx);
+    gp_dstate->ds_target_state &= ~TS_STOPPED_BY_BREAKPOINT;
 }
 
 
-int handle_single_step(TaskContext *p_task_ctx)
+void handle_single_step(TaskContext *p_task_ctx)
 {
+    gp_dstate->ds_target_state |= TS_STOPPED_BY_SINGLE_STEP;
     if (gp_dstate->ds_p_prev_bpoint) {
         // previous breakpoint needs to be restored
         LOG(DEBUG, "restoring breakpoint #%ld at entry + 0x%08lx",
@@ -417,22 +422,23 @@ int handle_single_step(TaskContext *p_task_ctx)
         *((USHORT *) gp_dstate->ds_p_prev_bpoint->bp_addr) = TRAP_OPCODE;
         gp_dstate->ds_p_prev_bpoint = NULL;
     }
-    if (gp_dstate->ds_f_stepping) {
-        // in single-step mode
+    if (gp_dstate->ds_target_state & TS_SINGLE_STEPPING) {
         print_instr(p_task_ctx);
-        return process_cli_commands(p_task_ctx, CMD_STEP);
+        process_cli_commands(p_task_ctx);
     }
-    else
-        return CMD_CONTINUE;
+    gp_dstate->ds_target_state &= ~TS_STOPPED_BY_SINGLE_STEP;
 }
 
 
-int handle_exception(TaskContext *p_task_ctx)
+void handle_exception(TaskContext *p_task_ctx)
 {
-    // unhandled exception occurred (called by exception handler)
+    // unhandled exception occurred
+    gp_dstate->ds_target_state |= TS_STOPPED_BY_EXCEPTION;
     LOG(INFO, "unhandled exception #%ld occurred at entry + 0x%08lx",
         p_task_ctx->tc_exc_num,
         ((ULONG) p_task_ctx->tc_reg_pc - (ULONG) gp_dstate->ds_p_entry));
+
     print_instr(p_task_ctx);
-    return process_cli_commands(p_task_ctx, CMD_EXCEPTION);
+    process_cli_commands(p_task_ctx);
+    gp_dstate->ds_target_state &= ~TS_STOPPED_BY_EXCEPTION;
 }

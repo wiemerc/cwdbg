@@ -29,14 +29,17 @@
 #define TARGET_STACK_SIZE   8192
 #define SIG_TARGET_EXITED   1
 
-#define CMD_BREAKPOINT  0
-#define CMD_RUN         1
-#define CMD_STEP        2
-#define CMD_EXCEPTION   3
-#define CMD_CONTINUE    4
-#define CMD_RESTORE     5
-#define CMD_KILL        6
-#define CMD_QUIT        7
+/*
+ * target states
+ * Multiple values are possible (e. g. TS_RUNNING and TS_SINGLE_STEPPING), so we use individual bits.
+ */
+#define TS_IDLE                     0l
+#define TS_RUNNING                  (1l << 1)
+#define TS_SINGLE_STEPPING          (1l << 2)
+#define TS_EXITED                   (1l << 3)
+#define TS_STOPPED_BY_BREAKPOINT    (1l << 4)
+#define TS_STOPPED_BY_SINGLE_STEP   (1l << 5)
+#define TS_STOPPED_BY_EXCEPTION     (1l << 6)
 
 
 /*
@@ -64,11 +67,10 @@ typedef struct {
     struct Task  *ds_p_target_task;      // task of target
     BPTR         ds_p_seglist;           // segment list of target
     int          (*ds_p_entry)();        // entry point of target
+    int          ds_target_state;        // current target state
     int          ds_exit_code;           // exit code of target
     struct List  ds_bpoints;             // list of breakpoints
     BreakPoint   *ds_p_prev_bpoint;      // previous breakpoint that needs to be restored
-    int          ds_f_running;           // target running?
-    int          ds_f_stepping;          // in single-step mode?
 } DebuggerState;
 
 
@@ -82,8 +84,8 @@ extern void exc_handler();
  * exported functions
  */
 int load_and_init_target(const char *p_program_path);
-int handle_breakpoint(TaskContext *p_task_ctx);
-int handle_single_step(TaskContext *p_task_ctx);
-int handle_exception(TaskContext *p_task_ctx);
+void handle_breakpoint(TaskContext *p_task_ctx);
+void handle_single_step(TaskContext *p_task_ctx);
+void handle_exception(TaskContext *p_task_ctx);
 
 #endif /* CWDEBUG_DEBUGGER_H */
