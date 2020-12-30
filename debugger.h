@@ -17,7 +17,6 @@
 #include <proto/exec.h>
 
 #include "util.h"
-#include "serio.h"
 #include "m68k.h"
 
 

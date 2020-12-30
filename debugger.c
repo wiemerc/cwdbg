@@ -6,7 +6,6 @@
 
 
 #include "debugger.h"
-#include "serio.h"
 
 
 DebuggerState *gp_dstate;
@@ -169,6 +168,7 @@ static void run_target()
         LOG(ERROR, "could not start target as process");
         return;
     }
+//    LOG(DEBUG, "waiting for signal from target...");
     Wait(SIG_TARGET_EXITED);
     gp_dstate->ds_target_state = TS_EXITED;
     LOG(INFO, "target terminated with exit code %d", gp_dstate->ds_exit_code);
@@ -347,13 +347,7 @@ static void process_cli_commands(TaskContext *p_task_ctx)
 
 int load_and_init_target(const char *p_program_path)
 {
-    Buffer              *p_frame;
-
     // TODO: support arguments for target
-    // TODO: move to process_remote_commands()
-    p_frame = create_buffer(MAX_BUFFER_SIZE);
-    LOG(INFO, "waiting for host to connect...");
-    recv_slip_frame(p_frame);
 
     // initialize state
     if ((gp_dstate = AllocVec(sizeof(DebuggerState), 0)) == NULL) {
@@ -417,8 +411,12 @@ void handle_single_step(TaskContext *p_task_ctx)
     gp_dstate->ds_target_state |= TS_STOPPED_BY_SINGLE_STEP;
     if (gp_dstate->ds_p_prev_bpoint) {
         // previous breakpoint needs to be restored
-        LOG(DEBUG, "restoring breakpoint #%ld at entry + 0x%08lx",
-            gp_dstate->ds_p_prev_bpoint->bp_num, ((ULONG) gp_dstate->ds_p_prev_bpoint->bp_addr - (ULONG) gp_dstate->ds_p_entry));
+//        LOG(
+//            DEBUG,
+//            "restoring breakpoint #%ld at entry + 0x%08lx",
+//            gp_dstate->ds_p_prev_bpoint->bp_num,
+//            ((ULONG) gp_dstate->ds_p_prev_bpoint->bp_addr - (ULONG) gp_dstate->ds_p_entry)
+//        );
         *((USHORT *) gp_dstate->ds_p_prev_bpoint->bp_addr) = TRAP_OPCODE;
         gp_dstate->ds_p_prev_bpoint = NULL;
     }

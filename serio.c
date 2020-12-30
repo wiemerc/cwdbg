@@ -293,3 +293,15 @@ LONG recv_slip_frame(Buffer *frame)
     else
         return DOSFALSE;
 }
+
+
+// TODO: move routines below to separate file
+
+void process_remote_commands(TaskContext *p_taks_ctx)
+{
+    Buffer              *p_frame;
+
+    p_frame = create_buffer(MAX_BUFFER_SIZE);
+    LOG(INFO, "waiting for host to connect...");
+    recv_slip_frame(p_frame);
+}

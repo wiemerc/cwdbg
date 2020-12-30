@@ -19,6 +19,7 @@
 #include <proto/exec.h>
 
 #include "util.h"
+#include "debugger.h"
 
 
 #define MAX_BUFFER_SIZE 1024
@@ -68,6 +69,7 @@ BYTE serio_get_status();
 void serio_stop_timer();
 void serio_abort();
 LONG recv_slip_frame(Buffer *frame);
+void process_remote_commands(TaskContext *p_taks_ctx);
 
 
 /*
