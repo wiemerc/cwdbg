@@ -8,15 +8,19 @@
 /*
  * included files
  */
+#include <dos/dos.h>
 #include <exec/types.h>
-#include <proto/alib.h>
-#include <proto/dos.h>
 #include <proto/exec.h>
 
 #include "debugger.h"
 #include "m68k.h"
 #include "serio.h"
 #include "util.h"
+
+
+// TODO: only include in headers other headers that are needed for the *header itself*
+// TODO: public routines first, forward-declare private routines if necessary, sort in logical / alphabetical order
+// TODO: move files to server/
 
 
 /*
@@ -27,14 +31,9 @@ UBYTE                g_loglevel;
 char                 g_logmsg[256];
 
 
-extern void exc_handler();
-
-
 int main(int argc, char **argv)
 {
-    int                 status = RETURN_OK;         // exit status
-    struct Task         *self = FindTask(NULL);     // pointer to this task
-    APTR                old_exc_handler;            // previous execption handler
+    int status;
 
     // setup logging
     // TODO: get rid of g_logfh
@@ -44,42 +43,25 @@ int main(int argc, char **argv)
 
     if (argc == 1) {
         LOG(ERROR, "no target specified - usage: cwdebug <target> [args]");
-        status = RETURN_ERROR;
-        goto ERROR_WRONG_USAGE;
+        return RETURN_ERROR;
     }
 
     LOG(INFO, "initializing...");
-
-    // allocate trap and install exception handler
-    old_exc_handler   = self->tc_TrapCode;
-    self->tc_TrapCode = exc_handler;
-    if (AllocTrap(TRAP_NUM) == -1) {
-        LOG(ERROR, "could not allocate trap");
-        status = RETURN_ERROR;
-        goto ERROR_NO_TRAP;
-    }
-
     // initialize disassembler routines
     m68k_build_opcode_table();
+    LOG(INFO, "initialized disassembler routines");
 
     // initialize serial IO
     if (serio_init() == DOSFALSE) {
         LOG(ERROR, "could not initialize serial IO");
-        status = RETURN_ERROR;
-        goto ERROR_NO_SERIAL_IO;
+        return RETURN_ERROR;
     }
     else {
-        LOG(INFO, "serial IO initialized");
+        LOG(INFO, "initialized serial IO");
     }
 
-    // hand over control to debug_main() which does all the work
+    // hand over control to load_and_init_target() which does all the work
     status = load_and_init_target(argv[1]);
-
     serio_exit();
-ERROR_NO_SERIAL_IO:
-    FreeTrap(TRAP_NUM);
-ERROR_NO_TRAP:
-    self->tc_TrapCode = old_exc_handler;
-ERROR_WRONG_USAGE:
     return status;
 }
