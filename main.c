@@ -18,8 +18,6 @@
 #include "util.h"
 
 
-// TODO: only include in headers other headers that are needed for the *header itself*
-// TODO: public routines first, forward-declare private routines if necessary, sort in logical / alphabetical order
 // TODO: move files to server/
 
 
@@ -28,7 +26,7 @@ int main(int argc, char **argv)
     int status;
 
     // setup logging
-    // TODO: specify log level via command-line switch
+    // TODO: specify log level via command line switch
     g_loglevel = DEBUG;
 
     if (argc == 1) {
@@ -51,6 +49,7 @@ int main(int argc, char **argv)
     }
 
     // hand over control to load_and_init_target() which does all the work
+    // TODO: either run in local or remote mode, specified by command line switch
     status = load_and_init_target(argv[1]);
     serio_exit();
     return status;

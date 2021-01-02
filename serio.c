@@ -1,18 +1,32 @@
 /*
- * serio.c - part of CWDebug, a source-level debugger for AmigaOS
+ * serio.c - part of CWDebug, a source-level debugger for the AmigaOS
  *
  * Copyright(C) 2018-2021 Constantin Wiemer
  */
 
 
+#include <devices/serial.h>
+#include <dos/dos.h>
+#include <dos/dosasl.h>
+#include <dos/dosextens.h>
+#include <exec/io.h>
+#include <exec/types.h>
+#include <proto/alib.h>
+#include <proto/exec.h>
 #include <stdio.h>
 
+#include "debugger.h"
 #include "serio.h"
+#include "util.h"
 
 
 ULONG g_serio_errno = 0;
 static struct IOExtSer *sreq;
 static struct IOExtTime *treq;
+
+
+static LONG slip_encode_buffer(Buffer *dbuf, const Buffer *sbuf);
+static LONG slip_decode_buffer(Buffer *dbuf, const Buffer *sbuf);
 
 
 /*
@@ -145,6 +159,79 @@ void dump_buffer(const Buffer *buffer)
 }
 
 /*
+ * SLIP routines
+ */
+static Buffer *create_slip_frame(const Buffer *data)
+{
+    Buffer *frame;
+
+    /* create buffer large enough to hold the IP header and the data */
+    if ((frame = create_buffer(MAX_BUFFER_SIZE)) == NULL) {
+        LOG(ERROR, "could not create buffer for SLIP frame");
+        g_serio_errno = ERROR_NO_FREE_STORE;
+        return NULL;
+    }
+
+    if (slip_encode_buffer(frame, data) == DOSFALSE) {
+        LOG(ERROR, "could not copy all data to the SLIP frame");
+        /* g_serio_errno has already been set by slip_encode_buffer() */
+        return NULL;
+    }
+    
+    /* add SLIP end-of-frame marker */
+    if (frame->b_size < MAX_BUFFER_SIZE) {
+        *(frame->b_addr + frame->b_size) = SLIP_END;
+        ++frame->b_size;
+    }
+    else {
+        LOG(ERROR, "could not add SLIP end-of-frame marker");
+        g_serio_errno = ERROR_BUFFER_OVERFLOW;
+        return NULL;
+    }
+    g_serio_errno = 0;
+    return frame;
+}
+
+
+static LONG send_slip_frame(const Buffer *frame)
+{
+    BYTE error;
+
+    sreq->io_SerFlags     &= ~SERF_EOFMODE;      /* clear EOF mode */
+    sreq->IOSer.io_Command = CMD_WRITE;
+    sreq->IOSer.io_Length  = frame->b_size;
+    sreq->IOSer.io_Data    = (APTR) frame->b_addr;
+    g_serio_errno = error = DoIO((struct IORequest *) sreq);
+    if (error == 0)
+        return DOSTRUE;
+    else
+        return DOSFALSE;
+}
+
+
+LONG recv_slip_frame(Buffer *frame)
+{
+    BYTE error;
+
+    sreq->io_SerFlags     |= SERF_EOFMODE;       /* set EOF mode */
+    sreq->IOSer.io_Command = CMD_READ;
+    sreq->IOSer.io_Length  = MAX_BUFFER_SIZE;
+    sreq->IOSer.io_Data    = (APTR) frame->b_addr;
+    g_serio_errno = error = DoIO((struct IORequest *) sreq);
+    if (error == 0) {
+        frame->b_size = sreq->IOSer.io_Actual;
+#if DEBUG
+        LOG(DEBUG, "dump of received SLIP frame (%ld bytes):", frame->b_size);
+        dump_buffer(frame);
+#endif
+        return DOSTRUE;
+    }
+    else
+        return DOSFALSE;
+}
+
+
+/*
  * copy data between two buffers and SLIP-encode them on the way
  */
 static LONG slip_encode_buffer(Buffer *dbuf, const Buffer *sbuf)
@@ -221,79 +308,6 @@ static LONG slip_decode_buffer(Buffer *dbuf, const Buffer *sbuf)
     }
     g_serio_errno = 0;
     return DOSTRUE;
-}
-
-
-/*
- * SLIP routines
- */
-static Buffer *create_slip_frame(const Buffer *data)
-{
-    Buffer *frame;
-
-    /* create buffer large enough to hold the IP header and the data */
-    if ((frame = create_buffer(MAX_BUFFER_SIZE)) == NULL) {
-        LOG(ERROR, "could not create buffer for SLIP frame");
-        g_serio_errno = ERROR_NO_FREE_STORE;
-        return NULL;
-    }
-
-    if (slip_encode_buffer(frame, data) == DOSFALSE) {
-        LOG(ERROR, "could not copy all data to the SLIP frame");
-        /* g_serio_errno has already been set by slip_encode_buffer() */
-        return NULL;
-    }
-    
-    /* add SLIP end-of-frame marker */
-    if (frame->b_size < MAX_BUFFER_SIZE) {
-        *(frame->b_addr + frame->b_size) = SLIP_END;
-        ++frame->b_size;
-    }
-    else {
-        LOG(ERROR, "could not add SLIP end-of-frame marker");
-        g_serio_errno = ERROR_BUFFER_OVERFLOW;
-        return NULL;
-    }
-    g_serio_errno = 0;
-    return frame;
-}
-
-
-static LONG send_slip_frame(const Buffer *frame)
-{
-    BYTE error;
-
-    sreq->io_SerFlags     &= ~SERF_EOFMODE;      /* clear EOF mode */
-    sreq->IOSer.io_Command = CMD_WRITE;
-    sreq->IOSer.io_Length  = frame->b_size;
-    sreq->IOSer.io_Data    = (APTR) frame->b_addr;
-    g_serio_errno = error = DoIO((struct IORequest *) sreq);
-    if (error == 0)
-        return DOSTRUE;
-    else
-        return DOSFALSE;
-}
-
-
-LONG recv_slip_frame(Buffer *frame)
-{
-    BYTE error;
-
-    sreq->io_SerFlags     |= SERF_EOFMODE;       /* set EOF mode */
-    sreq->IOSer.io_Command = CMD_READ;
-    sreq->IOSer.io_Length  = MAX_BUFFER_SIZE;
-    sreq->IOSer.io_Data    = (APTR) frame->b_addr;
-    g_serio_errno = error = DoIO((struct IORequest *) sreq);
-    if (error == 0) {
-        frame->b_size = sreq->IOSer.io_Actual;
-#if DEBUG
-        LOG(DEBUG, "dump of received SLIP frame (%ld bytes):", frame->b_size);
-        dump_buffer(frame);
-#endif
-        return DOSTRUE;
-    }
-    else
-        return DOSFALSE;
 }
 
 
