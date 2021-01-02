@@ -1,58 +1,46 @@
 #ifndef CWDEBUG_UTIL_H
 #define CWDEBUG_UTIL_H
 /*
- * util.h - part of CWDebug, a source-level debugger for AmigaOS
+ * util.h - part of CWDebug, a source-level debugger for the AmigaOS
  *
- * Copyright(C) 2018, 2019 Constantin Wiemer
+ * Copyright(C) 2018-2021 Constantin Wiemer
  */
 
 
 /*
  * included files
  */
+#include <dos/dos.h>
 #include <exec/types.h>
-#include <proto/dos.h>
-#include <stdio.h>
-#include <string.h>
 
 
 /*
  * external references
  */
 extern UBYTE g_loglevel;
-extern char  g_logmsg[256];
 
 
 /*
  * constants / macros
  */
-#define DEBUG 10
-#define INFO  20
-#define WARN  30
-#define ERROR 40
-#define CRIT  50
-// TODO: rewrite as function with vsprintf()
-#define LOG(level, fmt, ...)                                 \
-{                                                            \
-    if (level >= g_loglevel) {                               \
-        switch (level) {                                     \
-            case DEBUG: Write(Output(), "DEBUG: ", 7); break; \
-            case INFO:  Write(Output(), "INFO: ", 6);  break; \
-            case WARN:  Write(Output(), "WARN: ", 6);  break; \
-            case ERROR: Write(Output(), "ERROR: ", 7); break; \
-            case CRIT:  Write(Output(), "CRIT: ", 5);  break; \
-        }                                                    \
-        sprintf(g_logmsg, fmt, ##__VA_ARGS__);               \
-        Write(Output(), g_logmsg, strlen(g_logmsg));          \
-        Write(Output(), "\n", 1);                             \
-    }                                                        \
-}
-#define C_TO_BCPL_PTR(ptr) ((BPTR) (((ULONG) (ptr)) >> 2))
-#define BCPL_TO_C_PTR(ptr) ((APTR) (((ULONG) (ptr)) << 2))
+#define DEBUG 0
+#define INFO  1
+#define WARN  2 
+#define ERROR 3
+#define CRIT  4
 
 
 /*
  * prototypes
  */
+void logmsg(const char *p_fname, int lineno, const char *p_func, UBYTE level, const char *p_fmtstr, ...);
+
+
+/*
+ * macros
+ */
+#define LOG(level, p_fmtstr, ...) {logmsg(__FILE__, __LINE__, __func__, level, p_fmtstr, ##__VA_ARGS__);}
+#define C_TO_BCPL_PTR(ptr) ((BPTR) (((ULONG) (ptr)) >> 2))
+#define BCPL_TO_C_PTR(ptr) ((APTR) (((ULONG) (ptr)) << 2))
 
 #endif /* CWDEBUG_UTIL_H */

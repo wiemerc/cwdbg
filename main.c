@@ -23,13 +23,6 @@
 // TODO: move files to server/
 
 
-/*
- * global variables
- */
-UBYTE                g_loglevel;
-char                 g_logmsg[256];
-
-
 int main(int argc, char **argv)
 {
     int status;

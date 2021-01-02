@@ -13,6 +13,7 @@
 #include <devices/serial.h>
 #include <dos/dos.h>
 #include <dos/dosasl.h>
+#include <dos/dosextens.h>
 #include <exec/io.h>
 #include <exec/types.h>
 #include <proto/alib.h>

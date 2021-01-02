@@ -9,6 +9,8 @@
 #include <exec/types.h>
 #include <proto/dos.h>
 #include <proto/exec.h>
+#include <stdio.h>
+#include <string.h>
 
 #include "cli.h"
 #include "debugger.h"

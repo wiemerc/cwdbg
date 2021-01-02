@@ -208,6 +208,7 @@ void handle_single_step(TaskContext *p_task_ctx)
         gp_dstate->ds_p_prev_bpoint = NULL;
     }
     if (gp_dstate->ds_target_state & TS_SINGLE_STEPPING) {
+        LOG(INFO, "target has stopped after single step");
         process_cli_commands(p_task_ctx);
     }
     gp_dstate->ds_target_state &= ~TS_STOPPED_BY_SINGLE_STEP;
@@ -218,9 +219,12 @@ void handle_exception(TaskContext *p_task_ctx)
 {
     // unhandled exception occurred
     gp_dstate->ds_target_state |= TS_STOPPED_BY_EXCEPTION;
-    LOG(INFO, "unhandled exception #%ld occurred at entry + 0x%08lx",
+    LOG(
+        INFO,
+        "unhandled exception #%ld occurred at entry + 0x%08lx",
         p_task_ctx->tc_exc_num,
-        ((ULONG) p_task_ctx->tc_reg_pc - (ULONG) gp_dstate->ds_p_entry));
+        ((ULONG) p_task_ctx->tc_reg_pc - (ULONG) gp_dstate->ds_p_entry)
+    );
 
     process_cli_commands(p_task_ctx);
     gp_dstate->ds_target_state &= ~TS_STOPPED_BY_EXCEPTION;
