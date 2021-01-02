@@ -75,6 +75,6 @@ void process_remote_commands(TaskContext *p_taks_ctx);
 /*
  * external references
  */
-extern ULONG             g_serio_errno;    /* serial IO error code */
+extern ULONG g_serio_errno;    /* serial IO error code */
 
 #endif /* CWNET_SERIO_H */

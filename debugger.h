@@ -10,14 +10,9 @@
 /*
  * included files
  */
-#include <dos/dostags.h>
+#include <dos/dos.h>
+#include <exec/tasks.h>
 #include <exec/types.h>
-#include <proto/alib.h>
-#include <proto/dos.h>
-#include <proto/exec.h>
-
-#include "util.h"
-#include "m68k.h"
 
 
 /*
@@ -83,8 +78,20 @@ extern void exc_handler();
  * exported functions
  */
 int load_and_init_target(const char *p_program_path);
+void run_target();
+void continue_target(TaskContext *p_task_ctx);
+void single_step_target(TaskContext *p_task_ctx);
+void quit_debugger();
+BreakPoint *set_breakpoint(ULONG offset);
+BreakPoint *find_bpoint_by_addr(struct List *bpoints, APTR baddr);
 void handle_breakpoint(TaskContext *p_task_ctx);
 void handle_single_step(TaskContext *p_task_ctx);
 void handle_exception(TaskContext *p_task_ctx);
+
+
+/*
+ * external references
+ */
+extern DebuggerState *gp_dstate;    /* global debugger state */
 
 #endif /* CWDEBUG_DEBUGGER_H */
