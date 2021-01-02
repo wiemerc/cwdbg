@@ -18,9 +18,6 @@
 #include "util.h"
 
 
-// TODO: move files to server/
-
-
 int main(int argc, char **argv)
 {
     int status;
