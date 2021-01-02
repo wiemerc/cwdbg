@@ -26,7 +26,6 @@
 /*
  * global variables
  */
-BPTR                 g_logfh;            // for the LOG() macro
 UBYTE                g_loglevel;
 char                 g_logmsg[256];
 
@@ -36,9 +35,7 @@ int main(int argc, char **argv)
     int status;
 
     // setup logging
-    // TODO: get rid of g_logfh
     // TODO: specify log level via command-line switch
-    g_logfh = Output();
     g_loglevel = DEBUG;
 
     if (argc == 1) {

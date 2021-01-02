@@ -19,7 +19,6 @@
 /*
  * external references
  */
-extern BPTR  g_logfh;
 extern UBYTE g_loglevel;
 extern char  g_logmsg[256];
 
@@ -37,15 +36,15 @@ extern char  g_logmsg[256];
 {                                                            \
     if (level >= g_loglevel) {                               \
         switch (level) {                                     \
-            case DEBUG: Write(g_logfh, "DEBUG: ", 7); break; \
-            case INFO:  Write(g_logfh, "INFO: ", 6);  break; \
-            case WARN:  Write(g_logfh, "WARN: ", 6);  break; \
-            case ERROR: Write(g_logfh, "ERROR: ", 7); break; \
-            case CRIT:  Write(g_logfh, "CRIT: ", 5);  break; \
+            case DEBUG: Write(Output(), "DEBUG: ", 7); break; \
+            case INFO:  Write(Output(), "INFO: ", 6);  break; \
+            case WARN:  Write(Output(), "WARN: ", 6);  break; \
+            case ERROR: Write(Output(), "ERROR: ", 7); break; \
+            case CRIT:  Write(Output(), "CRIT: ", 5);  break; \
         }                                                    \
         sprintf(g_logmsg, fmt, ##__VA_ARGS__);               \
-        Write(g_logfh, g_logmsg, strlen(g_logmsg));          \
-        Write(g_logfh, "\n", 1);                             \
+        Write(Output(), g_logmsg, strlen(g_logmsg));          \
+        Write(Output(), "\n", 1);                             \
     }                                                        \
 }
 #define C_TO_BCPL_PTR(ptr) ((BPTR) (((ULONG) (ptr)) >> 2))
