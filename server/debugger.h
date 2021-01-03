@@ -39,6 +39,7 @@
 /*
  * type definitions
  */
+// TODO: use AmigaOS or native types consistently
 typedef struct {
     APTR   tc_reg_sp;
     ULONG  tc_exc_num;

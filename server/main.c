@@ -10,26 +10,32 @@
  */
 #include <dos/dos.h>
 #include <exec/types.h>
+#include <proto/dos.h>
 #include <proto/exec.h>
 
+#include "cli.h"
 #include "debugger.h"
 #include "m68k.h"
 #include "serio.h"
 #include "util.h"
 
 
-int main(int argc, char **argv)
+int main()
 {
-    int status;
+    struct RDArgs *p_rdargs;
+    long args[3] = {0l, 0l, 0l}, f_debug, f_server;
+    char *p_target;
 
-    // setup logging
-    // TODO: specify log level via command line switch
-    g_loglevel = DEBUG;
-
-    if (argc == 1) {
-        LOG(ERROR, "no target specified - usage: cwdebug <target> [args]");
-        return RETURN_ERROR;
+    g_loglevel = INFO;
+    if ((p_rdargs = ReadArgs("-d=--debug/S,-s=--server/S,target/A", args, NULL)) == NULL) {
+        LOG(ERROR, "wrong usage - usage: cwdebug [-d/--debug] [-s/--server] <target>");
+        return RETURN_FAIL;
     }
+    f_debug  = args[0];
+    f_server = args[1];
+    p_target = (char *) args[2];
+    if (f_debug == DOSTRUE)
+        g_loglevel = DEBUG;
 
     LOG(INFO, "initializing...");
     // initialize disassembler routines
@@ -39,7 +45,8 @@ int main(int argc, char **argv)
     // initialize serial IO
     if (serio_init() == DOSFALSE) {
         LOG(ERROR, "could not initialize serial IO");
-        return RETURN_ERROR;
+        FreeArgs(p_rdargs);
+        return RETURN_FAIL;
     }
     else {
         LOG(INFO, "initialized serial IO");
@@ -47,7 +54,22 @@ int main(int argc, char **argv)
 
     // hand over control to load_and_init_target() which does all the work
     // TODO: either run in local or remote mode, specified by command line switch
-    status = load_and_init_target(argv[1]);
+    if (load_and_init_target(p_target) == DOSFALSE) {
+        LOG(ERROR, "could not load and initialize target")
+        serio_exit();
+        FreeArgs(p_rdargs);
+        return RETURN_FAIL;
+    }
+    else {
+        LOG(INFO, "loaded and initialized target");
+    }
+
+    if (f_server == DOSTRUE)
+        process_remote_commands(NULL);
+    else
+        process_cli_commands(NULL);
+
     serio_exit();
-    return status;
+    FreeArgs(p_rdargs);
+    return RETURN_OK;
 }

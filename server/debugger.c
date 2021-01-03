@@ -33,7 +33,7 @@ int load_and_init_target(const char *p_program_path)
     // initialize state
     if ((gp_dstate = AllocVec(sizeof(DebuggerState), 0)) == NULL) {
         LOG(ERROR, "could not allocate memory for debugger state");
-        return RETURN_ERROR;
+        return DOSFALSE;
     }
     gp_dstate->ds_p_debugger_task = FindTask(NULL);
     gp_dstate->ds_target_state = TS_IDLE;
@@ -42,7 +42,7 @@ int load_and_init_target(const char *p_program_path)
     // load target
     if ((gp_dstate->ds_p_seglist = LoadSeg(p_program_path)) == NULL) {
         LOG(ERROR, "could not load target: %ld", IoErr());
-        return RETURN_ERROR;
+        return DOSFALSE;
     }
     // seglist points to (first) code segment, code starts one long word behind pointer
     gp_dstate->ds_p_entry = BCPL_TO_C_PTR(gp_dstate->ds_p_seglist + 1);
@@ -51,8 +51,7 @@ int load_and_init_target(const char *p_program_path)
     NewList(&gp_dstate->ds_bpoints);
     gp_dstate->ds_bpoints.lh_Type = 0;
 
-    process_cli_commands(NULL);
-    return RETURN_OK;
+    return DOSTRUE;
 }
 
 
@@ -82,7 +81,7 @@ void run_target()
         LOG(ERROR, "could not start target as process");
         return;
     }
-//    LOG(DEBUG, "waiting for signal from target...");
+    LOG(DEBUG, "waiting for signal from target...");
     Wait(SIG_TARGET_EXITED);
     gp_dstate->ds_target_state = TS_EXITED;
     LOG(INFO, "target terminated with exit code %d", gp_dstate->ds_exit_code);
@@ -198,12 +197,12 @@ void handle_single_step(TaskContext *p_task_ctx)
     gp_dstate->ds_target_state |= TS_STOPPED_BY_SINGLE_STEP;
     if (gp_dstate->ds_p_prev_bpoint) {
         // previous breakpoint needs to be restored
-//        LOG(
-//            DEBUG,
-//            "restoring breakpoint #%ld at entry + 0x%08lx",
-//            gp_dstate->ds_p_prev_bpoint->bp_num,
-//            ((ULONG) gp_dstate->ds_p_prev_bpoint->bp_addr - (ULONG) gp_dstate->ds_p_entry)
-//        );
+        LOG(
+            DEBUG,
+            "restoring breakpoint #%ld at entry + 0x%08lx",
+            gp_dstate->ds_p_prev_bpoint->bp_num,
+            ((ULONG) gp_dstate->ds_p_prev_bpoint->bp_addr - (ULONG) gp_dstate->ds_p_entry)
+        );
         *((USHORT *) gp_dstate->ds_p_prev_bpoint->bp_addr) = TRAP_OPCODE;
         gp_dstate->ds_p_prev_bpoint = NULL;
     }
