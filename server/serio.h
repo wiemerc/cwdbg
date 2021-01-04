@@ -1,7 +1,7 @@
 #ifndef CWDEBUG_SERIO_H
 #define CWDEBUG_SERIO_H
 /*
- * serio.c - part of CWDebug, a source-level debugger for the AmigaOS
+ * serio.h - part of CWDebug, a source-level debugger for the AmigaOS
  *
  * Copyright(C) 2018-2021 Constantin Wiemer
  */
@@ -13,8 +13,12 @@
 #include <dos/dos.h>
 
 #include "debugger.h"
+#include "stdint.h"
 
 
+/*
+ * constants
+ */
 #define MAX_BUFFER_SIZE 1024
 
 /*
@@ -25,6 +29,16 @@
 #define SLIP_ESC                0xdb
 #define SLIP_ESCAPED_ESC        0xdd
 
+/*
+ * debugger protocol commands
+ */
+#define CMD_SYN                 0
+#define CMD_RUN                 1
+#define CMD_CONT                2
+#define CMD_STEP                3
+#define CMD_QUIT                4
+#define CMD_PEEK                5
+#define CMD_POKE                6
 
 #define IOExtTime timerequest   /* just to make the code look a bit nicer... */
 #define SERIO_TIMEOUT 10        /* timeout for reads and writes in seconds */
@@ -34,28 +48,28 @@
  * buffer for requests and responses
  */
 typedef struct {
-    UBYTE *b_addr;
-    ULONG  b_size;
+    uint8_t *b_addr;
+    uint32_t b_size;
 } Buffer;
 
 
 /*
  * exported functions
  */
-Buffer *create_buffer(ULONG size);
+Buffer *create_buffer(uint32_t size);
 void delete_buffer(const Buffer *buffer);
-LONG serio_init();
+int32_t serio_init();
 void serio_exit();
-BYTE serio_get_status();
+int8_t serio_get_status();
 void serio_stop_timer();
 void serio_abort();
-LONG recv_slip_frame(Buffer *frame);
+int32_t recv_slip_frame(Buffer *frame);
 void process_remote_commands(TaskContext *p_taks_ctx);
 
 
 /*
  * external references
  */
-extern ULONG g_serio_errno;    /* serial IO error code */
+extern uint32_t g_serio_errno;    /* serial IO error code */
 
 #endif /* CWDEBUG_SERIO_H */

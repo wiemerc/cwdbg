@@ -10,7 +10,6 @@
 #include <dos/dosasl.h>
 #include <dos/dosextens.h>
 #include <exec/io.h>
-#include <exec/types.h>
 #include <proto/alib.h>
 #include <proto/exec.h>
 #include <stdio.h>
@@ -18,21 +17,22 @@
 #include "debugger.h"
 #include "serio.h"
 #include "util.h"
+#include "stdint.h"
 
 
-ULONG g_serio_errno = 0;
+uint32_t g_serio_errno = 0;
 static struct IOExtSer *sreq;
 static struct IOExtTime *treq;
 
 
-static LONG slip_encode_buffer(Buffer *dbuf, const Buffer *sbuf);
-static LONG slip_decode_buffer(Buffer *dbuf, const Buffer *sbuf);
+static int32_t slip_encode_buffer(Buffer *dbuf, const Buffer *sbuf);
+static int32_t slip_decode_buffer(Buffer *dbuf, const Buffer *sbuf);
 
 
 /*
  * initialize this module
  */
-LONG serio_init()
+int32_t serio_init()
 {
     struct MsgPort *port = &(((struct Process *) FindTask(NULL))->pr_MsgPort);
     if ((sreq = (struct IOExtSer *) CreateExtIO(port, sizeof(struct IOExtSer))) != NULL) {
@@ -102,13 +102,13 @@ void serio_exit()
 /*
  * create / delete a buffer
  */
-Buffer *create_buffer(ULONG size)
+Buffer *create_buffer(uint32_t size)
 {
     Buffer *buffer;
 
     /* allocate a memory block large enough for the Buffer structure and buffer itself */
     if ((buffer = AllocVec(size + sizeof(Buffer), 0)) != NULL) {
-        buffer->b_addr = ((UBYTE *) buffer) + sizeof(Buffer);
+        buffer->b_addr = ((uint8_t *) buffer) + sizeof(Buffer);
         buffer->b_size = 0;
         return buffer;
     }
@@ -119,28 +119,25 @@ Buffer *create_buffer(ULONG size)
 
 void delete_buffer(const Buffer *buffer)
 {
-    FreeVec((APTR) buffer);
+    FreeVec((void *) buffer);
 }
 
 
 /*
  * create a hexdump of a buffer
  */
+// TODO: move hexdump routine to util.c and use it here and in cli.c
 void dump_buffer(const Buffer *buffer)
 {
-    ULONG pos = 0, i, nchars;
+    uint32_t pos = 0, i, nchars;
     char line[256], *p;
 
-    /* For some reason, we have to use the 'l' modifier for all integers in sprintf(),
-     * otherwise only zeros instead of the real values are printed. Maybe this is
-     * because sprintf() from amiga.lib defaults to 16-bit integers, but GCC always uses
-     * 32-bit integers? Anyway, it works now... */
     while (pos < buffer->b_size) {
-        printf("%04lx: ", pos);
+        printf("%04x: ", pos);
         for (i = pos, p = line, nchars = 0; (i < pos + 16) && (i < buffer->b_size); ++i, ++p, ++nchars) {
-            printf("%02lx ", (ULONG) buffer->b_addr[i]);
+            printf("%02x ", buffer->b_addr[i]);
             if (buffer->b_addr[i] >= 0x20 && buffer->b_addr[i] <= 0x7e) {
-                sprintf(p, "%lc", buffer->b_addr[i]);
+                sprintf(p, "%c", buffer->b_addr[i]);
             }
             else {
                 sprintf(p, ".");
@@ -193,14 +190,14 @@ static Buffer *create_slip_frame(const Buffer *data)
 }
 
 
-static LONG send_slip_frame(const Buffer *frame)
+static int32_t send_slip_frame(const Buffer *frame)
 {
-    BYTE error;
+    int8_t error;
 
     sreq->io_SerFlags     &= ~SERF_EOFMODE;      /* clear EOF mode */
     sreq->IOSer.io_Command = CMD_WRITE;
     sreq->IOSer.io_Length  = frame->b_size;
-    sreq->IOSer.io_Data    = (APTR) frame->b_addr;
+    sreq->IOSer.io_Data    = (void *) frame->b_addr;
     g_serio_errno = error = DoIO((struct IORequest *) sreq);
     if (error == 0)
         return DOSTRUE;
@@ -209,21 +206,19 @@ static LONG send_slip_frame(const Buffer *frame)
 }
 
 
-LONG recv_slip_frame(Buffer *frame)
+int32_t recv_slip_frame(Buffer *frame)
 {
-    BYTE error;
+    int8_t error;
 
     sreq->io_SerFlags     |= SERF_EOFMODE;       /* set EOF mode */
     sreq->IOSer.io_Command = CMD_READ;
     sreq->IOSer.io_Length  = MAX_BUFFER_SIZE;
-    sreq->IOSer.io_Data    = (APTR) frame->b_addr;
+    sreq->IOSer.io_Data    = (void *) frame->b_addr;
     g_serio_errno = error = DoIO((struct IORequest *) sreq);
     if (error == 0) {
         frame->b_size = sreq->IOSer.io_Actual;
-#if DEBUG
         LOG(DEBUG, "dump of received SLIP frame (%ld bytes):", frame->b_size);
         dump_buffer(frame);
-#endif
         return DOSTRUE;
     }
     else
@@ -234,10 +229,10 @@ LONG recv_slip_frame(Buffer *frame)
 /*
  * copy data between two buffers and SLIP-encode them on the way
  */
-static LONG slip_encode_buffer(Buffer *dbuf, const Buffer *sbuf)
+static int32_t slip_encode_buffer(Buffer *dbuf, const Buffer *sbuf)
 {
-    const UBYTE *src = sbuf->b_addr;
-    UBYTE *dst       = dbuf->b_addr;
+    const uint8_t *src = sbuf->b_addr;
+    uint8_t *dst       = dbuf->b_addr;
     int nbytes, nbytes_tot = 0;
     /*
      * The limit for nbytes_tot has to be length of the destination buffer - 1
@@ -277,10 +272,10 @@ static LONG slip_encode_buffer(Buffer *dbuf, const Buffer *sbuf)
 /*
  * copy data between two buffers and SLIP-decode them on the way
  */
-static LONG slip_decode_buffer(Buffer *dbuf, const Buffer *sbuf)
+static int32_t slip_decode_buffer(Buffer *dbuf, const Buffer *sbuf)
 {
-    const UBYTE *src = sbuf->b_addr;
-    UBYTE *dst       = dbuf->b_addr;
+    const uint8_t *src = sbuf->b_addr;
+    uint8_t *dst       = dbuf->b_addr;
     int nbytes;
     g_serio_errno = ERROR_BUFFER_OVERFLOW;
     for (nbytes = 0;
@@ -293,7 +288,7 @@ static LONG slip_decode_buffer(Buffer *dbuf, const Buffer *sbuf)
             else if (*src == SLIP_ESCAPED_ESC)
                 *dst = SLIP_ESC;
             else {
-                LOG(ERROR, "invalid escape sequence found in SLIP frame: 0x%02lx", (ULONG) *src);
+                LOG(ERROR, "invalid escape sequence found in SLIP frame: 0x%02lx", (uint32_t) *src);
                 g_serio_errno = ERROR_BAD_NUMBER;
                 break;
             }
@@ -311,7 +306,7 @@ static LONG slip_decode_buffer(Buffer *dbuf, const Buffer *sbuf)
 }
 
 
-// TODO: move routines below to separate file
+// TODO: move routines below to separate file (server.c / remote.c)
 
 void process_remote_commands(TaskContext *p_taks_ctx)
 {
