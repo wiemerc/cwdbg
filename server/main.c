@@ -38,25 +38,8 @@ int main()
         g_loglevel = DEBUG;
 
     LOG(INFO, "initializing...");
-    // initialize disassembler routines
-    m68k_build_opcode_table();
-    LOG(INFO, "initialized disassembler routines");
-
-    // initialize serial IO
-    if (serio_init() == DOSFALSE) {
-        LOG(ERROR, "could not initialize serial IO");
-        FreeArgs(p_rdargs);
-        return RETURN_FAIL;
-    }
-    else {
-        LOG(INFO, "initialized serial IO");
-    }
-
-    // hand over control to load_and_init_target() which does all the work
-    // TODO: either run in local or remote mode, specified by command line switch
     if (load_and_init_target(p_target) == DOSFALSE) {
         LOG(ERROR, "could not load and initialize target")
-        serio_exit();
         FreeArgs(p_rdargs);
         return RETURN_FAIL;
     }
@@ -64,12 +47,23 @@ int main()
         LOG(INFO, "loaded and initialized target");
     }
 
-    if (f_server == DOSTRUE)
+    if (f_server == DOSTRUE) {
+        if (serio_init() == DOSFALSE) {
+            LOG(ERROR, "could not initialize serial IO");
+            FreeArgs(p_rdargs);
+            return RETURN_FAIL;
+        }
+        else {
+            LOG(INFO, "initialized serial IO");
+        }
         process_remote_commands(NULL);
-    else
+        serio_exit();
+    }
+    else {
+        m68k_build_opcode_table();
+        LOG(INFO, "initialized disassembler routines");
         process_cli_commands(NULL);
-
-    serio_exit();
+    }
     FreeArgs(p_rdargs);
     return RETURN_OK;
 }
