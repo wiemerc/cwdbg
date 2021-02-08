@@ -33,7 +33,7 @@ void logmsg(const char *p_fname, int lineno, const char *p_func, UBYTE level, co
         return;
 
     snprintf(location, 32, "%s:%d", p_fname, lineno);
-    printf("%-20s | %-20s | %-5s | ", location, p_func, p_level_name[level]);
+    printf("%-15s | %-25s | %-5s | ", location, p_func, p_level_name[level]);
 
     va_start(args, p_fmtstr);
     vprintf(p_fmtstr, args);

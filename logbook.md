@@ -59,9 +59,15 @@ Mit FS-UAE ist serielle Kommunikation zwischen Host und Amiga möglich. Packen /
 * <https://opensource.apple.com/source/cctools/cctools-836/as/m68k-opcode.h.auto.html>
 * <https://www.atarimagazines.com/v5n3/ExceptionsInterrupts.html>
 * <http://www.mrjester.hapisan.com/04_MC68/>
+* <https://eli.thegreenplace.net/2009/08/12/framing-in-serial-communications/>
+* <https://stackoverflow.com/questions/1445387/how-do-you-design-a-serial-command-protocol-for-an-embedded-system>
 
 
 ## Sonstiges
-Remote Shell mit AUX:
+
+### Remote Shell mit AUX:
 * auf Amiga-Seite: `mount aux:` und `newcli aux:`
 * auf Mac-Seite: `socat STDIO,raw,echo=0 TCP:127.0.0.1:1234`
+
+### Mock für Server
+`socat -x -v tcp4-listen:1234,fork file:/dev/null`

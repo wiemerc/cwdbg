@@ -12,14 +12,13 @@
  */
 #include <dos/dos.h>
 
-#include "debugger.h"
 #include "stdint.h"
 
 
 /*
  * constants
  */
-#define MAX_BUFFER_SIZE 1024
+#define MAX_FRAME_SIZE 4096
 
 /*
  * SLIP protocol
@@ -29,17 +28,6 @@
 #define SLIP_ESC                0xdb
 #define SLIP_ESCAPED_ESC        0xdd
 
-/*
- * debugger protocol commands
- */
-#define CMD_SYN                 0
-#define CMD_RUN                 1
-#define CMD_CONT                2
-#define CMD_STEP                3
-#define CMD_QUIT                4
-#define CMD_PEEK                5
-#define CMD_POKE                6
-
 #define IOExtTime timerequest   /* just to make the code look a bit nicer... */
 #define SERIO_TIMEOUT 10        /* timeout for reads and writes in seconds */
 
@@ -48,23 +36,20 @@
  * buffer for requests and responses
  */
 typedef struct {
-    uint8_t *b_addr;
-    uint32_t b_size;
+    uint8_t *p_addr;
+    uint32_t size;
 } Buffer;
 
 
 /*
  * exported functions
  */
-Buffer *create_buffer(uint32_t size);
-void delete_buffer(const Buffer *buffer);
 int32_t serio_init();
 void serio_exit();
-int8_t serio_get_status();
-void serio_stop_timer();
-void serio_abort();
-int32_t recv_slip_frame(Buffer *frame);
-void process_remote_commands(TaskContext *p_taks_ctx);
+int32_t put_data_into_slip_frame(const Buffer *pb_data, Buffer *pb_frame);
+int32_t get_data_from_slip_frame(Buffer *pb_data, const Buffer *pb_frame);
+int32_t send_slip_frame(const Buffer *pb_frame);
+int32_t recv_slip_frame(Buffer *pb_frame);
 
 
 /*

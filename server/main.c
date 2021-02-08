@@ -17,9 +17,14 @@
 #include "debugger.h"
 #include "m68k.h"
 #include "serio.h"
+#include "server.h"
 #include "util.h"
 
 
+// TODO: clean up files:
+// - sections in the same order with headings
+// - header for each routine
+// - convert all C to C++ comments
 int main()
 {
     struct RDArgs *p_rdargs;

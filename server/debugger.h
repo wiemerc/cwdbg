@@ -39,7 +39,8 @@
 /*
  * type definitions
  */
-// TODO: use AmigaOS or native types consistently
+// TODO: use  C99 standard types
+// TODO: use prefix p_ for pointers
 typedef struct {
     APTR   tc_reg_sp;
     ULONG  tc_exc_num;

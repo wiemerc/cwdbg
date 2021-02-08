@@ -26,6 +26,7 @@ static void wrap_target();
 //
 // exported routines
 //
+
 int load_and_init_target(const char *p_program_path)
 {
     // TODO: support arguments for target
@@ -187,6 +188,7 @@ void handle_breakpoint(TaskContext *p_task_ctx)
         return;
     }
 
+    // TODO: store mode in global debugger state and call either process_cli_commands() or process_remote_commands()
     process_cli_commands(p_task_ctx);
     gp_dstate->ds_target_state &= ~TS_STOPPED_BY_BREAKPOINT;
 }
