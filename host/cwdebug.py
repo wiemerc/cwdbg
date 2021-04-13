@@ -13,8 +13,8 @@ import sys
 
 from loguru import logger
 
-from serio import send_request, recv_response, OP_INIT
-
+from cli import process_cli_commands
+from serio import ServerConnection
 #from hunklib import ...
 #from stabslib import read_stabs_info, build_program_tree, ...
 
@@ -29,18 +29,15 @@ def main() -> None:
     _setup_logging(level)
     _print_banner()
 
+    conn = None
     try:
-        try:
-            conn = socket.create_connection((args.host, args.port))
-        except ConnectionRefusedError:
-            logger.error(f"could not connect to server '{args.host}:{args.port}'")
-            sys.exit(RETURN_ERROR)
-        logger.debug("sending OP_INIT request to server")
-        send_request(conn, OP_INIT, 'hello'.encode() + b'\x00')
-        opcode, data = recv_response(conn)
-        logger.debug(f"response received from server: opcode={hex(opcode)}, data={data}")
+        conn = ServerConnection(args.host, args.port)
+        process_cli_commands(conn)
     except Exception as e:
         logger.exception(f"internal error occurred: {e}")
+    finally:
+        if conn:
+            conn.close()
 
 
 def _parse_command_line() -> argparse.Namespace:
