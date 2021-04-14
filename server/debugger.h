@@ -59,6 +59,12 @@ typedef struct {
 } BreakPoint;
 
 typedef struct {
+    TaskContext  ti_task_context;        // task context of target
+    int          ti_target_state;        // current target state
+    int          ti_exit_code;           // exit code if target has exited
+} TargetInfo;
+
+typedef struct {
     struct Task  *ds_p_debugger_task;    // our own task - for the target to signal us
     struct Task  *ds_p_target_task;      // task of target
     BPTR         ds_p_seglist;           // segment list of target
@@ -66,7 +72,7 @@ typedef struct {
     int          ds_target_state;        // current target state
     int          ds_exit_code;           // exit code of target
     struct List  ds_bpoints;             // list of breakpoints
-    BreakPoint   *ds_p_prev_bpoint;      // previous breakpoint that needs to be restored
+    BreakPoint   *ds_p_current_bpoint;   // current breakpoint that needs to be restored
 } DebuggerState;
 
 
@@ -84,6 +90,7 @@ void run_target();
 void continue_target(TaskContext *p_task_ctx);
 void single_step_target(TaskContext *p_task_ctx);
 void quit_debugger();
+void abort_debugger();
 BreakPoint *set_breakpoint(ULONG offset);
 BreakPoint *find_bpoint_by_addr(struct List *bpoints, APTR baddr);
 void handle_breakpoint(TaskContext *p_task_ctx);

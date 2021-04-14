@@ -38,7 +38,7 @@ int load_and_init_target(const char *p_program_path)
     }
     gp_dstate->ds_p_debugger_task = FindTask(NULL);
     gp_dstate->ds_target_state = TS_IDLE;
-    gp_dstate->ds_p_prev_bpoint = NULL;
+    gp_dstate->ds_p_current_bpoint = NULL;
 
     // load target
     if ((gp_dstate->ds_p_seglist = LoadSeg(p_program_path)) == NULL) {
@@ -126,6 +126,12 @@ void quit_debugger()
 }
 
 
+void abort_debugger()
+{
+    // TODO
+}
+
+
 BreakPoint *set_breakpoint(ULONG offset)
 {
     BreakPoint  *p_bpoint;
@@ -175,7 +181,7 @@ void handle_breakpoint(TaskContext *p_task_ctx)
     gp_dstate->ds_target_state |= TS_STOPPED_BY_BREAKPOINT;
     p_baddr = p_task_ctx->tc_reg_pc - 2;
     if ((p_bpoint = find_bpoint_by_addr(&gp_dstate->ds_bpoints, p_baddr)) != NULL) {
-        gp_dstate->ds_p_prev_bpoint = p_bpoint;
+        gp_dstate->ds_p_current_bpoint = p_bpoint;
         // rewind PC by 2 bytes and replace trap instruction with original instruction
         p_task_ctx->tc_reg_pc = p_baddr;
         *((USHORT *) p_baddr) = p_bpoint->bp_opcode;
@@ -197,16 +203,16 @@ void handle_breakpoint(TaskContext *p_task_ctx)
 void handle_single_step(TaskContext *p_task_ctx)
 {
     gp_dstate->ds_target_state |= TS_STOPPED_BY_SINGLE_STEP;
-    if (gp_dstate->ds_p_prev_bpoint) {
-        // previous breakpoint needs to be restored
+    if (gp_dstate->ds_p_current_bpoint) {
+        // breakpoint needs to be restored
         LOG(
             DEBUG,
             "restoring breakpoint #%ld at entry + 0x%08lx",
-            gp_dstate->ds_p_prev_bpoint->bp_num,
-            ((ULONG) gp_dstate->ds_p_prev_bpoint->bp_addr - (ULONG) gp_dstate->ds_p_entry)
+            gp_dstate->ds_p_current_bpoint->bp_num,
+            ((ULONG) gp_dstate->ds_p_current_bpoint->bp_addr - (ULONG) gp_dstate->ds_p_entry)
         );
-        *((USHORT *) gp_dstate->ds_p_prev_bpoint->bp_addr) = TRAP_OPCODE;
-        gp_dstate->ds_p_prev_bpoint = NULL;
+        *((USHORT *) gp_dstate->ds_p_current_bpoint->bp_addr) = TRAP_OPCODE;
+        gp_dstate->ds_p_current_bpoint = NULL;
     }
     if (gp_dstate->ds_target_state & TS_SINGLE_STEPPING) {
         LOG(INFO, "target has stopped after single step");

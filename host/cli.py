@@ -11,7 +11,7 @@ import socket
 
 from loguru import logger
 
-from serio import ServerConnection
+from serio import ServerConnection, MsgTypes, TargetInfo
 
 
 class ArgumentParserError(Exception):
@@ -29,17 +29,33 @@ def process_cli_commands(conn: ServerConnection):
     subparsers.add_parser('help', aliases=('h',), help="show help message")
     subparsers.add_parser('quit', aliases=('q',), help="quit the debugger", add_help=True)
     subparsers.add_parser('run', aliases=('r',), help="run the target")
-    while True:
-        cmdline = input('> ')
-        logger.debug(f"command line: {cmdline}")
-        try:
-            args = parser.parse_args((cmdline,))
-        except ArgumentParserError:
-            print("invalid command / argument")
-            parser.print_usage()
-            continue
-        if args.command in ('help', 'h'):
-            parser.print_help()
-            continue
-        if args.command in ('quit', 'q'):
-            return
+
+    try:
+        while True:
+            cmdline = input('> ')
+            logger.debug(f"command line: {cmdline}")
+            try:
+                args = parser.parse_args((cmdline,))
+            except ArgumentParserError:
+                print("invalid command / argument")
+                parser.print_usage()
+                continue
+
+            # TODO: implement command loop similiar to process_cli_commands()
+            if args.command in ('help', 'h'):
+                parser.print_help()
+                continue
+
+            elif args.command in ('run', 'r'):
+                conn.send_message(MsgTypes.MSG_RUN)
+                msgtype, data = conn.recv_message()
+                if msgtype == MsgTypes.MSG_TARGET_STOPPED:
+                    tinfo = TargetInfo.from_buffer(data)
+                    logger.info(f"target has stopped, state = {tinfo.ti_target_state}, exit code = {tinfo.ti_exit_code}")
+
+            elif args.command in ('quit', 'q'):
+                conn.send_message(MsgTypes.MSG_QUIT)
+                msgtype, data = conn.recv_message()
+                return
+    except Exception as e:
+        raise RuntimeError(f"error occurred while processing CLI commands: {e}") from e

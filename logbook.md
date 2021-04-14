@@ -42,14 +42,16 @@ Mit FS-UAE ist serielle Kommunikation zwischen Host und Amiga möglich. Packen /
 
 
 ## Meilensteine
-* 28.10.2018:   Projektstart
-* 10.11.2018:   Einlesen und Auswerten der STABS in Python
-* 13.01.2019:   Laden eines Programms mit LoadSeg(), Ausführen, Setzen von Breakpoints, schrittweises Ausführen, Disassembler, Anzeigen von Registern und Stack
+* 28.10.2018    Projektstart
+* 10.11.2018    Einlesen und Auswerten der STABS in Python
+* 13.01.2019    Laden eines Programms mit LoadSeg(), Ausführen, Setzen von Breakpoints, schrittweises Ausführen, Disassembler, Anzeigen von Registern und Stack
 * 14.12.2020    Rudimentäre Kommunikation über serielle Schnittstelle implementiert
 * 02.01.2021    Refactoring zur Vorbereitung der Implementierung des Remote Debuggings abgeschlossen
-* ??.??.2021:   Remote Debugging mit Host in Python
-* ??.??.2021:   Schrittweises Ausführen und Setzen von Breakpoints auf C-Ebene
-* ??.??.2021:   Ausgeben von Variablen
+* 14.04.2021    Programm lässt sich vom Host aus starten
+* ??.??.2021    Vollständiges Remote Debugging
+* ??.??.2021    Schrittweises Ausführen und Setzen von Breakpoints auf C-Ebene
+* ??.??.2021    Ausgeben von Variablen
+* ??.??.20??    GUI mit Curses
 
 
 ## Links
