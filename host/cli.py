@@ -35,13 +35,13 @@ def process_cli_commands(conn: ServerConnection):
             if target_running:
                 logger.info("Target is running, waiting for it to stop...")
                 msg, data = conn.recv_message()
-                if msg.msg_type == MsgTypes.MSG_TARGET_STOPPED:
+                if msg.type == MsgTypes.MSG_TARGET_STOPPED:
                     conn.send_message(MsgTypes.MSG_ACK)
                     target_running = False
                     target_info = TargetInfo.from_buffer(data)
-                    logger.info(f"Target has stopped, state = {target_info.ti_target_state}, exit code = {target_info.ti_exit_code}")
+                    logger.info(f"Target has stopped, state = {target_info.target_state}, exit code = {target_info.exit_code}")
                 else:
-                    raise ConnectionError(f"Received unexpected message {MsgTypes(msg.msg_type).name} from server, expected MSG_TARGET_STOPPED")
+                    raise ConnectionError(f"Received unexpected message {MsgTypes(msg.type).name} from server, expected MSG_TARGET_STOPPED")
 
             cmdline = input('> ')
             logger.debug(f"Command line: {cmdline}")

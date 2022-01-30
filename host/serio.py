@@ -41,14 +41,13 @@ class MsgTypes(IntEnum):
     MSG_TARGET_STOPPED = 12
 
 
-# TODO: remove prefixes from struct members
 class ProtoMessage(BigEndianStructure):
     _fields_ = (
-        ("msg_seqnum", c_uint16),
-        ("msg_checksum", c_uint16),
-        ("msg_type", c_uint8),
-        ("msg_length", c_uint8)
-        # field msg_data omitted because we just append the data
+        ("seqnum", c_uint16),
+        ("checksum", c_uint16),
+        ("type", c_uint8),
+        ("length", c_uint8)
+        # Field data omitted because we just append the data
     )
 
 
@@ -56,21 +55,21 @@ class ProtoMessage(BigEndianStructure):
 class TaskContext(BigEndianStructure):
     _pack_ = 2
     _fields_ = (
-        ('tc_reg_sp', c_uint32),
-        ('tc_exc_num', c_uint32),
-        ('tc_reg_sr', c_uint16),
-        ('tc_reg_pc', c_uint32),
-        ('tc_reg_d', c_uint32 * 8),
-        ('tc_reg_a', c_uint32 * 7)
+        ('reg_sp', c_uint32),
+        ('exc_num', c_uint32),
+        ('reg_sr', c_uint16),
+        ('reg_pc', c_uint32),
+        ('reg_d', c_uint32 * 8),
+        ('reg_a', c_uint32 * 7)
     )
 
 
 class TargetInfo(BigEndianStructure):
     _pack_ = 2
     _fields_ = (
-        ('ti_task_context', TaskContext),
-        ('ti_target_state', c_uint32),
-        ('ti_exit_code', c_uint32)
+        ('task_context', TaskContext),
+        ('target_state', c_uint32),
+        ('exit_code', c_uint32)
     )
 
 
@@ -92,8 +91,8 @@ class ServerConnection:
     def send_command(self, msg_type: c_uint8, data: Optional[bytes] = None):
         self.send_message(msg_type, data)
         msg, data = self.recv_message()
-        if msg.msg_type == MsgTypes.MSG_ACK:
-            if msg.msg_seqnum == self._next_seqnum:
+        if msg.type == MsgTypes.MSG_ACK:
+            if msg.seqnum == self._next_seqnum:
                 logger.debug(f"Received ACK for message {MsgTypes(msg_type).name}")
                 self._next_seqnum += 1
             else:
@@ -101,20 +100,20 @@ class ServerConnection:
                     "Received ACK for message {} with wrong sequence number, expected {}, got {}".format(
                         MsgTypes(msg_type).name,
                         self._next_seqnum,
-                        msg.msg_seqnum
+                        msg.seqnum
                     )
                 )
         else:
-            raise ConnectionError(f"Received unexpected message of type {MsgTypes(msg.msg_type).name} from server instead of the expected ACK")
+            raise ConnectionError(f"Received unexpected message of type {MsgTypes(msg.type).name} from server instead of the expected ACK")
 
 
     def send_message(self, msg_type: c_uint8, data: Optional[bytes] = None):
         try:
             msg = ProtoMessage(
-                msg_seqnum=self._next_seqnum,
-                msg_checksum=0xdead,
-                msg_type=msg_type,
-                msg_length=len(data) if data else 0
+                seqnum=self._next_seqnum,
+                checksum=0xdead,
+                type=msg_type,
+                length=len(data) if data else 0
             )
             buffer = bytearray(msg)
             if data:
@@ -147,12 +146,12 @@ class ServerConnection:
             buffer = buffer.replace(SLIP_ESC + SLIP_ESCAPED_ESC, SLIP_ESC)
 
             msg = ProtoMessage.from_buffer(buffer)
-            data = buffer[sizeof(ProtoMessage) : sizeof(ProtoMessage) + msg.msg_length]
+            data = buffer[sizeof(ProtoMessage) : sizeof(ProtoMessage) + msg.length]
             logger.debug("Message from server received: seqnum={}, checksum={}, type={}, length={}".format(
-                msg.msg_seqnum,
-                hex(msg.msg_checksum),
-                MsgTypes(msg.msg_type).name,
-                msg.msg_length
+                msg.seqnum,
+                hex(msg.checksum),
+                MsgTypes(msg.type).name,
+                msg.length
             ))
             return msg, data
         except Exception as e:
