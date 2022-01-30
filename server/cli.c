@@ -38,7 +38,7 @@ void process_cli_commands(TaskContext *p_task_ctx)
     APTR                p_maddr;                // address of memory block to print
     ULONG               msize;                  // size of memory block
 
-    if (gp_dstate->target_state & TS_RUNNING)
+    if (g_dstate.target_state & TS_RUNNING)
         print_instr(p_task_ctx);
     while(1) {
         // read command from standard input (and ignore errors and commands >= 64 characters)
@@ -69,8 +69,8 @@ void process_cli_commands(TaskContext *p_task_ctx)
 
             case 'k':   // kill (abort) target
                 // TODO: restore breakpoint if necessary
-                gp_dstate->target_state = TS_EXITED;
-                Signal(gp_dstate->p_debugger_task, SIG_TARGET_EXITED);
+                g_dstate.target_state = TS_EXITED;
+                Signal(g_dstate.p_debugger_task, SIG_TARGET_EXITED);
                 RemTask(NULL);
                 return;  // We don't get here anyway...
 
@@ -97,7 +97,7 @@ void process_cli_commands(TaskContext *p_task_ctx)
                         print_registers(p_task_ctx);
                         break;
                     case 's':   // ... stack
-                        print_stack(p_task_ctx, gp_dstate->p_target_task->tc_SPUpper - 2);
+                        print_stack(p_task_ctx, g_dstate.p_target_task->tc_SPUpper - 2);
                         break;
                     default:
                         LOG(ERROR, "unknown command 'i %c'", p_args[1][0]);
@@ -151,11 +151,11 @@ static UBYTE parse_args(char *p_cmd, char **pp_args)
 static int is_correct_target_state_for_command(char cmd)
 {
     // keep list of commands (the 1st argument of strchr()) in sync with process_cli_commands()
-    if (!(gp_dstate->target_state & TS_RUNNING) && (strchr("cs\nik", cmd) != NULL)) {
+    if (!(g_dstate.target_state & TS_RUNNING) && (strchr("cs\nik", cmd) != NULL)) {
         LOG(ERROR, "incorrect state for command '%c': target is not yet running", cmd);
         return 0;
     }
-    if ((gp_dstate->target_state & TS_RUNNING) && (strchr("rq", cmd) != NULL)) {
+    if ((g_dstate.target_state & TS_RUNNING) && (strchr("rq", cmd) != NULL)) {
         LOG(ERROR, "incorrect state for command '%c': target is already / still running", cmd);
         return 0;
     }

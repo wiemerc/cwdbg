@@ -67,9 +67,9 @@ void process_remote_commands(TaskContext *p_task_ctx)
     // If target is running we've been called by one of the handle_* routines. In this case
     // the host is waiting for us and we send a MSG_TARGET_STOPPED message to indicate that
     // the target has stopped and provide the target information to the host.
-    if (gp_dstate->target_state & TS_RUNNING) {
-        target_info.target_state = gp_dstate->target_state;
-        target_info.exit_code    = gp_dstate->exit_code;
+    if (g_dstate.target_state & TS_RUNNING) {
+        target_info.target_state = g_dstate.target_state;
+        target_info.exit_code    = g_dstate.exit_code;
         memcpy(&target_info.task_context, p_task_ctx, sizeof(TaskContext));
         send_target_stopped_msg(&target_info);
     }
@@ -94,7 +94,7 @@ void process_remote_commands(TaskContext *p_task_ctx)
         //
         // target is not running (we've been called by main())
         //
-        if (!(gp_dstate->target_state & TS_RUNNING)) {
+        if (!(g_dstate.target_state & TS_RUNNING)) {
             switch (msg.type) {
                 case MSG_INIT:
                     LOG(DEBUG, "initializing connection");
@@ -104,8 +104,8 @@ void process_remote_commands(TaskContext *p_task_ctx)
                 case MSG_RUN:
                     send_ack_msg(NULL, 0);
                     run_target();
-                    target_info.target_state = gp_dstate->target_state;
-                    target_info.exit_code    = gp_dstate->exit_code;
+                    target_info.target_state = g_dstate.target_state;
+                    target_info.exit_code    = g_dstate.exit_code;
                     send_target_stopped_msg(&target_info);
                     break;
 

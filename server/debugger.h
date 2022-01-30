@@ -99,6 +99,6 @@ void handle_exception(TaskContext *p_task_ctx);
 /*
  * external references
  */
-extern DebuggerState *gp_dstate;    /* global debugger state */
+extern DebuggerState g_dstate;    /* global debugger state */
 
 #endif /* CWDEBUG_DEBUGGER_H */
