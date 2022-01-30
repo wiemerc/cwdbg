@@ -17,7 +17,7 @@
 #include "util.h"
 
 
-static uint16_t g_msg_seqnum;
+static uint16_t g_next_seqnum = 0;
 
 
 static void send_ack_msg(uint8_t *p_data, uint8_t data_len);
@@ -76,19 +76,27 @@ void process_remote_commands(TaskContext *p_task_ctx)
 
     // TODO: catch Ctrl-C
     while(1) {
-        LOG(INFO, "waiting for command from host...");
+        LOG(INFO, "Waiting for command from host...");
         if (recv_message(&msg) == DOSFALSE) {
-            LOG(ERROR, "failed to receive message from host");
+            LOG(ERROR, "Failed to receive message from host");
             quit_debugger(RETURN_ERROR);
         }
         LOG(
             DEBUG,
-            "message from host received: seqnum=%d, type=%d, length=%d",
+            "Message from host received: seqnum=%d, type=%d, length=%d",
             msg.seqnum,
             msg.type,
             msg.length
         );
-        g_msg_seqnum = msg.seqnum;
+        if (msg.seqnum != g_next_seqnum) {
+            LOG(
+                ERROR,
+                "Received message with wrong sequence number, expected %d, got %d",
+                g_next_seqnum,
+                msg.seqnum
+            );
+            quit_debugger(RETURN_ERROR);
+        }
 
 
         //
@@ -144,7 +152,7 @@ void send_ack_msg(uint8_t *p_data, uint8_t data_len)
         LOG(CRIT, "Internal error: send_ack_msg() has been called with more than MAX_MSG_DATA_LEN data");
         quit_debugger(RETURN_FAIL);
     }
-    msg.seqnum = g_msg_seqnum;
+    msg.seqnum = g_next_seqnum;
     msg.type   = MSG_ACK;
     msg.length = data_len;
     memcpy(&msg.data, p_data, data_len);
@@ -152,14 +160,14 @@ void send_ack_msg(uint8_t *p_data, uint8_t data_len)
         LOG(ERROR, "Failed to send message to host");
         quit_debugger(RETURN_ERROR);
     }
-    ++g_msg_seqnum;
+    ++g_next_seqnum;
 }
 
 
 void send_nack_msg(uint8_t error_code)
 {
     ProtoMessage msg;
-    msg.seqnum  = g_msg_seqnum;
+    msg.seqnum  = g_next_seqnum;
     msg.type    = MSG_NACK;
     msg.length  = 1;
     msg.data[0] = error_code;
@@ -167,7 +175,7 @@ void send_nack_msg(uint8_t error_code)
         LOG(ERROR, "Failed to send message to host");
         quit_debugger(RETURN_ERROR);
     }
-    ++g_msg_seqnum;
+    ++g_next_seqnum;
 }
 
 
@@ -179,7 +187,7 @@ void send_target_stopped_msg(TargetInfo *p_target_info)
         LOG(CRIT, "Internal error: send_target_stopped_msg() has been called with TargetInfo larger than MAX_MSG_DATA_LEN");
         quit_debugger(RETURN_FAIL);
     }
-    msg.seqnum = g_msg_seqnum;
+    msg.seqnum = g_next_seqnum;
     msg.type   = MSG_TARGET_STOPPED;
     msg.length = sizeof(TargetInfo);
     memcpy(&msg.data, p_target_info, sizeof(TargetInfo));
@@ -194,14 +202,15 @@ void send_target_stopped_msg(TargetInfo *p_target_info)
         quit_debugger(RETURN_ERROR);
     }
     if (msg.type == MSG_ACK) {
-        if (msg.seqnum == g_msg_seqnum) {
+        if (msg.seqnum == g_next_seqnum) {
             LOG(DEBUG, "Received ACK for MSG_TARGET_STOPPED message");
+            ++g_next_seqnum;
         }
         else {
             LOG(
                 ERROR,
                 "Received ACK for MSG_TARGET_STOPPED message with wrong sequence number, expected %d, got %d",
-                g_msg_seqnum,
+                g_next_seqnum,
                 msg.seqnum
             );
             quit_debugger(RETURN_ERROR);

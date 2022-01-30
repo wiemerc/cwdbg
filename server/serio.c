@@ -140,7 +140,7 @@ int32_t recv_message(ProtoMessage *p_msg)
         LOG(ERROR, "could not get data from SLIP frame: %ld", g_serio_errno);
         return DOSFALSE;
     }
-    // TODO: check sequence number and checksum
+    // TODO: check checksum
     return DOSTRUE;
 }
 
