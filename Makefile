@@ -18,3 +18,6 @@ server:
 
 examples:
 	$(MAKE) --directory=$@
+
+stats:
+	cloc --not-match-d='\.venv' --fullpath --exclude-ext=d,json .
