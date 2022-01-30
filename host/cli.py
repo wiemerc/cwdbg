@@ -2,12 +2,11 @@
 # cli.py - part of CWDebug, a source-level debugger for the AmigaOS
 #          This file contains the routines for the CLI on the host machine.
 #
-# Copyright(C) 2018-2021 Constantin Wiemer
+# Copyright(C) 2018-2022 Constantin Wiemer
 
 
 import argparse
 import readline
-import socket
 
 from loguru import logger
 
@@ -25,19 +24,31 @@ class ThrowingArgumentParser(argparse.ArgumentParser):
 
 def process_cli_commands(conn: ServerConnection):
     parser = ThrowingArgumentParser(prog='', description="CWDebug, a source-level debugger for the AmigaOS", add_help=False)
-    subparsers = parser.add_subparsers(dest='command', help="available commands")
-    subparsers.add_parser('help', aliases=('h',), help="show help message")
-    subparsers.add_parser('quit', aliases=('q',), help="quit the debugger", add_help=True)
-    subparsers.add_parser('run', aliases=('r',), help="run the target")
+    subparsers = parser.add_subparsers(dest='command', help="Available commands")
+    subparsers.add_parser('help', aliases=('h',), help="Show help message")
+    subparsers.add_parser('quit', aliases=('q',), help="Quit the debugger", add_help=True)
+    subparsers.add_parser('run', aliases=('r',), help="Run the target")
 
     try:
+        target_running = False
         while True:
+            if target_running:
+                logger.info("Target is running, waiting for it to stop...")
+                msg, data = conn.recv_message()
+                if msg.msg_type == MsgTypes.MSG_TARGET_STOPPED:
+                    conn.send_message(MsgTypes.MSG_ACK)
+                    target_running = False
+                    target_info = TargetInfo.from_buffer(data)
+                    logger.info(f"Target has stopped, state = {target_info.ti_target_state}, exit code = {target_info.ti_exit_code}")
+                else:
+                    raise ConnectionError(f"Received unexpected message {MsgTypes(msg.msg_type).name} from server, expected MSG_TARGET_STOPPED")
+
             cmdline = input('> ')
-            logger.debug(f"command line: {cmdline}")
+            logger.debug(f"Command line: {cmdline}")
             try:
                 args = parser.parse_args((cmdline,))
             except ArgumentParserError:
-                print("invalid command / argument")
+                print("Invalid command / argument")
                 parser.print_usage()
                 continue
 
@@ -47,15 +58,11 @@ def process_cli_commands(conn: ServerConnection):
                 continue
 
             elif args.command in ('run', 'r'):
-                conn.send_message(MsgTypes.MSG_RUN)
-                msgtype, data = conn.recv_message()
-                if msgtype == MsgTypes.MSG_TARGET_STOPPED:
-                    tinfo = TargetInfo.from_buffer(data)
-                    logger.info(f"target has stopped, state = {tinfo.ti_target_state}, exit code = {tinfo.ti_exit_code}")
+                conn.send_command(MsgTypes.MSG_RUN)
+                target_running = True
 
             elif args.command in ('quit', 'q'):
-                conn.send_message(MsgTypes.MSG_QUIT)
-                msgtype, data = conn.recv_message()
+                conn.send_command(MsgTypes.MSG_QUIT)
                 return
     except Exception as e:
-        raise RuntimeError(f"error occurred while processing CLI commands: {e}") from e
+        raise RuntimeError(f"Error occurred while processing CLI commands") from e

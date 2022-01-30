@@ -8,7 +8,6 @@
 
 
 import argparse
-import socket
 import sys
 
 from loguru import logger
@@ -43,8 +42,8 @@ def main() -> None:
 def _parse_command_line() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="CWDebug, a source-level debugger for the AmigaOS")
     parser.add_argument("--verbose", "-v", help="enable verbose logging", action="store_true")
-    parser.add_argument("--host", "-H", default="127.0.0.1", help="IP address / name of debugger server")
-    parser.add_argument("--port", "-P", type=int, default=1234, help="port of debugger server")
+    parser.add_argument("--host", "-H", default="127.0.0.1", help="IP address / name of debugger server (default=127.0.0.1)")
+    parser.add_argument("--port", "-P", type=int, default=1234, help="port of debugger server(default=1234)")
     args = parser.parse_args()
     return args
 

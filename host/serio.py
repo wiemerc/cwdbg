@@ -27,18 +27,21 @@ SLIP_ESCAPED_ESC   = b'\xdd'
 
 class MsgTypes(IntEnum):
     MSG_INIT           = 0
-    MSG_RUN            = 1
-    MSG_QUIT           = 2
-    MSG_CONT           = 3
-    MSG_STEP           = 4
-    MSG_KILL           = 5
-    MSG_PEEK_MEM       = 6
-    MSG_POKE_MEM       = 7
-    MSG_SET_BP         = 8
-    MSG_CLEAR_BP       = 9
-    MSG_TARGET_STOPPED = 10
+    MSG_ACK            = 1
+    MSG_NACK           = 2
+    MSG_RUN            = 3
+    MSG_QUIT           = 4
+    MSG_CONT           = 5
+    MSG_STEP           = 6
+    MSG_KILL           = 7
+    MSG_PEEK_MEM       = 8
+    MSG_POKE_MEM       = 9
+    MSG_SET_BP         = 10
+    MSG_CLEAR_BP       = 11
+    MSG_TARGET_STOPPED = 12
 
 
+# TODO: remove prefixes from struct members
 class ProtoMessage(BigEndianStructure):
     _fields_ = (
         ("msg_seqnum", c_uint16),
@@ -79,20 +82,38 @@ class ServerConnection:
     def __init__(self, host: str, port: int):
         try:
             self._conn = socket.create_connection((host, port))
-            self._next_seqnum = 1
+            self._next_seqnum = 0
         except ConnectionRefusedError as e:
-            raise RuntimeError(f"could not connect to server '{host}:{port}'") from e
-        logger.debug("sending MSG_INIT message to server")
-        self.send_message(MsgTypes.MSG_INIT, 'hello'.encode() + b'\x00')
-        msgtype, data = self.recv_message()
+            raise RuntimeError(f"Could not connect to server '{host}:{port}'") from e
+        logger.debug("Sending MSG_INIT message to server")
+        self.send_command(MsgTypes.MSG_INIT)
 
 
-    def send_message(self, msgtype: c_uint8, data: Optional[bytes] = None):
+    def send_command(self, msg_type: c_uint8, data: Optional[bytes] = None):
+        self.send_message(msg_type, data)
+        msg, data = self.recv_message()
+        if msg.msg_type == MsgTypes.MSG_ACK:
+            if msg.msg_seqnum == self._next_seqnum:
+                logger.debug(f"Received ACK for message {MsgTypes(msg_type).name}")
+                self._next_seqnum += 1
+            else:
+                raise ConnectionError(
+                    "Received ACK for message {} with wrong sequence number, expected {}, got {}".format(
+                        MsgTypes(msg_type).name,
+                        self._next_seqnum,
+                        msg.msg_seqnum
+                    )
+                )
+        else:
+            raise ConnectionError(f"Received unexpected message of type {MsgTypes(msg.msg_type).name} from server instead of the expected ACK")
+
+
+    def send_message(self, msg_type: c_uint8, data: Optional[bytes] = None):
         try:
             msg = ProtoMessage(
                 msg_seqnum=self._next_seqnum,
                 msg_checksum=0xdead,
-                msg_type=msgtype,
+                msg_type=msg_type,
                 msg_length=len(data) if data else 0
             )
             buffer = bytearray(msg)
@@ -105,9 +126,10 @@ class ServerConnection:
             buffer += SLIP_END
 
             self._conn.send(buffer)
-            self._next_seqnum += 1
+            if msg_type in (MsgTypes.MSG_ACK, MsgTypes.MSG_NACK):
+                self._next_seqnum += 1
         except Exception as e:
-            raise ConnectionError(f"could not send message to server: {e}") from e
+            raise ConnectionError(f"Could not send message to server") from e
 
 
     def recv_message(self):
@@ -126,15 +148,15 @@ class ServerConnection:
 
             msg = ProtoMessage.from_buffer(buffer)
             data = buffer[sizeof(ProtoMessage) : sizeof(ProtoMessage) + msg.msg_length]
-            logger.debug("message from server received: seqnum={}, checksum={}, type={}, length={}".format(
+            logger.debug("Message from server received: seqnum={}, checksum={}, type={}, length={}".format(
                 msg.msg_seqnum,
-                msg.msg_checksum,
-                msg.msg_type,
+                hex(msg.msg_checksum),
+                MsgTypes(msg.msg_type).name,
                 msg.msg_length
             ))
-            return msg.msg_type, data
+            return msg, data
         except Exception as e:
-            raise ConnectionError(f"could not read message from server: {exc}") from e
+            raise ConnectionError(f"Could not read message from server") from e
 
 
     def close(self):
