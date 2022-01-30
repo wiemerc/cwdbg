@@ -41,6 +41,27 @@ Das Überspringen von Anweisungen tritt mit FS-UAE auf dem Mac (Amiga OS 3.1) ni
 Mit FS-UAE ist serielle Kommunikation zwischen Host und Amiga möglich. Packen / Entpacken der Pakete am besten mit der Methode aus _The Practice of Programming_
 
 
+### 17.05.2021
+Wie Code auf Host-Seite disassemblieren? Musashi würde gehen, allerdings müsste man ein Extension-Modul verwenden und Musashi patchen (weil jetzt der Wert von PC nicht mehr der Adresse entspricht, an dem der Code liegt) => siehe Dateien `m68k.h`, `m68kdasm.c`, `m68kdasm-module.c` und `setup.py` unter `host/`. Bessere Alternative: Disassembler in Python, https://github.com/jefftranter/68000/tree/master/toolchain/disasm, Code müsste noch etwas angepasst werden
+
+
+### 09.01.2022
+Disassemblieren auf Host-Seite müsste auch mit Capstone gehen. Dazu muss man wahrscheinlich nur Capstone für M68k selber bauen.
+
+
+### 23.01.2022
+Capstone für M68K selber bauen geht so:
+```
+pip download capstone
+tar xzf capstone-4.0.2.tar.gz
+cd capstone-4.0.2/
+export CAPSTONE_ARCHS=m68k
+python setup.py install
+cd ..
+rm -rf capstone-4.0.2/ capstone-4.0.2.tar.gz
+```
+
+
 ## Meilensteine
 * 28.10.2018    Projektstart
 * 10.11.2018    Einlesen und Auswerten der STABS in Python
@@ -48,10 +69,10 @@ Mit FS-UAE ist serielle Kommunikation zwischen Host und Amiga möglich. Packen /
 * 14.12.2020    Rudimentäre Kommunikation über serielle Schnittstelle implementiert
 * 02.01.2021    Refactoring zur Vorbereitung der Implementierung des Remote Debuggings abgeschlossen
 * 14.04.2021    Programm lässt sich vom Host aus starten
-* ??.??.2021    Vollständiges Remote Debugging
-* ??.??.2021    Schrittweises Ausführen und Setzen von Breakpoints auf C-Ebene
-* ??.??.2021    Ausgeben von Variablen
-* ??.??.20??    GUI mit Curses
+* ??.??.2022    Vollständiges Remote Debugging
+* ??.??.2022    Schrittweises Ausführen und Setzen von Breakpoints auf C-Ebene
+* ??.??.2022    Ausgeben von Variablen
+* ??.??.20??    GUI mit Urwid
 
 
 ## Links
