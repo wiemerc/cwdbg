@@ -61,13 +61,8 @@ static void send_target_stopped_msg(TargetInfo *p_target_info);
 //
 void process_remote_commands(TaskContext *p_task_ctx)
 {
-    ProtoMessage *p_in_msg;
-    TargetInfo    target_info;
-
-    if ((p_in_msg = create_message()) == NULL) {
-        LOG(ERROR, "could not allocate memory for message");
-        quit_debugger(RETURN_ERROR);
-    }
+    ProtoMessage msg;
+    TargetInfo   target_info;
 
     // If target is running we've been called by one of the handle_* routines. In this case
     // the host is waiting for us and we send a MSG_TARGET_STOPPED message to indicate that
@@ -83,27 +78,25 @@ void process_remote_commands(TaskContext *p_task_ctx)
     // TODO: catch Ctrl-C
     while(1) {
         LOG(INFO, "waiting for command from host...");
-        if (recv_message(p_in_msg) == DOSFALSE) {
+        if (recv_message(&msg) == DOSFALSE) {
             LOG(ERROR, "failed to receive message from host");
-            delete_message(p_in_msg);
             quit_debugger(RETURN_ERROR);
         }
         LOG(
             DEBUG,
             "message from host received: seqnum=%d, type=%d, length=%d",
-            p_in_msg->msg_seqnum,
-            p_in_msg->msg_type,
-            p_in_msg->msg_length
+            msg.msg_seqnum,
+            msg.msg_type,
+            msg.msg_length
         );
-        // TODO: ignore messages with a seq number already seen
-        g_msg_seqnum = p_in_msg->msg_seqnum;
+        g_msg_seqnum = msg.msg_seqnum;
 
 
         //
         // target is not running (we've been called by main())
         //
         if (!(gp_dstate->ds_target_state & TS_RUNNING)) {
-            switch (p_in_msg->msg_type) {
+            switch (msg.msg_type) {
                 case MSG_INIT:
                     LOG(DEBUG, "initializing connection");
                     send_ack_msg(NULL, 0);
@@ -124,7 +117,7 @@ void process_remote_commands(TaskContext *p_task_ctx)
                     break;
 
                 default:
-                    LOG(ERROR, "command %d not allowed when target is not running", p_in_msg->msg_type);
+                    LOG(ERROR, "command %d not allowed when target is not running", msg.msg_type);
                     send_nack_msg(E_INVALID_TARGET_STATE);
             }
         }
@@ -133,11 +126,10 @@ void process_remote_commands(TaskContext *p_task_ctx)
         //
         // target is running (we've been called by one of the handle_* routines)
         //
-        if (gp_dstate->ds_target_state & TS_RUNNING) {
+        else {
             // TODO
         }
     }
-    delete_message(p_in_msg);
 }
 
 
@@ -147,89 +139,77 @@ void process_remote_commands(TaskContext *p_task_ctx)
 
 void send_ack_msg(uint8_t *p_data, uint8_t data_len)
 {
-    ProtoMessage *p_msg;
-    if ((p_msg = create_message()) == NULL) {
-        LOG(ERROR, "could not allocate memory for message");
+    ProtoMessage msg;
+
+    if (data_len > MAX_MSG_DATA_LEN) {
+        LOG(CRIT, "Internal error: send_ack_msg() has been called with more than MAX_MSG_DATA_LEN data");
+        quit_debugger(RETURN_FAIL);
+    }
+    msg.msg_seqnum = g_msg_seqnum;
+    msg.msg_type   = MSG_ACK;
+    msg.msg_length = data_len;
+    memcpy(&msg.msg_data, p_data, data_len);
+    if (send_message(&msg) == DOSFALSE) {
+        LOG(ERROR, "Failed to send message to host");
         quit_debugger(RETURN_ERROR);
     }
-    p_msg->msg_seqnum   = g_msg_seqnum;
-    p_msg->msg_type     = MSG_ACK;
-    p_msg->msg_length   = data_len;
-    memcpy(&p_msg->msg_data, p_data, data_len);
-    if (send_message(p_msg) == DOSFALSE) {
-        LOG(ERROR, "failed to send message to host");
-        delete_message(p_msg);
-        quit_debugger(RETURN_ERROR);
-    }
-    delete_message(p_msg);
     ++g_msg_seqnum;
 }
 
 
 void send_nack_msg(uint8_t error_code)
 {
-    ProtoMessage *p_msg;
-    if ((p_msg = create_message()) == NULL) {
-        LOG(ERROR, "could not allocate memory for message");
+    ProtoMessage msg;
+    msg.msg_seqnum  = g_msg_seqnum;
+    msg.msg_type    = MSG_NACK;
+    msg.msg_length  = 1;
+    msg.msg_data[0] = error_code;
+    if (send_message(&msg) == DOSFALSE) {
+        LOG(ERROR, "Failed to send message to host");
         quit_debugger(RETURN_ERROR);
     }
-    p_msg->msg_seqnum   = g_msg_seqnum;
-    p_msg->msg_type     = MSG_NACK;
-    p_msg->msg_length   = 1;
-    p_msg->msg_data[0]  = error_code;
-    if (send_message(p_msg) == DOSFALSE) {
-        LOG(ERROR, "failed to send message to host");
-        delete_message(p_msg);
-        quit_debugger(RETURN_ERROR);
-    }
-    delete_message(p_msg);
     ++g_msg_seqnum;
 }
 
 
 void send_target_stopped_msg(TargetInfo *p_target_info)
 {
-    ProtoMessage *p_msg;
+    ProtoMessage msg;
 
-    if ((p_msg = create_message()) == NULL) {
-        LOG(ERROR, "could not allocate memory for message");
+    if (sizeof(TargetInfo) > MAX_MSG_DATA_LEN) {
+        LOG(CRIT, "Internal error: send_target_stopped_msg() has been called with TargetInfo larger than MAX_MSG_DATA_LEN");
+        quit_debugger(RETURN_FAIL);
+    }
+    msg.msg_seqnum = g_msg_seqnum;
+    msg.msg_type   = MSG_TARGET_STOPPED;
+    msg.msg_length = sizeof(TargetInfo);
+    memcpy(&msg.msg_data, p_target_info, sizeof(TargetInfo));
+    if (send_message(&msg) == DOSFALSE) {
+        LOG(ERROR, "Failed to send message to host");
         quit_debugger(RETURN_ERROR);
     }
 
-    p_msg->msg_seqnum   = g_msg_seqnum;
-    p_msg->msg_type     = MSG_TARGET_STOPPED;
-    p_msg->msg_length   = sizeof(TargetInfo);
-    memcpy(&p_msg->msg_data, p_target_info,sizeof(TargetInfo));
-    if (send_message(p_msg) == DOSFALSE) {
-        LOG(ERROR, "failed to send message to host");
-        delete_message(p_msg);
+    // TODO: add timeout
+    if (recv_message(&msg) == DOSFALSE) {
+        LOG(ERROR, "Failed to receive message from host");
         quit_debugger(RETURN_ERROR);
     }
-
-    // TODO: add timeout and re-transmit
-    if (recv_message(p_msg) == DOSFALSE) {
-        LOG(ERROR, "failed to receive message from host");
-        delete_message(p_msg);
-        quit_debugger(RETURN_ERROR);
-    }
-    if (p_msg->msg_type == MSG_ACK) {
-        if (p_msg->msg_seqnum == g_msg_seqnum) {
-            LOG(DEBUG, "received ACK for MSG_TARGET_STOPPED message");
+    if (msg.msg_type == MSG_ACK) {
+        if (msg.msg_seqnum == g_msg_seqnum) {
+            LOG(DEBUG, "Received ACK for MSG_TARGET_STOPPED message");
         }
         else {
             LOG(
                 ERROR,
-                "received ACK for MSG_TARGET_STOPPED message with wrong sequence number, expected %d, got %d",
+                "Received ACK for MSG_TARGET_STOPPED message with wrong sequence number, expected %d, got %d",
                 g_msg_seqnum,
-                p_msg->msg_seqnum
+                msg.msg_seqnum
             );
             quit_debugger(RETURN_ERROR);
         }
     }
     else {
-        LOG(ERROR, "received unexpected message of type %d from host instead of the expected ACK", p_msg->msg_type);
+        LOG(ERROR, "Received unexpected message of type %d from host instead of the expected ACK", msg.msg_type);
         quit_debugger(RETURN_ERROR);
     }
-
-    delete_message(p_msg);
 }

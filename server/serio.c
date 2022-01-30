@@ -101,43 +101,18 @@ void serio_exit()
 }
 
 
-ProtoMessage *create_message()
-{
-    ProtoMessage *p_msg;
-
-    // allocate a memory block large enough for the protocol message header and any data
-    if ((p_msg = AllocVec(sizeof(ProtoMessage) + MAX_MSG_DATA_LEN, 0)) != NULL) {
-        p_msg->msg_length = MAX_MSG_DATA_LEN;
-        return p_msg;
-    }
-    else
-        return NULL;
-}
-
-
-void delete_message(ProtoMessage *p_msg)
-{
-    FreeVec((void *) p_msg);
-}
-
-
 int32_t send_message(ProtoMessage *p_msg)
 {
-    uint8_t *p_frame;
+    uint8_t frame[MAX_FRAME_SIZE];
     Buffer b_msg, b_frame;
 
-    if ((p_frame = AllocVec(MAX_FRAME_SIZE, 0)) == NULL) {
-        LOG(ERROR, "could not allocate memory for SLIP frame");
-        return DOSFALSE;
-    }
     // TODO: set checksum
     b_msg.p_addr = (uint8_t *) p_msg;
-    b_msg.size   = sizeof(ProtoMessage) + MAX_MSG_DATA_LEN;
-    b_frame.p_addr = p_frame;
+    b_msg.size   = sizeof(ProtoMessage);
+    b_frame.p_addr = frame;
     b_frame.size   = MAX_FRAME_SIZE;
     if (put_data_into_slip_frame(&b_msg, &b_frame) == DOSFALSE) {
         LOG(ERROR, "could not put data into SLIP frame: %ld", g_serio_errno);
-        FreeVec((void *) p_frame);
         return DOSFALSE;
     }
     if (send_slip_frame(&b_frame) == DOSFALSE) {
@@ -150,29 +125,22 @@ int32_t send_message(ProtoMessage *p_msg)
 
 int32_t recv_message(ProtoMessage *p_msg)
 {
-    uint8_t *p_frame;
+    uint8_t frame[MAX_FRAME_SIZE];
     Buffer b_msg, b_frame;
 
-    if ((p_frame = AllocVec(MAX_FRAME_SIZE, 0)) == NULL) {
-        LOG(ERROR, "could not allocate memory for SLIP frame");
-        return DOSFALSE;
-    }
     b_msg.p_addr = (uint8_t *) p_msg;
-    b_msg.size   = sizeof(ProtoMessage) + MAX_MSG_DATA_LEN;
-    b_frame.p_addr = p_frame;
+    b_msg.size   = sizeof(ProtoMessage);
+    b_frame.p_addr = frame;
     b_frame.size   = MAX_FRAME_SIZE;
     if (recv_slip_frame(&b_frame) == DOSFALSE) {
         LOG(ERROR, "failed to receive SLIP frame: %ld", g_serio_errno);
-        FreeVec((void *) p_frame);
         return DOSFALSE;
     }
     if (get_data_from_slip_frame(&b_msg, &b_frame) == DOSFALSE) {
         LOG(ERROR, "could not get data from SLIP frame: %ld", g_serio_errno);
-        FreeVec((void *) p_frame);
         return DOSFALSE;
     }
     // TODO: check sequence number and checksum
-    FreeVec((void *) p_frame);
     return DOSTRUE;
 }
 

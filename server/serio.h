@@ -3,7 +3,7 @@
 /*
  * serio.h - part of CWDebug, a source-level debugger for the AmigaOS
  *
- * Copyright(C) 2018-2021 Constantin Wiemer
+ * Copyright(C) 2018-2022 Constantin Wiemer
  */
 
 
@@ -18,8 +18,8 @@
 /*
  * constants
  */
-#define MAX_FRAME_SIZE 1024
-#define MAX_MSG_DATA_LEN 255
+#define MAX_FRAME_SIZE 512      // should be large enough to hold a SLIP-encoded message + data
+#define MAX_MSG_DATA_LEN 256
 
 /*
  * SLIP protocol
@@ -52,7 +52,7 @@ typedef struct {
     uint16_t msg_checksum;
     uint8_t  msg_type;
     uint8_t  msg_length;
-    uint8_t  msg_data[0];
+    uint8_t  msg_data[MAX_MSG_DATA_LEN];
 } ProtoMessage;
 
 
@@ -61,8 +61,6 @@ typedef struct {
  */
 int32_t serio_init();
 void serio_exit();
-ProtoMessage *create_message();
-void delete_message(ProtoMessage *p_msg);
 int32_t send_message(ProtoMessage *p_msg);
 int32_t recv_message(ProtoMessage *p_msg);
 
