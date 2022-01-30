@@ -25,6 +25,10 @@ static struct IOExtSer *sreq;
 static struct IOExtTime *treq;
 
 
+static int32_t put_data_into_slip_frame(const Buffer *pb_data, Buffer *pb_frame);
+static int32_t get_data_from_slip_frame(Buffer *pb_data, const Buffer *pb_frame);
+static int32_t send_slip_frame(const Buffer *pb_frame);
+static int32_t recv_slip_frame(Buffer *pb_frame);
 static void dump_buffer(const Buffer *pb_buffer);
 
 
@@ -97,7 +101,110 @@ void serio_exit()
 }
 
 
-int32_t put_data_into_slip_frame(const Buffer *pb_data, Buffer *pb_frame)
+ProtoMessage *create_message()
+{
+    ProtoMessage *p_msg;
+
+    // allocate a memory block large enough for the protocol message header and any data
+    if ((p_msg = AllocVec(sizeof(ProtoMessage) + MAX_MSG_DATA_LEN, 0)) != NULL) {
+        p_msg->msg_length = MAX_MSG_DATA_LEN;
+        return p_msg;
+    }
+    else
+        return NULL;
+}
+
+
+void delete_message(ProtoMessage *p_msg)
+{
+    FreeVec((void *) p_msg);
+}
+
+
+int32_t send_message(ProtoMessage *p_msg)
+{
+    uint8_t *p_frame;
+    Buffer b_msg, b_frame;
+
+    if ((p_frame = AllocVec(MAX_FRAME_SIZE, 0)) == NULL) {
+        LOG(ERROR, "could not allocate memory for SLIP frame");
+        return DOSFALSE;
+    }
+    // TODO: set checksum
+    b_msg.p_addr = (uint8_t *) p_msg;
+    b_msg.size   = sizeof(ProtoMessage) + MAX_MSG_DATA_LEN;
+    b_frame.p_addr = p_frame;
+    b_frame.size   = MAX_FRAME_SIZE;
+    if (put_data_into_slip_frame(&b_msg, &b_frame) == DOSFALSE) {
+        LOG(ERROR, "could not put data into SLIP frame: %ld", g_serio_errno);
+        FreeVec((void *) p_frame);
+        return DOSFALSE;
+    }
+    if (send_slip_frame(&b_frame) == DOSFALSE) {
+        LOG(ERROR, "failed to send SLIP frame: %ld", g_serio_errno);
+        return DOSFALSE;
+    }
+    return DOSTRUE;
+}
+
+
+int32_t recv_message(ProtoMessage *p_msg)
+{
+    uint8_t *p_frame;
+    Buffer b_msg, b_frame;
+
+    if ((p_frame = AllocVec(MAX_FRAME_SIZE, 0)) == NULL) {
+        LOG(ERROR, "could not allocate memory for SLIP frame");
+        return DOSFALSE;
+    }
+    b_msg.p_addr = (uint8_t *) p_msg;
+    b_msg.size   = sizeof(ProtoMessage) + MAX_MSG_DATA_LEN;
+    b_frame.p_addr = p_frame;
+    b_frame.size   = MAX_FRAME_SIZE;
+    if (recv_slip_frame(&b_frame) == DOSFALSE) {
+        LOG(ERROR, "failed to receive SLIP frame: %ld", g_serio_errno);
+        FreeVec((void *) p_frame);
+        return DOSFALSE;
+    }
+    if (get_data_from_slip_frame(&b_msg, &b_frame) == DOSFALSE) {
+        LOG(ERROR, "could not get data from SLIP frame: %ld", g_serio_errno);
+        FreeVec((void *) p_frame);
+        return DOSFALSE;
+    }
+    // TODO: check sequence number and checksum
+    FreeVec((void *) p_frame);
+    return DOSTRUE;
+}
+
+
+//
+// local routines
+//
+
+/*
+ * calculate IP / ICMP checksum (taken from the code for in_cksum() floating on the net)
+ */
+static USHORT calc_checksum(const UBYTE * bytes, ULONG len)
+{
+    ULONG sum, i;
+    USHORT * p;
+
+    sum = 0;
+    p = (USHORT *) bytes;
+
+    for (i = len; i > 1; i -= 2)                /* sum all 16-bit words */
+        sum += *p++;
+
+    if (i == 1)                                 /* add an odd byte if necessary */
+        sum += (USHORT) *((UBYTE *) p);
+
+    sum = (sum >> 16) + (sum & 0x0000ffff);     /* fold in upper 16 bits */
+    sum += (sum >> 16);                         /* add carry bits */
+    return ~((USHORT) sum);                     /* return 1-complement truncated to 16 bits */
+}
+
+
+static int32_t put_data_into_slip_frame(const Buffer *pb_data, Buffer *pb_frame)
 {
     const uint8_t *src = pb_data->p_addr;
     uint8_t *dst       = pb_frame->p_addr;
@@ -148,7 +255,7 @@ int32_t put_data_into_slip_frame(const Buffer *pb_data, Buffer *pb_frame)
 }
 
 
-int32_t get_data_from_slip_frame(Buffer *pb_data, const Buffer *pb_frame)
+static int32_t get_data_from_slip_frame(Buffer *pb_data, const Buffer *pb_frame)
 {
     const uint8_t *src = pb_frame->p_addr;
     uint8_t *dst       = pb_data->p_addr;
@@ -187,7 +294,7 @@ int32_t get_data_from_slip_frame(Buffer *pb_data, const Buffer *pb_frame)
 }
 
 
-int32_t send_slip_frame(const Buffer *pb_frame)
+static int32_t send_slip_frame(const Buffer *pb_frame)
 {
     int8_t error;
 
@@ -203,7 +310,7 @@ int32_t send_slip_frame(const Buffer *pb_frame)
 }
 
 
-int32_t recv_slip_frame(Buffer *pb_frame)
+static int32_t recv_slip_frame(Buffer *pb_frame)
 {
     int8_t error;
 

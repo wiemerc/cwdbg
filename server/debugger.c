@@ -115,20 +115,17 @@ void single_step_target(TaskContext *p_task_ctx)
 }
 
 
-void quit_debugger()
+void quit_debugger(int exit_code)
 {
     BreakPoint *p_bpoint;
 
     LOG(INFO, "exiting...");
+    // TODO: Can we track all memory allocations and release them here? Maybe by using Allocate()?
+    // TODO: Close serial device here
     while ((p_bpoint = (BreakPoint *) RemHead(&gp_dstate->ds_bpoints)))
         FreeVec(p_bpoint);
     UnLoadSeg(gp_dstate->ds_p_seglist);
-}
-
-
-void abort_debugger()
-{
-    // TODO
+    Exit(exit_code);
 }
 
 

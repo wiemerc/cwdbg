@@ -20,100 +20,112 @@
 static uint16_t g_msg_seqnum;
 
 
-static ProtoMessage *create_message();
-static void delete_message(ProtoMessage *p_msg);
-static int32_t send_message(ProtoMessage *p_msg);
-static int32_t recv_message(ProtoMessage *p_msg);
+static void send_ack_msg(uint8_t *p_data, uint8_t data_len);
+static void send_nack_msg(uint8_t error_code);
+static void send_target_stopped_msg(TargetInfo *p_target_info);
 
 
 //
 // exported routines
 //
 
+// This is how a complete protocol message looks like:
+//  ---------------------------------------------------
+// | sequence number | checksum | message type | data |
+//  ---------------------------------------------------
+// The checksum is calculated in the same way as with IP / UDP headers.
+
+// Programm flow when target is started by host:
+// @startuml
+// User -> Host: command 'run'
+// Host -> Server: MSG_RUN
+// Server -> Host: MSG_ACK
+// Server -> Target: run_target()
+// Target -> Target: target runs until a breakpoint / next instruction is hit
+// Target -> Server: handle_breakpoint() / handle_single_step()
+// Server -> Server: process_remote_commands()
+// Server -> Host: MSG_TARGET_STOPPED
+// Host -> Server: MSG_ACK
+// Host -> User: display target infos and prompt
+// User -> Host: command 'continue' / 'step'
+// Host -> Server: MSG_CONT / MSG_STEP
+// Server -> Host: MSG_ACK
+// Server -> Target: returns to target
+// Target -> Target: target runs until completion
+// Target -> Server: returns to run_target()
+// Server -> Server: process_remote_commands()
+// Server -> Host: MSG_TARGET_STOPPED
+// Host -> Server: MSG_ACK
+// Host -> User: display target infos and prompt
+// @enduml
+//
 void process_remote_commands(TaskContext *p_task_ctx)
 {
-    ProtoMessage *p_msg;
-    TargetInfo    tinfo;
+    ProtoMessage *p_in_msg;
+    TargetInfo    target_info;
 
-    if ((p_msg = create_message()) == NULL) {
+    if ((p_in_msg = create_message()) == NULL) {
         LOG(ERROR, "could not allocate memory for message");
-        abort_debugger();
+        quit_debugger(RETURN_ERROR);
     }
 
     // If target is running we've been called by one of the handle_* routines. In this case
     // the host is waiting for us and we send a MSG_TARGET_STOPPED message to indicate that
     // the target has stopped and provide the target information to the host.
+    // TODO: Remove prefixes of struct members
     if (gp_dstate->ds_target_state & TS_RUNNING) {
-        tinfo.ti_target_state = gp_dstate->ds_target_state;
-        tinfo.ti_exit_code    = gp_dstate->ds_exit_code;
-        memcpy(&tinfo.ti_task_context, p_task_ctx, sizeof(TaskContext));
-        p_msg->msg_seqnum   = g_msg_seqnum;
-        p_msg->msg_checksum = 0xbeef;
-        p_msg->msg_type     = MSG_TARGET_STOPPED;
-        p_msg->msg_length   = sizeof(TargetInfo);
-        memcpy(&p_msg->msg_data, &tinfo, sizeof(TargetInfo));
-        if (send_message(p_msg) == DOSFALSE) {
-            LOG(ERROR, "failed to send message to host");
-            delete_message(p_msg);
-            abort_debugger();
-        }
+        target_info.ti_target_state = gp_dstate->ds_target_state;
+        target_info.ti_exit_code    = gp_dstate->ds_exit_code;
+        memcpy(&target_info.ti_task_context, p_task_ctx, sizeof(TaskContext));
+        send_target_stopped_msg(&target_info);
     }
 
-    // TODO: check sequence number and checksum
     // TODO: catch Ctrl-C
     while(1) {
-        LOG(INFO, "waiting for message from host...");
-        if (recv_message(p_msg) == DOSFALSE) {
+        LOG(INFO, "waiting for command from host...");
+        if (recv_message(p_in_msg) == DOSFALSE) {
             LOG(ERROR, "failed to receive message from host");
-            delete_message(p_msg);
-            abort_debugger();
+            delete_message(p_in_msg);
+            quit_debugger(RETURN_ERROR);
         }
         LOG(
             DEBUG,
-            "message from host received: seqnum=%d, checksum=%x, type=%d, length=%d",
-            p_msg->msg_seqnum,
-            p_msg->msg_checksum,
-            p_msg->msg_type,
-            p_msg->msg_length
+            "message from host received: seqnum=%d, type=%d, length=%d",
+            p_in_msg->msg_seqnum,
+            p_in_msg->msg_type,
+            p_in_msg->msg_length
         );
-        g_msg_seqnum = p_msg->msg_seqnum;
+        // TODO: ignore messages with a seq number already seen
+        g_msg_seqnum = p_in_msg->msg_seqnum;
 
 
         //
         // target is not running (we've been called by main())
         //
         if (!(gp_dstate->ds_target_state & TS_RUNNING)) {
-            switch (p_msg->msg_type) {
+            switch (p_in_msg->msg_type) {
                 case MSG_INIT:
-                    LOG(DEBUG, "initializing connection, ISN=%d", p_msg->msg_seqnum);
-                    goto send_response_and_continue;
+                    LOG(DEBUG, "initializing connection");
+                    send_ack_msg(NULL, 0);
                     break;
 
                 case MSG_RUN:
+                    send_ack_msg(NULL, 0);
                     run_target();
-                    tinfo.ti_target_state = gp_dstate->ds_target_state;
-                    tinfo.ti_exit_code    = gp_dstate->ds_exit_code;
-                    p_msg->msg_seqnum   = g_msg_seqnum;
-                    p_msg->msg_checksum = 0xbeef;
-                    p_msg->msg_type     = MSG_TARGET_STOPPED;
-                    p_msg->msg_length   = sizeof(TargetInfo);
-                    memcpy(&p_msg->msg_data, &tinfo, sizeof(TargetInfo));
-                    if (send_message(p_msg) == DOSFALSE) {
-                        LOG(ERROR, "failed to send message to host");
-                        delete_message(p_msg);
-                        abort_debugger();
-                    }
+                    target_info.ti_target_state = gp_dstate->ds_target_state;
+                    target_info.ti_exit_code    = gp_dstate->ds_exit_code;
+                    send_target_stopped_msg(&target_info);
                     break;
 
                 case MSG_QUIT:
                     LOG(DEBUG, "terminating connection");
-                    goto send_response_and_quit;
+                    send_ack_msg(NULL, 0);
+                    quit_debugger(RETURN_OK);
                     break;
 
                 default:
-                    LOG(ERROR, "command %d not allowed when target is not running", p_msg->msg_type);
-                    p_msg->msg_type |= MSG_ERROR_FLAG;
-                    goto send_response_and_continue;
+                    LOG(ERROR, "command %d not allowed when target is not running", p_in_msg->msg_type);
+                    send_nack_msg(E_INVALID_TARGET_STATE);
             }
         }
     
@@ -124,24 +136,8 @@ void process_remote_commands(TaskContext *p_task_ctx)
         if (gp_dstate->ds_target_state & TS_RUNNING) {
             // TODO
         }
-
-
-        send_response_and_continue:
-            if (send_message(p_msg) == DOSFALSE) {
-                LOG(ERROR, "failed to send message to host");
-                delete_message(p_msg);
-                abort_debugger();
-            }
-            continue;
-        send_response_and_quit:
-            if (send_message(p_msg) == DOSFALSE) {
-                LOG(ERROR, "failed to send message to host");
-                delete_message(p_msg);
-                abort_debugger();
-            }
-            break;
     }
-    delete_message(p_msg);
+    delete_message(p_in_msg);
 }
 
 
@@ -149,98 +145,91 @@ void process_remote_commands(TaskContext *p_task_ctx)
 // local routines
 //
 
-static ProtoMessage *create_message()
+void send_ack_msg(uint8_t *p_data, uint8_t data_len)
+{
+    ProtoMessage *p_msg;
+    if ((p_msg = create_message()) == NULL) {
+        LOG(ERROR, "could not allocate memory for message");
+        quit_debugger(RETURN_ERROR);
+    }
+    p_msg->msg_seqnum   = g_msg_seqnum;
+    p_msg->msg_type     = MSG_ACK;
+    p_msg->msg_length   = data_len;
+    memcpy(&p_msg->msg_data, p_data, data_len);
+    if (send_message(p_msg) == DOSFALSE) {
+        LOG(ERROR, "failed to send message to host");
+        delete_message(p_msg);
+        quit_debugger(RETURN_ERROR);
+    }
+    delete_message(p_msg);
+    ++g_msg_seqnum;
+}
+
+
+void send_nack_msg(uint8_t error_code)
+{
+    ProtoMessage *p_msg;
+    if ((p_msg = create_message()) == NULL) {
+        LOG(ERROR, "could not allocate memory for message");
+        quit_debugger(RETURN_ERROR);
+    }
+    p_msg->msg_seqnum   = g_msg_seqnum;
+    p_msg->msg_type     = MSG_NACK;
+    p_msg->msg_length   = 1;
+    p_msg->msg_data[0]  = error_code;
+    if (send_message(p_msg) == DOSFALSE) {
+        LOG(ERROR, "failed to send message to host");
+        delete_message(p_msg);
+        quit_debugger(RETURN_ERROR);
+    }
+    delete_message(p_msg);
+    ++g_msg_seqnum;
+}
+
+
+void send_target_stopped_msg(TargetInfo *p_target_info)
 {
     ProtoMessage *p_msg;
 
-    // allocate a memory block large enough for the protocol message header and any data
-    if ((p_msg = AllocVec(sizeof(ProtoMessage) + MAX_MSG_DATA_LEN, 0)) != NULL) {
-        p_msg->msg_length = MAX_MSG_DATA_LEN;
-        return p_msg;
+    if ((p_msg = create_message()) == NULL) {
+        LOG(ERROR, "could not allocate memory for message");
+        quit_debugger(RETURN_ERROR);
     }
-    else
-        return NULL;
-}
 
-
-static void delete_message(ProtoMessage *p_msg)
-{
-    FreeVec((void *) p_msg);
-}
-
-
-static int32_t send_message(ProtoMessage *p_msg)
-{
-    uint8_t *p_frame;
-    Buffer b_msg, b_frame;
-
-    if ((p_frame = AllocVec(MAX_FRAME_SIZE, 0)) == NULL) {
-        LOG(ERROR, "could not allocate memory for SLIP frame");
-        return DOSFALSE;
+    p_msg->msg_seqnum   = g_msg_seqnum;
+    p_msg->msg_type     = MSG_TARGET_STOPPED;
+    p_msg->msg_length   = sizeof(TargetInfo);
+    memcpy(&p_msg->msg_data, p_target_info,sizeof(TargetInfo));
+    if (send_message(p_msg) == DOSFALSE) {
+        LOG(ERROR, "failed to send message to host");
+        delete_message(p_msg);
+        quit_debugger(RETURN_ERROR);
     }
-    b_msg.p_addr = (uint8_t *) p_msg;
-    b_msg.size   = sizeof(ProtoMessage) + MAX_MSG_DATA_LEN;
-    b_frame.p_addr = p_frame;
-    b_frame.size   = MAX_FRAME_SIZE;
-    if (put_data_into_slip_frame(&b_msg, &b_frame) == DOSFALSE) {
-        LOG(ERROR, "could not put data into SLIP frame: %ld", g_serio_errno);
-        FreeVec((void *) p_frame);
-        return DOSFALSE;
+
+    // TODO: add timeout and re-transmit
+    if (recv_message(p_msg) == DOSFALSE) {
+        LOG(ERROR, "failed to receive message from host");
+        delete_message(p_msg);
+        quit_debugger(RETURN_ERROR);
     }
-    if (send_slip_frame(&b_frame) == DOSFALSE) {
-        LOG(ERROR, "failed to send SLIP frame: %ld", g_serio_errno);
-        return DOSFALSE;
+    if (p_msg->msg_type == MSG_ACK) {
+        if (p_msg->msg_seqnum == g_msg_seqnum) {
+            LOG(DEBUG, "received ACK for MSG_TARGET_STOPPED message");
+        }
+        else {
+            LOG(
+                ERROR,
+                "received ACK for MSG_TARGET_STOPPED message with wrong sequence number, expected %d, got %d",
+                g_msg_seqnum,
+                p_msg->msg_seqnum
+            );
+            quit_debugger(RETURN_ERROR);
+        }
     }
-    return DOSTRUE;
-}
-
-
-static int32_t recv_message(ProtoMessage *p_msg)
-{
-    uint8_t *p_frame;
-    Buffer b_msg, b_frame;
-
-    if ((p_frame = AllocVec(MAX_FRAME_SIZE, 0)) == NULL) {
-        LOG(ERROR, "could not allocate memory for SLIP frame");
-        return DOSFALSE;
+    else {
+        LOG(ERROR, "received unexpected message of type %d from host instead of the expected ACK", p_msg->msg_type);
+        quit_debugger(RETURN_ERROR);
     }
-    b_msg.p_addr = (uint8_t *) p_msg;
-    b_msg.size   = sizeof(ProtoMessage) + MAX_MSG_DATA_LEN;
-    b_frame.p_addr = p_frame;
-    b_frame.size   = MAX_FRAME_SIZE;
-    if (recv_slip_frame(&b_frame) == DOSFALSE) {
-        LOG(ERROR, "failed to receive SLIP frame: %ld", g_serio_errno);
-        FreeVec((void *) p_frame);
-        return DOSFALSE;
-    }
-    if (get_data_from_slip_frame(&b_msg, &b_frame) == DOSFALSE) {
-        LOG(ERROR, "could not get data from SLIP frame: %ld", g_serio_errno);
-        FreeVec((void *) p_frame);
-        return DOSFALSE;
-    }
-    FreeVec((void *) p_frame);
-    return DOSTRUE;
-}
 
-
-/*
- * calculate IP / ICMP checksum (taken from the code for in_cksum() floating on the net)
- */
-static USHORT calc_checksum(const UBYTE * bytes, ULONG len)
-{
-    ULONG sum, i;
-    USHORT * p;
-
-    sum = 0;
-    p = (USHORT *) bytes;
-
-    for (i = len; i > 1; i -= 2)                /* sum all 16-bit words */
-        sum += *p++;
-
-    if (i == 1)                                 /* add an odd byte if necessary */
-        sum += (USHORT) *((UBYTE *) p);
-
-    sum = (sum >> 16) + (sum & 0x0000ffff);     /* fold in upper 16 bits */
-    sum += (sum >> 16);                         /* add carry bits */
-    return ~((USHORT) sum);                     /* return 1-complement truncated to 16 bits */
+    delete_message(p_msg);
 }

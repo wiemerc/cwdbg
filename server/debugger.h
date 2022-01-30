@@ -90,7 +90,6 @@ void run_target();
 void continue_target(TaskContext *p_task_ctx);
 void single_step_target(TaskContext *p_task_ctx);
 void quit_debugger();
-void abort_debugger();
 BreakPoint *set_breakpoint(ULONG offset);
 BreakPoint *find_bpoint_by_addr(struct List *bpoints, APTR baddr);
 void handle_breakpoint(TaskContext *p_task_ctx);

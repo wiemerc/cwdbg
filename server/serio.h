@@ -18,7 +18,8 @@
 /*
  * constants
  */
-#define MAX_FRAME_SIZE 4096
+#define MAX_FRAME_SIZE 1024
+#define MAX_MSG_DATA_LEN 255
 
 /*
  * SLIP protocol
@@ -32,6 +33,10 @@
 #define SERIO_TIMEOUT 10        /* timeout for reads and writes in seconds */
 
 
+//
+// type definitions
+//
+
 /*
  * buffer for requests and responses
  */
@@ -41,15 +46,25 @@ typedef struct {
 } Buffer;
 
 
+// structure for protocol message
+typedef struct {
+    uint16_t msg_seqnum;
+    uint16_t msg_checksum;
+    uint8_t  msg_type;
+    uint8_t  msg_length;
+    uint8_t  msg_data[0];
+} ProtoMessage;
+
+
 /*
  * exported functions
  */
 int32_t serio_init();
 void serio_exit();
-int32_t put_data_into_slip_frame(const Buffer *pb_data, Buffer *pb_frame);
-int32_t get_data_from_slip_frame(Buffer *pb_data, const Buffer *pb_frame);
-int32_t send_slip_frame(const Buffer *pb_frame);
-int32_t recv_slip_frame(Buffer *pb_frame);
+ProtoMessage *create_message();
+void delete_message(ProtoMessage *p_msg);
+int32_t send_message(ProtoMessage *p_msg);
+int32_t recv_message(ProtoMessage *p_msg);
 
 
 /*
