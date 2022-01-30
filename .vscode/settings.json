@@ -6,5 +6,9 @@
     "spellright.documentTypes": [
         "latex",
         "plaintext"
-    ]
+    ],
+    "cmake.configureOnOpen": false,
+    "files.associations": {
+        "memory": "c"
+    },
 }
