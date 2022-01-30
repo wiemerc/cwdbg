@@ -48,11 +48,11 @@ typedef struct {
 
 // structure for protocol message
 typedef struct {
-    uint16_t msg_seqnum;
-    uint16_t msg_checksum;
-    uint8_t  msg_type;
-    uint8_t  msg_length;
-    uint8_t  msg_data[MAX_MSG_DATA_LEN];
+    uint16_t seqnum;
+    uint16_t checksum;
+    uint8_t  type;
+    uint8_t  length;
+    uint8_t  data[MAX_MSG_DATA_LEN];
 } ProtoMessage;
 
 

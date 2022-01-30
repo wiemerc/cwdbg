@@ -38,7 +38,7 @@ void process_cli_commands(TaskContext *p_task_ctx)
     APTR                p_maddr;                // address of memory block to print
     ULONG               msize;                  // size of memory block
 
-    if (gp_dstate->ds_target_state & TS_RUNNING)
+    if (gp_dstate->target_state & TS_RUNNING)
         print_instr(p_task_ctx);
     while(1) {
         // read command from standard input (and ignore errors and commands >= 64 characters)
@@ -69,8 +69,8 @@ void process_cli_commands(TaskContext *p_task_ctx)
 
             case 'k':   // kill (abort) target
                 // TODO: restore breakpoint if necessary
-                gp_dstate->ds_target_state = TS_EXITED;
-                Signal(gp_dstate->ds_p_debugger_task, SIG_TARGET_EXITED);
+                gp_dstate->target_state = TS_EXITED;
+                Signal(gp_dstate->p_debugger_task, SIG_TARGET_EXITED);
                 RemTask(NULL);
                 return;  // We don't get here anyway...
 
@@ -97,7 +97,7 @@ void process_cli_commands(TaskContext *p_task_ctx)
                         print_registers(p_task_ctx);
                         break;
                     case 's':   // ... stack
-                        print_stack(p_task_ctx, gp_dstate->ds_p_target_task->tc_SPUpper - 2);
+                        print_stack(p_task_ctx, gp_dstate->p_target_task->tc_SPUpper - 2);
                         break;
                     default:
                         LOG(ERROR, "unknown command 'i %c'", p_args[1][0]);
@@ -151,11 +151,11 @@ static UBYTE parse_args(char *p_cmd, char **pp_args)
 static int is_correct_target_state_for_command(char cmd)
 {
     // keep list of commands (the 1st argument of strchr()) in sync with process_cli_commands()
-    if (!(gp_dstate->ds_target_state & TS_RUNNING) && (strchr("cs\nik", cmd) != NULL)) {
+    if (!(gp_dstate->target_state & TS_RUNNING) && (strchr("cs\nik", cmd) != NULL)) {
         LOG(ERROR, "incorrect state for command '%c': target is not yet running", cmd);
         return 0;
     }
-    if ((gp_dstate->ds_target_state & TS_RUNNING) && (strchr("rq", cmd) != NULL)) {
+    if ((gp_dstate->target_state & TS_RUNNING) && (strchr("rq", cmd) != NULL)) {
         LOG(ERROR, "incorrect state for command '%c': target is already / still running", cmd);
         return 0;
     }
@@ -169,10 +169,10 @@ static void print_instr(const TaskContext *ctx)
     UWORD *sp;
     char instr[128], dump[64], *dp;
 
-    nbytes = m68k_disassemble(instr, (ULONG) ctx->tc_reg_pc, M68K_CPU_TYPE_68030);
-    for (sp = ctx->tc_reg_pc, dp = dump; nbytes > 0 && dp < dump + 64; nbytes -= 2, ++sp, dp += 5)
+    nbytes = m68k_disassemble(instr, (ULONG) ctx->p_reg_pc, M68K_CPU_TYPE_68030);
+    for (sp = ctx->p_reg_pc, dp = dump; nbytes > 0 && dp < dump + 64; nbytes -= 2, ++sp, dp += 5)
         sprintf(dp, "%04x ", *sp);
-    printf("PC=0x%08lx: %-20s: %s\n", (ULONG) ctx->tc_reg_pc, dump, instr);
+    printf("PC=0x%08lx: %-20s: %s\n", (ULONG) ctx->p_reg_pc, dump, instr);
 }
 
 
@@ -182,17 +182,17 @@ static void print_registers(const TaskContext *ctx)
 
     // TODO: pretty-print status register
     for (i = 0; i < 4; i++)
-        printf("D%d=0x%08lx  ", i, ctx->tc_reg_d[i]);
+        printf("D%d=0x%08lx  ", i, ctx->reg_d[i]);
     puts("");
     for (i = 4; i < 8; i++)
-        printf("D%d=0x%08lx  ", i, ctx->tc_reg_d[i]);
+        printf("D%d=0x%08lx  ", i, ctx->reg_d[i]);
     puts("");
     for (i = 0; i < 4; i++)
-        printf("A%d=0x%08lx  ", i, ctx->tc_reg_a[i]);
+        printf("A%d=0x%08lx  ", i, ctx->reg_a[i]);
     puts("");
     for (i = 4; i < 7; i++)
-        printf("A%d=0x%08lx  ", i, ctx->tc_reg_a[i]);
-    printf("A7(SP)=0x%08lx\n", (ULONG) ctx->tc_reg_sp);
+        printf("A%d=0x%08lx  ", i, ctx->reg_a[i]);
+    printf("A7(SP)=0x%08lx\n", (ULONG) ctx->p_reg_sp);
 }
 
 
@@ -202,8 +202,8 @@ static void print_stack(const TaskContext *ctx, APTR initial_sp)
     APTR  sp;
 
     // TODO: Should we print words instead of dwords?
-    printf("initial SP = 0x%08lx, current SP = 0x%08lx\n", (ULONG) initial_sp, (ULONG) ctx->tc_reg_sp);
-    for (i = 1, sp = ctx->tc_reg_sp; (i <= 10) && (sp <= initial_sp); ++i, sp += 4) {
+    printf("initial SP = 0x%08lx, current SP = 0x%08lx\n", (ULONG) initial_sp, (ULONG) ctx->p_reg_sp);
+    for (i = 1, sp = ctx->p_reg_sp; (i <= 10) && (sp <= initial_sp); ++i, sp += 4) {
         printf("0x%08lx:\t0x%08lx\n", (ULONG) sp, *((ULONG *) sp));
     }
 }

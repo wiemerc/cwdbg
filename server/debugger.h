@@ -40,39 +40,38 @@
  * type definitions
  */
 // TODO: use  C99 standard types
-// TODO: use prefix p_ for pointers
 typedef struct {
-    APTR   tc_reg_sp;
-    ULONG  tc_exc_num;
-    USHORT tc_reg_sr;
-    APTR   tc_reg_pc;
-    ULONG  tc_reg_d[8];
-    ULONG  tc_reg_a[7];                  // without A7 = SP
+    APTR   p_reg_sp;
+    ULONG  exc_num;
+    USHORT reg_sr;
+    APTR   p_reg_pc;
+    ULONG  reg_d[8];
+    ULONG  reg_a[7];                  // without A7 = SP
 } TaskContext;
 
 typedef struct {
-    struct Node  bp_node;
-    ULONG        bp_num;
-    APTR         bp_addr;                // address in code segment
-    USHORT       bp_opcode;              // original opcode at this address
-    ULONG        bp_count;               // number of times it has been hit
+    struct Node  node;
+    ULONG        num;
+    APTR         p_address;           // address in code segment
+    USHORT       opcode;              // original opcode at this address
+    ULONG        count;               // number of times it has been hit
 } BreakPoint;
 
 typedef struct {
-    TaskContext  ti_task_context;        // task context of target
-    int          ti_target_state;        // current target state
-    int          ti_exit_code;           // exit code if target has exited
+    TaskContext  task_context;        // task context of target
+    int          target_state;        // current target state
+    int          exit_code;           // exit code if target has exited
 } TargetInfo;
 
 typedef struct {
-    struct Task  *ds_p_debugger_task;    // our own task - for the target to signal us
-    struct Task  *ds_p_target_task;      // task of target
-    BPTR         ds_p_seglist;           // segment list of target
-    int          (*ds_p_entry)();        // entry point of target
-    int          ds_target_state;        // current target state
-    int          ds_exit_code;           // exit code of target
-    struct List  ds_bpoints;             // list of breakpoints
-    BreakPoint   *ds_p_current_bpoint;   // current breakpoint that needs to be restored
+    struct Task  *p_debugger_task;    // our own task - for the target to signal us
+    struct Task  *p_target_task;      // task of target
+    BPTR         p_seglist;           // segment list of target
+    int          (*p_entry)();        // entry point of target
+    int          target_state;        // current target state
+    int          exit_code;           // exit code of target
+    struct List  bpoints;             // list of breakpoints
+    BreakPoint   *p_current_bpoint;   // current breakpoint that needs to be restored
 } DebuggerState;
 
 
