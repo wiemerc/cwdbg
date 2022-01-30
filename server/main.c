@@ -62,7 +62,6 @@ int main()
             LOG(INFO, "initialized serial IO");
         }
         process_remote_commands(NULL);
-        serio_exit();
     }
     else {
         m68k_build_opcode_table();

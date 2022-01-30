@@ -14,6 +14,7 @@
 
 #include "cli.h"
 #include "debugger.h"
+#include "serio.h"
 #include "util.h"
 
 
@@ -115,10 +116,10 @@ void quit_debugger(int exit_code)
     BreakPoint *p_bpoint;
 
     LOG(INFO, "exiting...");
-    // TODO: Close serial device here
     while ((p_bpoint = (BreakPoint *) RemHead(&g_dstate.bpoints)))
         FreeVec(p_bpoint);
     UnLoadSeg(g_dstate.p_seglist);
+    serio_exit();
     Exit(exit_code);
 }
 
