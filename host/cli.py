@@ -9,8 +9,14 @@ import argparse
 import readline
 
 from loguru import logger
+from typing import Optional, Tuple
 
-from serio import ServerConnection, MsgTypes, TargetInfo
+from debugger import TargetInfo, TargetStates
+from serio import ServerConnection, MsgTypes
+
+
+class QuitDebuggerException(Exception):
+    pass
 
 
 class ArgumentParserError(Exception):
@@ -22,7 +28,7 @@ class ThrowingArgumentParser(argparse.ArgumentParser):
         raise ArgumentParserError(message)
 
 
-def process_cli_commands(conn: ServerConnection):
+def process_cli_command(conn: ServerConnection, command: str) -> Tuple[Optional[str], Optional[TargetInfo]]:
     parser = ThrowingArgumentParser(prog='', description="CWDebug, a source-level debugger for the AmigaOS", add_help=False)
     subparsers = parser.add_subparsers(dest='command', help="Available commands")
     subparsers.add_parser('help', aliases=('h',), help="Show help message")
@@ -30,39 +36,27 @@ def process_cli_commands(conn: ServerConnection):
     subparsers.add_parser('run', aliases=('r',), help="Run the target")
 
     try:
-        target_running = False
-        while True:
-            if target_running:
-                logger.info("Target is running, waiting for it to stop...")
-                msg, data = conn.recv_message()
-                if msg.type == MsgTypes.MSG_TARGET_STOPPED:
-                    conn.send_message(MsgTypes.MSG_ACK)
-                    target_running = False
-                    target_info = TargetInfo.from_buffer(data)
-                    logger.info(f"Target has stopped, state = {target_info.target_state}, exit code = {target_info.exit_code}")
-                else:
-                    raise ConnectionError(f"Received unexpected message {MsgTypes(msg.type).name} from server, expected MSG_TARGET_STOPPED")
+        try:
+            args = parser.parse_args((command,))
+        except ArgumentParserError:
+            return "Invalid command / argument\n" + parser.format_help(), None
 
-            cmdline = input('> ')
-            logger.debug(f"Command line: {cmdline}")
-            try:
-                args = parser.parse_args((cmdline,))
-            except ArgumentParserError:
-                print("Invalid command / argument")
-                parser.print_usage()
-                continue
+        # TODO: Implement logic similiar to process_cli_commands() in cli.c
+        # TODO: Implement connect / disconnect commands
+        if args.command in ('help', 'h'):
+            return parser.format_help(), None
 
-            # TODO: implement command loop similiar to process_cli_commands()
-            if args.command in ('help', 'h'):
-                parser.print_help()
-                continue
+        elif args.command in ('run', 'r'):
+            target_info = conn.execute_command(MsgTypes.MSG_RUN)
+            if target_info.target_state & TargetStates.TS_EXITED:
+                return f"Target exited with code {target_info.exit_code}", target_info
+            else:
+                return None, target_info
 
-            elif args.command in ('run', 'r'):
-                conn.send_command(MsgTypes.MSG_RUN)
-                target_running = True
-
-            elif args.command in ('quit', 'q'):
-                conn.send_command(MsgTypes.MSG_QUIT)
-                return
+        elif args.command in ('quit', 'q'):
+            conn.execute_command(MsgTypes.MSG_QUIT)
+            raise QuitDebuggerException()
+    except QuitDebuggerException:
+        raise
     except Exception as e:
         raise RuntimeError(f"Error occurred while processing CLI commands") from e
