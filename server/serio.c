@@ -94,10 +94,12 @@ int32_t serio_init()
 
 void serio_exit()
 {
-    CloseDevice((struct IORequest *) treq);
-    CloseDevice((struct IORequest *) sreq);
-    DeleteExtIO((struct IORequest *) treq);
-    DeleteExtIO((struct IORequest *) sreq);
+    if (treq && sreq) {
+        CloseDevice((struct IORequest *) treq);
+        CloseDevice((struct IORequest *) sreq);
+        DeleteExtIO((struct IORequest *) treq);
+        DeleteExtIO((struct IORequest *) sreq);
+    }
 }
 
 
