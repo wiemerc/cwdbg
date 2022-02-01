@@ -11,7 +11,6 @@
 // included files
 //
 #include "debugger.h"
-#include "stdint.h"
 
 
 //

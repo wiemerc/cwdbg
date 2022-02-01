@@ -4,7 +4,7 @@
  * stdint.h - part of CWDebug, a source-level debugger for the AmigaOS
  *            This file contains some of the C99 type definitions that the old GCC I use lacks.
  *
- * Copyright(C) 2018-2021 Constantin Wiemer
+ * Copyright(C) 2018-2022 Constantin Wiemer
  */
 
 

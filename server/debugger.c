@@ -15,6 +15,7 @@
 #include "cli.h"
 #include "debugger.h"
 #include "serio.h"
+#include "stdint.h"
 #include "util.h"
 
 
@@ -67,8 +68,8 @@ void run_target()
     LOG(INFO, "starting target");
     g_dstate.target_state = TS_RUNNING;
     if ((g_dstate.p_target_task = (struct Task *) CreateNewProcTags(
-        NP_Name, (ULONG) "debugme",
-        NP_Entry, (ULONG) wrap_target,
+        NP_Name, (uint32_t) "debugme",
+        NP_Entry, (uint32_t) wrap_target,
         NP_StackSize, TARGET_STACK_SIZE,
         NP_Input, Input(),
         NP_Output, Output(),
@@ -124,22 +125,22 @@ void quit_debugger(int exit_code)
 }
 
 
-BreakPoint *set_breakpoint(ULONG offset)
+BreakPoint *set_breakpoint(uint32_t offset)
 {
-    BreakPoint  *p_bpoint;
-    APTR        p_baddr;
+    BreakPoint *p_bpoint;
+    void       *p_baddr;
 
     if ((p_bpoint = AllocVec(sizeof(BreakPoint), 0)) == NULL) {
         LOG(ERROR, "could not allocate memory for breakpoint");
         return NULL;
     }
-    p_baddr = (APTR) ((ULONG) g_dstate.p_entry) + offset;
+    p_baddr = (void *) ((uint32_t) g_dstate.p_entry) + offset;
     p_bpoint->num          = ++g_dstate.bpoints.lh_Type;
     p_bpoint->p_address         = p_baddr;
-    p_bpoint->opcode       = *((USHORT *) p_baddr);
+    p_bpoint->opcode       = *((uint16_t *) p_baddr);
     p_bpoint->count        = 0;
     AddTail(&g_dstate.bpoints, (struct Node *) p_bpoint);
-    *((USHORT *) p_baddr) = TRAP_OPCODE;
+    *((uint16_t *) p_baddr) = TRAP_OPCODE;
     LOG(INFO, "breakpoint set at entry + 0x%08lx", offset);
     return p_bpoint;
 }
@@ -167,8 +168,8 @@ BreakPoint *find_bpoint_by_addr(struct List *p_bpoints, void *p_baddr)
 
 void handle_breakpoint(TaskContext *p_task_ctx)
 {
-    BreakPoint          *p_bpoint;
-    APTR                p_baddr;
+    BreakPoint *p_bpoint;
+    void       *p_baddr;
 
     g_dstate.target_state |= TS_STOPPED_BY_BREAKPOINT;
     p_baddr = p_task_ctx->p_reg_pc - 2;
@@ -176,13 +177,13 @@ void handle_breakpoint(TaskContext *p_task_ctx)
         g_dstate.p_current_bpoint = p_bpoint;
         // rewind PC by 2 bytes and replace trap instruction with original instruction
         p_task_ctx->p_reg_pc = p_baddr;
-        *((USHORT *) p_baddr) = p_bpoint->opcode;
+        *((uint16_t *) p_baddr) = p_bpoint->opcode;
         ++p_bpoint->count;
         LOG(INFO, "target has hit breakpoint #%ld at entry + 0x%08lx, hit count = %ld", 
-            p_bpoint->num, ((ULONG) p_baddr - (ULONG) g_dstate.p_entry), p_bpoint->count);
+            p_bpoint->num, ((uint32_t) p_baddr - (uint32_t) g_dstate.p_entry), p_bpoint->count);
     }
     else {
-        LOG(CRIT, "INTERNAL ERROR: target has hit unknown breakpoint at entry + 0x%08lx", ((ULONG) p_baddr - (ULONG) g_dstate.p_entry));
+        LOG(CRIT, "INTERNAL ERROR: target has hit unknown breakpoint at entry + 0x%08lx", ((uint32_t) p_baddr - (uint32_t) g_dstate.p_entry));
         return;
     }
 
@@ -201,9 +202,9 @@ void handle_single_step(TaskContext *p_task_ctx)
             DEBUG,
             "restoring breakpoint #%ld at entry + 0x%08lx",
             g_dstate.p_current_bpoint->num,
-            ((ULONG) g_dstate.p_current_bpoint->p_address - (ULONG) g_dstate.p_entry)
+            ((uint32_t) g_dstate.p_current_bpoint->p_address - (uint32_t) g_dstate.p_entry)
         );
-        *((USHORT *) g_dstate.p_current_bpoint->p_address) = TRAP_OPCODE;
+        *((uint16_t *) g_dstate.p_current_bpoint->p_address) = TRAP_OPCODE;
         g_dstate.p_current_bpoint = NULL;
     }
     if (g_dstate.target_state & TS_SINGLE_STEPPING) {
@@ -222,7 +223,7 @@ void handle_exception(TaskContext *p_task_ctx)
         INFO,
         "unhandled exception #%ld occurred at entry + 0x%08lx",
         p_task_ctx->exc_num,
-        ((ULONG) p_task_ctx->p_reg_pc - (ULONG) g_dstate.p_entry)
+        ((uint32_t) p_task_ctx->p_reg_pc - (uint32_t) g_dstate.p_entry)
     );
 
     process_cli_commands(p_task_ctx);
@@ -246,8 +247,8 @@ static void wrap_target()
     LOG(
         DEBUG,
         "calling entry point of target, initial PC = 0x%08lx, initial SP = 0x%08lx",
-        (ULONG) g_dstate.p_entry,
-        (ULONG) g_dstate.p_target_task->tc_SPUpper - 2
+        (uint32_t) g_dstate.p_entry,
+        (uint32_t) g_dstate.p_target_task->tc_SPUpper - 2
     );
     g_dstate.exit_code = g_dstate.p_entry();
 

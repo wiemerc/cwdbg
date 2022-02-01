@@ -15,15 +15,16 @@
 #include "cli.h"
 #include "debugger.h"
 #include "m68k.h"
+#include "stdint.h"
 #include "util.h"
 
 
-static UBYTE parse_args(char *p_cmd, char **pp_args);
+static uint8_t parse_args(char *p_cmd, char **pp_args);
 static int is_correct_target_state_for_command(char cmd);
-static void print_instr(const TaskContext *ctx);
-static void print_registers(const TaskContext *ctx);
-static void print_stack(const TaskContext *ctx, APTR initial_sp);
-static void print_memory(const UBYTE *addr, ULONG size);
+static void print_instr(const TaskContext *p_ctx);
+static void print_registers(const TaskContext *p_ctx);
+static void print_stack(const TaskContext *ctx, void *p_initial_sp);
+static void print_memory(const uint8_t *p_addr, uint32_t size);
 
 
 //
@@ -33,10 +34,10 @@ void process_cli_commands(TaskContext *p_task_ctx)
 {
     char                cmd[64];                // command buffer
     char                *p_args[5];             // argument list
-    UBYTE               nargs;                  // number of arguments
-    ULONG               offset;                 // offset from entry point
-    APTR                p_maddr;                // address of memory block to print
-    ULONG               msize;                  // size of memory block
+    uint8_t             nargs;                  // number of arguments
+    uint32_t            offset;                 // offset from entry point
+    void                *p_maddr;               // address of memory block to print
+    uint32_t            msize;                  // size of memory block
 
     if (g_dstate.target_state & TS_RUNNING)
         print_instr(p_task_ctx);
@@ -60,7 +61,7 @@ void process_cli_commands(TaskContext *p_task_ctx)
                     LOG(ERROR, "command 'b' requires an address");
                     break;
                 }
-                if (sscanf(p_args[1], "%lx", &offset) == 0) {
+                if (sscanf(p_args[1], "%x", &offset) == 0) {
                     LOG(ERROR, "invalid format of breakpoint offset");
                     break;
                 }
@@ -109,7 +110,7 @@ void process_cli_commands(TaskContext *p_task_ctx)
                     LOG(ERROR, "command 'p' requires address and size");
                     break;
                 }
-                if ((sscanf(p_args[1], "%p", &p_maddr) == 0) || (sscanf(p_args[2], "%ld", &msize) == 0)) {
+                if ((sscanf(p_args[1], "%p", &p_maddr) == 0) || (sscanf(p_args[2], "%d", &msize) == 0)) {
                     LOG(ERROR, "invalid format for address / size");
                     break;
                 }
@@ -131,10 +132,10 @@ void process_cli_commands(TaskContext *p_task_ctx)
 //
 // local routines
 //
-static UBYTE parse_args(char *p_cmd, char **pp_args)
+static uint8_t parse_args(char *p_cmd, char **pp_args)
 {
     char    *p_token;               // pointer to one token
-    UBYTE   nargs;                  // number of arguments
+    uint8_t nargs;                  // number of arguments
 
     p_token = strtok(p_cmd, " \t");
     nargs = 0;
@@ -163,63 +164,63 @@ static int is_correct_target_state_for_command(char cmd)
 }
 
 
-static void print_instr(const TaskContext *ctx)
+static void print_instr(const TaskContext *p_ctx)
 {
-    ULONG nbytes;
-    UWORD *sp;
+    uint32_t nbytes;
+    uint16_t *sp;
     char instr[128], dump[64], *dp;
 
-    nbytes = m68k_disassemble(instr, (ULONG) ctx->p_reg_pc, M68K_CPU_TYPE_68030);
-    for (sp = ctx->p_reg_pc, dp = dump; nbytes > 0 && dp < dump + 64; nbytes -= 2, ++sp, dp += 5)
+    nbytes = m68k_disassemble(instr, (uint32_t) p_ctx->p_reg_pc, M68K_CPU_TYPE_68030);
+    for (sp = p_ctx->p_reg_pc, dp = dump; nbytes > 0 && dp < dump + 64; nbytes -= 2, ++sp, dp += 5)
         sprintf(dp, "%04x ", *sp);
-    printf("PC=0x%08lx: %-20s: %s\n", (ULONG) ctx->p_reg_pc, dump, instr);
+    printf("PC=0x%08x: %-20s: %s\n", (uint32_t) p_ctx->p_reg_pc, dump, instr);
 }
 
 
-static void print_registers(const TaskContext *ctx)
+static void print_registers(const TaskContext *p_ctx)
 {
-    UBYTE i;
+    uint8_t i;
 
     // TODO: pretty-print status register
     for (i = 0; i < 4; i++)
-        printf("D%d=0x%08lx  ", i, ctx->reg_d[i]);
+        printf("D%d=0x%08x  ", i, p_ctx->reg_d[i]);
     puts("");
     for (i = 4; i < 8; i++)
-        printf("D%d=0x%08lx  ", i, ctx->reg_d[i]);
+        printf("D%d=0x%08x  ", i, p_ctx->reg_d[i]);
     puts("");
     for (i = 0; i < 4; i++)
-        printf("A%d=0x%08lx  ", i, ctx->reg_a[i]);
+        printf("A%d=0x%08x  ", i, p_ctx->reg_a[i]);
     puts("");
     for (i = 4; i < 7; i++)
-        printf("A%d=0x%08lx  ", i, ctx->reg_a[i]);
-    printf("A7(SP)=0x%08lx\n", (ULONG) ctx->p_reg_sp);
+        printf("A%d=0x%08x  ", i, p_ctx->reg_a[i]);
+    printf("A7(SP)=0x%08x\n", (uint32_t) p_ctx->p_reg_sp);
 }
 
 
-static void print_stack(const TaskContext *ctx, APTR initial_sp)
+static void print_stack(const TaskContext *p_ctx, void *p_initial_sp)
 {
-    UBYTE i;
-    APTR  sp;
+    uint8_t  i;
+    uint32_t sp;
 
     // TODO: Should we print words instead of dwords?
-    printf("initial SP = 0x%08lx, current SP = 0x%08lx\n", (ULONG) initial_sp, (ULONG) ctx->p_reg_sp);
-    for (i = 1, sp = ctx->p_reg_sp; (i <= 10) && (sp <= initial_sp); ++i, sp += 4) {
-        printf("0x%08lx:\t0x%08lx\n", (ULONG) sp, *((ULONG *) sp));
+    printf("initial SP = 0x%08x, current SP = 0x%08x\n", (uint32_t) p_initial_sp, (uint32_t) p_ctx->p_reg_sp);
+    for (i = 1, sp = (uint32_t) p_ctx->p_reg_sp; (i <= 10) && (sp <= (uint32_t) p_initial_sp); ++i, sp += 4) {
+        printf("0x%08x:\t0x%08x\n", (uint32_t) sp, *((uint32_t *) sp));
     }
 }
 
 
-static void print_memory(const UBYTE *addr, ULONG size)
+static void print_memory(const uint8_t *p_addr, uint32_t size)
 {
-    ULONG pos = 0, i, nchars;
+    uint32_t pos = 0, i, nchars;
     char line[256], *p;
 
     while (pos < size) {
-        printf("%04lx: ", pos);
+        printf("%04x: ", pos);
         for (i = pos, p = line, nchars = 0; (i < pos + 16) && (i < size); ++i, ++p, ++nchars) {
-            printf("%02x ", addr[i]);
-            if (addr[i] >= 0x20 && addr[i] <= 0x7e) {
-                sprintf(p, "%c", addr[i]);
+            printf("%02x ", p_addr[i]);
+            if (p_addr[i] >= 0x20 && p_addr[i] <= 0x7e) {
+                sprintf(p, "%c", p_addr[i]);
             }
             else {
                 sprintf(p, ".");

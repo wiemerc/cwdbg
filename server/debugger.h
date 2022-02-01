@@ -14,6 +14,8 @@
 #include <exec/tasks.h>
 #include <exec/types.h>
 
+#include "stdint.h"
+
 
 /*
  * constants
@@ -39,22 +41,21 @@
 /*
  * type definitions
  */
-// TODO: use  C99 standard types
 typedef struct {
-    APTR   p_reg_sp;
-    ULONG  exc_num;
-    USHORT reg_sr;
-    APTR   p_reg_pc;
-    ULONG  reg_d[8];
-    ULONG  reg_a[7];                  // without A7 = SP
+    void     *p_reg_sp;
+    uint32_t exc_num;
+    uint16_t reg_sr;
+    void     *p_reg_pc;
+    uint32_t reg_d[8];
+    uint32_t reg_a[7];                // without A7 = SP
 } TaskContext;
 
 typedef struct {
     struct Node  node;
-    ULONG        num;
-    APTR         p_address;           // address in code segment
-    USHORT       opcode;              // original opcode at this address
-    ULONG        count;               // number of times it has been hit
+    uint32_t     num;
+    void         *p_address;          // address in code segment
+    uint16_t     opcode;              // original opcode at this address
+    uint32_t     count;               // number of times it has been hit
 } BreakPoint;
 
 typedef struct {
@@ -89,8 +90,8 @@ void run_target();
 void continue_target(TaskContext *p_task_ctx);
 void single_step_target(TaskContext *p_task_ctx);
 void quit_debugger();
-BreakPoint *set_breakpoint(ULONG offset);
-BreakPoint *find_bpoint_by_addr(struct List *bpoints, APTR baddr);
+BreakPoint *set_breakpoint(uint32_t offset);
+BreakPoint *find_bpoint_by_addr(struct List *p_bpoints, void *p_baddr);
 void handle_breakpoint(TaskContext *p_task_ctx);
 void handle_single_step(TaskContext *p_task_ctx);
 void handle_exception(TaskContext *p_task_ctx);
