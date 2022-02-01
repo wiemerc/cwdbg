@@ -20,4 +20,4 @@ examples:
 	$(MAKE) --directory=$@
 
 stats:
-	cloc --not-match-d='\.venv' --fullpath --exclude-ext=d,json .
+	cloc --not-match-d='\.venv|misc' --not-match-f='m68k.+' --fullpath --exclude-ext=d,json .
