@@ -68,15 +68,14 @@ void process_remote_commands(TaskContext *p_task_ctx)
     // the host is waiting for us and we send a MSG_TARGET_STOPPED message to indicate that
     // the target has stopped and provide the target information to the host.
     if (g_dstate.target_state & TS_RUNNING) {
-        target_info.target_state = g_dstate.target_state;
-        target_info.exit_code    = g_dstate.exit_code;
-        memcpy(&target_info.task_context, p_task_ctx, sizeof(TaskContext));
+        get_target_info(&target_info, p_task_ctx);
         send_target_stopped_msg(&target_info);
     }
 
     // TODO: catch Ctrl-C
     while(1) {
         LOG(INFO, "Waiting for command from host...");
+        // TODO: add timeout
         if (recv_message(&msg) == DOSFALSE) {
             LOG(ERROR, "Failed to receive message from host");
             quit_debugger(RETURN_ERROR);
@@ -112,8 +111,7 @@ void process_remote_commands(TaskContext *p_task_ctx)
                 case MSG_RUN:
                     send_ack_msg(NULL, 0);
                     run_target();
-                    target_info.target_state = g_dstate.target_state;
-                    target_info.exit_code    = g_dstate.exit_code;
+                    get_target_info(&target_info, p_task_ctx);
                     send_target_stopped_msg(&target_info);
                     break;
 

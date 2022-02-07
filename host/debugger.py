@@ -26,7 +26,9 @@ class TargetInfo(BigEndianStructure):
     _fields_ = (
         ('task_context', TaskContext),
         ('target_state', c_uint32),
-        ('exit_code', c_uint32)
+        ('exit_code', c_uint32),
+        ('next_instr_bytes', c_uint8 * 8),
+        ('top_stack_dwords', c_uint32 * 8)
     )
 
 

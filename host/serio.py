@@ -87,7 +87,7 @@ class ServerConnection:
         else:
             raise ConnectionError(f"Received unexpected message of type {MsgTypes(msg.type).name} from server instead of the expected ACK")
 
-        # If we just sent a command that causes the target to continue, we need to wait for the MSG_TARGET_STOPPED message.
+        # If we just sent a command that causes the target to run, we need to wait for the MSG_TARGET_STOPPED message.
         if command in (MsgTypes.MSG_RUN, MsgTypes.MSG_STEP, MsgTypes.MSG_CONT):
             logger.info("Target is running, waiting for it to stop...")
             msg, data = self.recv_message()

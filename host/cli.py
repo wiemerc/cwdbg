@@ -49,7 +49,7 @@ def process_cli_command(conn: ServerConnection, command: str) -> Tuple[Optional[
         elif args.command in ('run', 'r'):
             target_info = conn.execute_command(MsgTypes.MSG_RUN)
             if target_info.target_state & TargetStates.TS_EXITED:
-                return f"Target exited with code {target_info.exit_code}", target_info
+                return f"Target exited with code {target_info.exit_code}", None
             else:
                 return None, target_info
 

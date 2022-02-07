@@ -38,6 +38,12 @@
 #define TS_STOPPED_BY_EXCEPTION     (1l << 5)
 
 
+//
+// macros
+//
+#define VALID_ADDRESS(x) (((uint32_t) x >= 0x00000000) && ((uint32_t) x <= 0x00ffffff))
+
+
 /*
  * type definitions
  */
@@ -47,32 +53,34 @@ typedef struct {
     uint16_t reg_sr;
     void     *p_reg_pc;
     uint32_t reg_d[8];
-    uint32_t reg_a[7];                // without A7 = SP
+    uint32_t reg_a[7];                  // without A7 = SP
 } TaskContext;
 
 typedef struct {
     struct Node  node;
     uint32_t     num;
-    void         *p_address;          // address in code segment
-    uint16_t     opcode;              // original opcode at this address
-    uint32_t     count;               // number of times it has been hit
+    void         *p_address;            // address in code segment
+    uint16_t     opcode;                // original opcode at this address
+    uint32_t     count;                 // number of times it has been hit
 } BreakPoint;
 
 typedef struct {
-    TaskContext  task_context;        // task context of target
-    int          target_state;        // current target state
-    int          exit_code;           // exit code if target has exited
+    TaskContext  task_context;          // task context of target
+    int          target_state;          // current target state
+    int          exit_code;             // exit code if target has exited
+    uint8_t      next_instr_bytes[8];   // instruction bytes for the next instruction
+    uint32_t     top_stack_dwords[8];   // top 8 dwords on the stack
 } TargetInfo;
 
 typedef struct {
-    struct Task  *p_debugger_task;    // our own task - for the target to signal us
-    struct Task  *p_target_task;      // task of target
-    BPTR         p_seglist;           // segment list of target
-    int          (*p_entry)();        // entry point of target
-    int          target_state;        // current target state
-    int          exit_code;           // exit code of target
-    struct List  bpoints;             // list of breakpoints
-    BreakPoint   *p_current_bpoint;   // current breakpoint that needs to be restored
+    struct Task  *p_debugger_task;      // our own task - for the target to signal us
+    struct Task  *p_target_task;        // task of target
+    BPTR         p_seglist;             // segment list of target
+    int          (*p_entry)();          // entry point of target
+    int          target_state;          // current target state
+    int          exit_code;             // exit code of target
+    struct List  bpoints;               // list of breakpoints
+    BreakPoint   *p_current_bpoint;     // current breakpoint that needs to be restored
 } DebuggerState;
 
 
@@ -92,6 +100,7 @@ void single_step_target(TaskContext *p_task_ctx);
 void quit_debugger();
 BreakPoint *set_breakpoint(uint32_t offset);
 BreakPoint *find_bpoint_by_addr(struct List *p_bpoints, void *p_baddr);
+void get_target_info(TargetInfo *p_target_info, TaskContext *p_task_ctx);
 void handle_breakpoint(TaskContext *p_task_ctx);
 void handle_single_step(TaskContext *p_task_ctx);
 void handle_exception(TaskContext *p_task_ctx);

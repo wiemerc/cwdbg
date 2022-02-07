@@ -8,6 +8,7 @@
 
 #include <dos/dostags.h>
 #include <exec/types.h>
+#include <memory.h>
 #include <proto/alib.h>
 #include <proto/dos.h>
 #include <proto/exec.h>
@@ -75,7 +76,7 @@ void run_target()
         NP_Output, Output(),
         NP_CloseInput, FALSE,
         NP_CloseOutput, FALSE
-        )) == NULL) {
+    )) == NULL) {
         LOG(ERROR, "could not start target as process");
         return;
     }
@@ -159,6 +160,23 @@ BreakPoint *find_bpoint_by_addr(struct List *p_bpoints, void *p_baddr)
             return p_bpoint;
     }
     return NULL;
+}
+
+
+void get_target_info(TargetInfo *p_target_info, TaskContext *p_task_ctx)
+{
+    p_target_info->target_state = g_dstate.target_state;
+    p_target_info->exit_code    = g_dstate.exit_code;
+    if (p_task_ctx) {
+        // target is still running, add task context, next instruction and top 8 dwords on the stack
+        memcpy(&p_target_info->task_context, p_task_ctx, sizeof(TaskContext));
+        if (VALID_ADDRESS(p_task_ctx->p_reg_pc) && VALID_ADDRESS(((uint8_t *) p_task_ctx->p_reg_pc) + 8)) {
+            memcpy(&p_target_info->next_instr_bytes, p_task_ctx->p_reg_pc, 8);
+        }
+        if (VALID_ADDRESS(p_task_ctx->p_reg_sp) && VALID_ADDRESS(((uint8_t *) p_task_ctx->p_reg_pc) + 32)) {
+            memcpy(&p_target_info->top_stack_dwords, ((uint8_t *) p_task_ctx->p_reg_pc) + 32, 32);
+        }
+    }
 }
 
 
