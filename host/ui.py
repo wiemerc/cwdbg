@@ -202,7 +202,8 @@ class MainScreen:
 
     def update_views(self, target_info: TargetInfo):
         logger.debug("Updating register view")
-        self._register_view.set_text([
-            'A0=0xdeadbeef\n',
-            'A1=0xcafebabe\n'
-        ])
+        regs = []
+        for i in range(7):
+            regs.append(f'A{i}=0x{target_info.task_context.reg_a[i]:08x}        D{i}=0x{target_info.task_context.reg_d[i]:08x}\n')
+        regs.append(f'A7=0x{target_info.task_context.reg_sp:08x}        D7=0x{target_info.task_context.reg_d[7]:08x}\n')
+        self._register_view.set_text(regs)
