@@ -23,6 +23,7 @@ static uint16_t g_next_seqnum = 0;
 static void send_ack_msg(uint8_t *p_data, uint8_t data_len);
 static void send_nack_msg(uint8_t error_code);
 static void send_target_stopped_msg(TargetInfo *p_target_info);
+static int is_correct_target_state_for_command(uint8_t msg_type);
 
 
 //
@@ -64,10 +65,10 @@ void process_remote_commands(TaskContext *p_task_ctx)
     ProtoMessage msg;
     TargetInfo   target_info;
 
-    // If target is running we've been called by one of the handle_* routines. In this case
-    // the host is waiting for us and we send a MSG_TARGET_STOPPED message to indicate that
-    // the target has stopped and provide the target information to the host.
-    if (g_dstate.target_state & TS_RUNNING) {
+    // If we've been called by one of the handle_* routines, we get a task context and the target is still
+    // running. In this case the host is waiting for us and we send a MSG_TARGET_STOPPED message to indicate
+    // that the target has stopped and provide the target information to the host.
+    if (p_task_ctx) {
         get_target_info(&target_info, p_task_ctx);
         send_target_stopped_msg(&target_info);
     }
@@ -96,43 +97,44 @@ void process_remote_commands(TaskContext *p_task_ctx)
             );
             quit_debugger(RETURN_ERROR);
         }
-
-
-        //
-        // target is not running (we've been called by main())
-        //
-        if (!(g_dstate.target_state & TS_RUNNING)) {
-            switch (msg.type) {
-                case MSG_INIT:
-                    LOG(DEBUG, "initializing connection");
-                    send_ack_msg(NULL, 0);
-                    break;
-
-                case MSG_RUN:
-                    send_ack_msg(NULL, 0);
-                    run_target();
-                    get_target_info(&target_info, p_task_ctx);
-                    send_target_stopped_msg(&target_info);
-                    break;
-
-                case MSG_QUIT:
-                    LOG(DEBUG, "terminating connection");
-                    send_ack_msg(NULL, 0);
-                    quit_debugger(RETURN_OK);
-                    break;
-
-                default:
-                    LOG(ERROR, "command %d not allowed when target is not running", msg.type);
-                    send_nack_msg(E_INVALID_TARGET_STATE);
-            }
+        if (!is_correct_target_state_for_command(msg.type)) {
+            quit_debugger(RETURN_ERROR);
         }
-    
 
-        //
-        // target is running (we've been called by one of the handle_* routines)
-        //
-        else {
-            // TODO
+        switch (msg.type) {
+            case MSG_INIT:
+                LOG(DEBUG, "Initializing connection");
+                send_ack_msg(NULL, 0);
+                break;
+
+            case MSG_SET_BP:
+                // TODO
+                break;
+
+            case MSG_RUN:
+                send_ack_msg(NULL, 0);
+                run_target();
+                get_target_info(&target_info, NULL);
+                send_target_stopped_msg(&target_info);
+                break;
+
+            case MSG_CONT:
+                // TODO
+                break;
+
+            case MSG_STEP:
+                // TODO
+                break;
+
+            case MSG_QUIT:
+                LOG(DEBUG, "Terminating connection");
+                send_ack_msg(NULL, 0);
+                quit_debugger(RETURN_OK);
+                break;
+
+            default:
+                LOG(CRIT, "Internal error: unknown command %d", msg.type);
+                quit_debugger(RETURN_FAIL);
         }
     }
 }
@@ -142,7 +144,7 @@ void process_remote_commands(TaskContext *p_task_ctx)
 // local routines
 //
 
-void send_ack_msg(uint8_t *p_data, uint8_t data_len)
+static void send_ack_msg(uint8_t *p_data, uint8_t data_len)
 {
     ProtoMessage msg;
 
@@ -162,7 +164,7 @@ void send_ack_msg(uint8_t *p_data, uint8_t data_len)
 }
 
 
-void send_nack_msg(uint8_t error_code)
+static void send_nack_msg(uint8_t error_code)
 {
     ProtoMessage msg;
     msg.seqnum  = g_next_seqnum;
@@ -177,7 +179,7 @@ void send_nack_msg(uint8_t error_code)
 }
 
 
-void send_target_stopped_msg(TargetInfo *p_target_info)
+static void send_target_stopped_msg(TargetInfo *p_target_info)
 {
     ProtoMessage msg;
 
@@ -219,3 +221,27 @@ void send_target_stopped_msg(TargetInfo *p_target_info)
         quit_debugger(RETURN_ERROR);
     }
 }
+
+
+static int is_correct_target_state_for_command(uint8_t msg_type)
+{
+    // TODO
+    if (!(g_dstate.target_state & TS_RUNNING) && (
+        (msg_type == MSG_CONT) ||
+        (msg_type == MSG_STEP) ||
+        (msg_type == MSG_KILL)
+    )) {
+        LOG(ERROR, "Incorrect state for command %d: target is not yet running", msg_type);
+        return 0;
+    }
+    if ((g_dstate.target_state & TS_RUNNING) && (
+        (msg_type == MSG_INIT) ||
+        (msg_type == MSG_RUN) ||
+        (msg_type == MSG_QUIT)
+    )) {
+        LOG(ERROR, "Incorrect state for command %d: target is already / still running", msg_type);
+        return 0;
+    }
+    return 1;
+}
+
