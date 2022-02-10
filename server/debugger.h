@@ -81,6 +81,8 @@ typedef struct {
     int          exit_code;             // exit code of target
     struct List  bpoints;               // list of breakpoints
     BreakPoint   *p_current_bpoint;     // current breakpoint that needs to be restored
+    // function that handles either CLI or remote commands, called by the handle_* functions
+    void         (*p_process_commands_func)(TaskContext *);
 } DebuggerState;
 
 

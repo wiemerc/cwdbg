@@ -25,6 +25,7 @@
 // - sections in the same order with headings
 // - header for each routine
 // - convert all C to C++ comments
+// - start all log messages with an uppercase letter
 int main()
 {
     struct RDArgs *p_rdargs;
@@ -42,30 +43,32 @@ int main()
     if (f_debug == DOSTRUE)
         g_loglevel = DEBUG;
 
-    LOG(INFO, "initializing...");
+    LOG(INFO, "Initializing...");
     if (load_and_init_target(p_target) == DOSFALSE) {
-        LOG(ERROR, "could not load and initialize target")
+        LOG(ERROR, "Could not load and initialize target")
         FreeArgs(p_rdargs);
         return RETURN_FAIL;
     }
     else {
-        LOG(INFO, "loaded and initialized target");
+        LOG(INFO, "Loaded and initialized target");
     }
 
     if (f_server == DOSTRUE) {
         if (serio_init() == DOSFALSE) {
-            LOG(ERROR, "could not initialize serial IO");
+            LOG(ERROR, "Could not initialize serial IO");
             FreeArgs(p_rdargs);
             return RETURN_FAIL;
         }
         else {
-            LOG(INFO, "initialized serial IO");
+            LOG(INFO, "Initialized serial IO");
         }
+        g_dstate.p_process_commands_func = process_remote_commands;
         process_remote_commands(NULL);
     }
     else {
         m68k_build_opcode_table();
-        LOG(INFO, "initialized disassembler routines");
+        LOG(INFO, "Initialized disassembler routines");
+        g_dstate.p_process_commands_func = process_cli_commands;
         process_cli_commands(NULL);
     }
     FreeArgs(p_rdargs);

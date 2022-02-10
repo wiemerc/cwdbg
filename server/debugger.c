@@ -197,16 +197,15 @@ void handle_breakpoint(TaskContext *p_task_ctx)
         p_task_ctx->p_reg_pc = p_baddr;
         *((uint16_t *) p_baddr) = p_bpoint->opcode;
         ++p_bpoint->count;
-        LOG(INFO, "target has hit breakpoint #%ld at entry + 0x%08lx, hit count = %ld", 
+        LOG(INFO, "Target has hit breakpoint #%ld at entry + 0x%08lx, hit count = %ld", 
             p_bpoint->num, ((uint32_t) p_baddr - (uint32_t) g_dstate.p_entry), p_bpoint->count);
     }
     else {
-        LOG(CRIT, "INTERNAL ERROR: target has hit unknown breakpoint at entry + 0x%08lx", ((uint32_t) p_baddr - (uint32_t) g_dstate.p_entry));
+        LOG(CRIT, "Internal error: target has hit unknown breakpoint at entry + 0x%08lx", ((uint32_t) p_baddr - (uint32_t) g_dstate.p_entry));
         return;
     }
 
-    // TODO: store mode in global debugger state and call either process_cli_commands() or process_remote_commands()
-    process_cli_commands(p_task_ctx);
+    g_dstate.p_process_commands_func(p_task_ctx);
     g_dstate.target_state &= ~TS_STOPPED_BY_BREAKPOINT;
 }
 
@@ -218,7 +217,7 @@ void handle_single_step(TaskContext *p_task_ctx)
         // breakpoint needs to be restored
         LOG(
             DEBUG,
-            "restoring breakpoint #%ld at entry + 0x%08lx",
+            "Restoring breakpoint #%ld at entry + 0x%08lx",
             g_dstate.p_current_bpoint->num,
             ((uint32_t) g_dstate.p_current_bpoint->p_address - (uint32_t) g_dstate.p_entry)
         );
@@ -226,8 +225,8 @@ void handle_single_step(TaskContext *p_task_ctx)
         g_dstate.p_current_bpoint = NULL;
     }
     if (g_dstate.target_state & TS_SINGLE_STEPPING) {
-        LOG(INFO, "target has stopped after single step");
-        process_cli_commands(p_task_ctx);
+        LOG(INFO, "Target has stopped after single step");
+        g_dstate.p_process_commands_func(p_task_ctx);
     }
     g_dstate.target_state &= ~TS_STOPPED_BY_SINGLE_STEP;
 }
@@ -239,12 +238,12 @@ void handle_exception(TaskContext *p_task_ctx)
     g_dstate.target_state |= TS_STOPPED_BY_EXCEPTION;
     LOG(
         INFO,
-        "unhandled exception #%ld occurred at entry + 0x%08lx",
+        "Unhandled exception #%ld occurred at entry + 0x%08lx",
         p_task_ctx->exc_num,
         ((uint32_t) p_task_ctx->p_reg_pc - (uint32_t) g_dstate.p_entry)
     );
 
-    process_cli_commands(p_task_ctx);
+    g_dstate.p_process_commands_func(p_task_ctx);
     g_dstate.target_state &= ~TS_STOPPED_BY_EXCEPTION;
 }
 
