@@ -6,13 +6,19 @@
 
 
 import argparse
+import functools
 import readline
+import shlex
+import struct
 
 from loguru import logger
 from typing import Optional, Tuple
 
 from debugger import TargetInfo, TargetStates
 from serio import ServerConnection, MsgTypes
+
+
+FMT_UINT32 = '>I'
 
 
 class QuitDebuggerException(Exception):
@@ -28,23 +34,37 @@ class ThrowingArgumentParser(argparse.ArgumentParser):
         raise ArgumentParserError(message)
 
 
-def process_cli_command(conn: ServerConnection, command: str) -> Tuple[Optional[str], Optional[TargetInfo]]:
+def process_cli_command(conn: ServerConnection, cmd_line: str) -> Tuple[Optional[str], Optional[TargetInfo]]:
     parser = ThrowingArgumentParser(prog='', description="CWDebug, a source-level debugger for the AmigaOS", add_help=False)
+    # TODO: Catch -h / --help in sub-parsers, probably by adding a custom action, see https://stackoverflow.com/questions/58367375/can-i-prevent-argparse-from-exiting-if-the-user-specifies-h
     subparsers = parser.add_subparsers(dest='command', help="Available commands")
+    subparsers.add_parser('break', aliases=('b',), help="Set breakpoint").add_argument(
+        'offset',
+        type=functools.partial(int, base=0),
+        help="Offset relative to entry point",
+    )
     subparsers.add_parser('help', aliases=('h',), help="Show help message")
-    subparsers.add_parser('quit', aliases=('q',), help="Quit the debugger", add_help=True)
-    subparsers.add_parser('run', aliases=('r',), help="Run the target")
+    subparsers.add_parser('quit', aliases=('q',), help="Quit debugger", add_help=True)
+    subparsers.add_parser('run', aliases=('r',), help="Run target")
 
     try:
         try:
-            args = parser.parse_args((command,))
+            args = parser.parse_args(shlex.split(cmd_line))
         except ArgumentParserError:
             return "Invalid command / argument\n" + parser.format_help(), None
 
         # TODO: Implement logic similiar to process_cli_commands() in cli.c
         # TODO: Implement connect / disconnect commands
-        if args.command in ('help', 'h'):
+        if args.command in ('break', 'b'):
+            conn.execute_command(MsgTypes.MSG_SET_BP, struct.pack(FMT_UINT32, args.offset))
+            return None, None
+
+        elif args.command in ('help', 'h'):
             return parser.format_help(), None
+
+        elif args.command in ('quit', 'q'):
+            conn.execute_command(MsgTypes.MSG_QUIT)
+            raise QuitDebuggerException()
 
         elif args.command in ('run', 'r'):
             target_info = conn.execute_command(MsgTypes.MSG_RUN)
@@ -53,9 +73,6 @@ def process_cli_command(conn: ServerConnection, command: str) -> Tuple[Optional[
             else:
                 return None, target_info
 
-        elif args.command in ('quit', 'q'):
-            conn.execute_command(MsgTypes.MSG_QUIT)
-            raise QuitDebuggerException()
     except QuitDebuggerException:
         raise
     except Exception as e:

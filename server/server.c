@@ -108,7 +108,8 @@ void process_remote_commands(TaskContext *p_task_ctx)
                 break;
 
             case MSG_SET_BP:
-                // TODO
+                set_breakpoint(*(uint32_t *) msg.data);
+                send_ack_msg(NULL, 0);
                 break;
 
             case MSG_RUN:

@@ -131,18 +131,19 @@ BreakPoint *set_breakpoint(uint32_t offset)
     BreakPoint *p_bpoint;
     void       *p_baddr;
 
+    // TODO: Check if offset is valid
     if ((p_bpoint = AllocVec(sizeof(BreakPoint), 0)) == NULL) {
-        LOG(ERROR, "could not allocate memory for breakpoint");
+        LOG(ERROR, "Could not allocate memory for breakpoint");
         return NULL;
     }
     p_baddr = (void *) ((uint32_t) g_dstate.p_entry) + offset;
-    p_bpoint->num          = ++g_dstate.bpoints.lh_Type;
-    p_bpoint->p_address         = p_baddr;
-    p_bpoint->opcode       = *((uint16_t *) p_baddr);
-    p_bpoint->count        = 0;
+    p_bpoint->num       = ++g_dstate.bpoints.lh_Type;
+    p_bpoint->p_address = p_baddr;
+    p_bpoint->opcode    = *((uint16_t *) p_baddr);
+    p_bpoint->count     = 0;
     AddTail(&g_dstate.bpoints, (struct Node *) p_bpoint);
     *((uint16_t *) p_baddr) = TRAP_OPCODE;
-    LOG(INFO, "breakpoint set at entry + 0x%08lx", offset);
+    LOG(DEBUG, "Breakpoint set at entry + 0x%08lx", offset);
     return p_bpoint;
 }
 
