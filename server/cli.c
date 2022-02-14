@@ -76,7 +76,7 @@ void process_cli_commands(TaskContext *p_task_ctx)
                 return;  // We don't get here anyway...
 
             case 'q':   // quit debugger
-                quit_debugger();
+                quit_debugger(RETURN_OK);
                 return;
 
             case 'c':   // continue target

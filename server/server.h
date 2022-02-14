@@ -32,9 +32,6 @@
 #define MSG_CLEAR_BP        0x0b
 #define MSG_TARGET_STOPPED  0x0c
 
-// error codes
-#define E_INVALID_TARGET_STATE  0x01
-
 
 //
 // exported functions

@@ -40,7 +40,7 @@ int load_and_init_target(const char *p_program_path)
 
     // load target
     if ((g_dstate.p_seglist = LoadSeg(p_program_path)) == NULL) {
-        LOG(ERROR, "could not load target: %ld", IoErr());
+        LOG(ERROR, "Could not load target: %ld", IoErr());
         return DOSFALSE;
     }
     // seglist points to (first) code segment, code starts one long word behind pointer
@@ -60,13 +60,15 @@ void run_target()
 
     // reset breakpoint counters for each run
     if (!IsListEmpty(&g_dstate.bpoints)) {
-        for (p_bpoint = (BreakPoint *) g_dstate.bpoints.lh_Head;
+        for (
+            p_bpoint = (BreakPoint *) g_dstate.bpoints.lh_Head;
             p_bpoint != (BreakPoint *) g_dstate.bpoints.lh_Tail;
-            p_bpoint = (BreakPoint *) p_bpoint->node.ln_Succ)
+            p_bpoint = (BreakPoint *) p_bpoint->node.ln_Succ
+        )
             p_bpoint->count = 0;
     }
 
-    LOG(INFO, "starting target");
+    LOG(INFO, "Starting target");
     g_dstate.target_state = TS_RUNNING;
     if ((g_dstate.p_target_task = (struct Task *) CreateNewProcTags(
         NP_Name, (uint32_t) "debugme",
@@ -77,13 +79,13 @@ void run_target()
         NP_CloseInput, FALSE,
         NP_CloseOutput, FALSE
     )) == NULL) {
-        LOG(ERROR, "could not start target as process");
-        return;
+        LOG(CRIT, "Could not start target as process");
+        quit_debugger(RETURN_FAIL);
     }
-    LOG(DEBUG, "waiting for signal from target...");
+    LOG(DEBUG, "Waiting for signal from target...");
     Wait(SIG_TARGET_EXITED);
     g_dstate.target_state = TS_EXITED;
-    LOG(INFO, "target terminated with exit code %d", g_dstate.exit_code);
+    LOG(INFO, "Target terminated with exit code %d", g_dstate.exit_code);
 }
 
 
@@ -117,7 +119,8 @@ void quit_debugger(int exit_code)
 {
     BreakPoint *p_bpoint;
 
-    LOG(INFO, "exiting...");
+    LOG(INFO, "Exiting...");
+    // TODO: Kill target if it's still running
     while ((p_bpoint = (BreakPoint *) RemHead(&g_dstate.bpoints)))
         FreeVec(p_bpoint);
     UnLoadSeg(g_dstate.p_seglist);
@@ -126,7 +129,7 @@ void quit_debugger(int exit_code)
 }
 
 
-BreakPoint *set_breakpoint(uint32_t offset)
+uint8_t set_breakpoint(uint32_t offset)
 {
     BreakPoint *p_bpoint;
     void       *p_baddr;
@@ -134,7 +137,7 @@ BreakPoint *set_breakpoint(uint32_t offset)
     // TODO: Check if offset is valid
     if ((p_bpoint = AllocVec(sizeof(BreakPoint), 0)) == NULL) {
         LOG(ERROR, "Could not allocate memory for breakpoint");
-        return NULL;
+        return ERROR_NOT_ENOUGH_MEMORY;
     }
     p_baddr = (void *) ((uint32_t) g_dstate.p_entry) + offset;
     p_bpoint->num       = ++g_dstate.bpoints.lh_Type;
@@ -144,7 +147,7 @@ BreakPoint *set_breakpoint(uint32_t offset)
     AddTail(&g_dstate.bpoints, (struct Node *) p_bpoint);
     *((uint16_t *) p_baddr) = TRAP_OPCODE;
     LOG(DEBUG, "Breakpoint set at entry + 0x%08lx", offset);
-    return p_bpoint;
+    return 0;
 }
 
 
@@ -203,7 +206,7 @@ void handle_breakpoint(TaskContext *p_task_ctx)
     }
     else {
         LOG(CRIT, "Internal error: target has hit unknown breakpoint at entry + 0x%08lx", ((uint32_t) p_baddr - (uint32_t) g_dstate.p_entry));
-        return;
+        quit_debugger(RETURN_FAIL);
     }
 
     g_dstate.p_process_commands_func(p_task_ctx);
@@ -258,13 +261,13 @@ static void wrap_target()
     // allocate trap and install exception handler
     g_dstate.p_target_task->tc_TrapCode = exc_handler;
     if (AllocTrap(TRAP_NUM) == -1) {
-        LOG(ERROR, "could not allocate trap");
-        return;
+        LOG(CRIT, "Internal error: could not allocate trap");
+        quit_debugger(RETURN_FAIL);
     }
 
     LOG(
         DEBUG,
-        "calling entry point of target, initial PC = 0x%08lx, initial SP = 0x%08lx",
+        "Calling entry point of target, initial PC = 0x%08lx, initial SP = 0x%08lx",
         (uint32_t) g_dstate.p_entry,
         (uint32_t) g_dstate.p_target_task->tc_SPUpper - 2
     );

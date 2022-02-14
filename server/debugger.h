@@ -37,6 +37,12 @@
 #define TS_STOPPED_BY_SINGLE_STEP   (1l << 4)
 #define TS_STOPPED_BY_EXCEPTION     (1l << 5)
 
+//
+// error codes
+//
+#define ERROR_NOT_ENOUGH_MEMORY 1
+#define ERROR_INVALID_ADDRESS   2
+
 
 //
 // macros
@@ -99,8 +105,8 @@ int load_and_init_target(const char *p_program_path);
 void run_target();
 void continue_target(TaskContext *p_task_ctx);
 void single_step_target(TaskContext *p_task_ctx);
-void quit_debugger();
-BreakPoint *set_breakpoint(uint32_t offset);
+void quit_debugger(int exit_code);
+uint8_t set_breakpoint(uint32_t offset);
 BreakPoint *find_bpoint_by_addr(struct List *p_bpoints, void *p_baddr);
 void get_target_info(TargetInfo *p_target_info, TaskContext *p_task_ctx);
 void handle_breakpoint(TaskContext *p_task_ctx);

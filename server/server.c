@@ -64,6 +64,7 @@ void process_remote_commands(TaskContext *p_task_ctx)
 {
     ProtoMessage msg;
     TargetInfo   target_info;
+    uint8_t      dbg_errno;
 
     // If we've been called by one of the handle_* routines, we get a task context and the target is still
     // running. In this case the host is waiting for us and we send a MSG_TARGET_STOPPED message to indicate
@@ -108,8 +109,13 @@ void process_remote_commands(TaskContext *p_task_ctx)
                 break;
 
             case MSG_SET_BP:
-                set_breakpoint(*(uint32_t *) msg.data);
-                send_ack_msg(NULL, 0);
+                if ((dbg_errno = set_breakpoint(*(uint32_t *) msg.data)) == 0) {
+                    send_ack_msg(NULL, 0);
+                }
+                else {
+                    LOG(ERROR, "Failed to set breakpoint");
+                    send_nack_msg(dbg_errno);
+                }
                 break;
 
             case MSG_RUN:
