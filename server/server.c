@@ -2,7 +2,7 @@
 // server.c - part of CWDebug, a source-level debugger for the AmigaOS
 //            This file contains the routines for the debugger server.
 //
-// Copyright(C) 2018-2021 Constantin Wiemer
+// Copyright(C) 2018-2022 Constantin Wiemer
 //
 
 
@@ -74,7 +74,7 @@ void process_remote_commands(TaskContext *p_task_ctx)
         send_target_stopped_msg(&target_info);
     }
 
-    // TODO: catch Ctrl-C
+    // TODO: Catch Ctrl-C
     while(1) {
         LOG(INFO, "Waiting for command from host...");
         // TODO: add timeout
@@ -82,6 +82,7 @@ void process_remote_commands(TaskContext *p_task_ctx)
             LOG(ERROR, "Failed to receive message from host");
             quit_debugger(RETURN_ERROR);
         }
+        // TODO: Log message type as string
         LOG(
             DEBUG,
             "Message from host received: seqnum=%d, type=%d, length=%d",
@@ -126,12 +127,14 @@ void process_remote_commands(TaskContext *p_task_ctx)
                 break;
 
             case MSG_CONT:
-                // TODO
-                break;
+                send_ack_msg(NULL, 0);
+                set_continue_mode(p_task_ctx);
+                return;
 
             case MSG_STEP:
-                // TODO
-                break;
+                send_ack_msg(NULL, 0);
+                set_single_step_mode(p_task_ctx);
+                return;
 
             case MSG_QUIT:
                 LOG(DEBUG, "Terminating connection");
@@ -194,6 +197,7 @@ static void send_target_stopped_msg(TargetInfo *p_target_info)
         LOG(CRIT, "Internal error: send_target_stopped_msg() has been called with TargetInfo larger than MAX_MSG_DATA_LEN");
         quit_debugger(RETURN_FAIL);
     }
+    LOG(DEBUG, "Sending MSG_TARGET_STOPPED message to host");
     msg.seqnum = g_next_seqnum;
     msg.type   = MSG_TARGET_STOPPED;
     msg.length = sizeof(TargetInfo);

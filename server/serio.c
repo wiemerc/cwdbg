@@ -2,7 +2,7 @@
 // serio.c - part of CWDebug, a source-level debugger for the AmigaOS
 //           This file contains the routines for the serial communication with the remote host.
 //
-// Copyright(C) 2018-2021 Constantin Wiemer
+// Copyright(C) 2018-2022 Constantin Wiemer
 //
 
 
@@ -272,6 +272,10 @@ static int32_t send_slip_frame(const Buffer *pb_frame)
     sreq->IOSer.io_Command = CMD_WRITE;
     sreq->IOSer.io_Length  = pb_frame->size;
     sreq->IOSer.io_Data    = (void *) pb_frame->p_addr;
+    // We need to set the reply port in the IORequest to the message port of the current process because serial IO
+    // can be done by either the target process or the debugger process although the serial device is opened by
+    // the debugger process.
+    sreq->IOSer.io_Message.mn_ReplyPort = &((struct Process *) FindTask(NULL))->pr_MsgPort;
     g_serio_errno = error = DoIO((struct IORequest *) sreq);
     if (error == 0)
         return DOSTRUE;
@@ -288,6 +292,7 @@ static int32_t recv_slip_frame(Buffer *pb_frame)
     sreq->IOSer.io_Command = CMD_READ;
     sreq->IOSer.io_Data    = (void *) pb_frame->p_addr;
     sreq->IOSer.io_Length  = pb_frame->size;
+    sreq->IOSer.io_Message.mn_ReplyPort = &((struct Process *) FindTask(NULL))->pr_MsgPort;
     g_serio_errno = error = DoIO((struct IORequest *) sreq);
     if (error == 0) {
         pb_frame->size = sreq->IOSer.io_Actual;

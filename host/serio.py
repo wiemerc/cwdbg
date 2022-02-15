@@ -70,6 +70,7 @@ class ServerConnection:
 
     # TODO: Move class / this method to debugger.py just keep send_message() / receive_message() here
     def execute_command(self, command: c_uint8, data: Optional[bytes] = None) -> Optional[TargetInfo]:
+        logger.debug(f"Sending message {MsgTypes(command).name}")
         self.send_message(command, data)
         msg, data = self.recv_message()
         if msg.type == MsgTypes.MSG_ACK:
@@ -92,6 +93,7 @@ class ServerConnection:
             logger.info("Target is running, waiting for it to stop...")
             msg, data = self.recv_message()
             if msg.type == MsgTypes.MSG_TARGET_STOPPED:
+                logger.debug("Received MSG_TARGET_STOPPED message from server, sending ACK")
                 self.send_message(MsgTypes.MSG_ACK)
                 target_info = TargetInfo.from_buffer(data)
                 logger.info(f"Target has stopped, state = {target_info.target_state}")
