@@ -2,17 +2,19 @@
  * util.h - part of CWDebug, a source-level debugger for the AmigaOS
  *          contains some utility routines
  *
- * Copyright(C) 2018-2021 Constantin Wiemer
+ * Copyright(C) 2018-2022 Constantin Wiemer
  */
 
 
+#include <proto/exec.h>
 #include <stdarg.h>
 #include <stdio.h>
 
+#include "stdint.h"
 #include "util.h"
 
 
-UBYTE                g_loglevel;
+uint8_t g_loglevel;
 
 
 static char *p_level_name[] = {
@@ -24,7 +26,7 @@ static char *p_level_name[] = {
 };
 
 
-void logmsg(const char *p_fname, int lineno, const char *p_func, UBYTE level, const char *p_fmtstr, ...)
+void logmsg(const char *p_fname, int lineno, const char *p_func, uint8_t level, const char *p_fmtstr, ...)
 {
     va_list args;
     char location[32];
@@ -33,7 +35,7 @@ void logmsg(const char *p_fname, int lineno, const char *p_func, UBYTE level, co
         return;
 
     snprintf(location, 32, "%s:%d", p_fname, lineno);
-    printf("%-15s | %-25s | %-5s | ", location, p_func, p_level_name[level]);
+    printf("0x%08x | %-15s | %-25s | %-5s | ", (uint32_t) FindTask(NULL), location, p_func, p_level_name[level]);
 
     va_start(args, p_fmtstr);
     vprintf(p_fmtstr, args);
