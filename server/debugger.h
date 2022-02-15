@@ -103,8 +103,8 @@ extern void exc_handler();
  */
 int load_and_init_target(const char *p_program_path);
 void run_target();
-void continue_target(TaskContext *p_task_ctx);
-void single_step_target(TaskContext *p_task_ctx);
+void set_continue_mode(TaskContext *p_task_ctx);
+void set_single_step_mode(TaskContext *p_task_ctx);
 void quit_debugger(int exit_code);
 uint8_t set_breakpoint(uint32_t offset);
 BreakPoint *find_bpoint_by_addr(struct List *p_bpoints, void *p_baddr);

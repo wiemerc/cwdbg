@@ -80,12 +80,12 @@ void process_cli_commands(TaskContext *p_task_ctx)
                 return;
 
             case 'c':   // continue target
-                continue_target(p_task_ctx);
+                set_continue_mode(p_task_ctx);
                 return;
 
             case 's':   // single step target
             case '\n':
-                single_step_target(p_task_ctx);
+                set_single_step_mode(p_task_ctx);
                 return;
 
             case 'i':   // inspect ...

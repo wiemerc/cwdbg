@@ -89,7 +89,7 @@ void run_target()
 }
 
 
-void continue_target(TaskContext *p_task_ctx)
+void set_continue_mode(TaskContext *p_task_ctx)
 {
     // If we continue from a breakpoint, it has to be restored first, so we
     // single-step the original instruction at the breakpoint and remember
@@ -103,7 +103,7 @@ void continue_target(TaskContext *p_task_ctx)
 }
 
 
-void single_step_target(TaskContext *p_task_ctx)
+void set_single_step_mode(TaskContext *p_task_ctx)
 {
     g_dstate.target_state |= TS_SINGLE_STEPPING;
     // In trace mode, *all* interrupts must be disabled (except for the NMI),
@@ -185,8 +185,11 @@ void get_target_info(TargetInfo *p_target_info, TaskContext *p_task_ctx)
 
 
 //
-// routines called by the exception handler
+// routines called by the exception handler in the context of the target process
 //
+// TODO: Send message to debugger process instead of calling process_remote_commands() directly. It would be a cleaner
+//       design if the debugger process did all the work and wouldn't share state and the serial device with the
+//       target process.
 
 void handle_breakpoint(TaskContext *p_task_ctx)
 {
