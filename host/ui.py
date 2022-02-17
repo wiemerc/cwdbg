@@ -217,3 +217,9 @@ class MainScreen:
         logger.debug("Updating disassembler view")
         instr = next(self._disassembler.disasm(bytes(target_info.next_instr_bytes), target_info.task_context.reg_pc, 1))
         self._disasm_view.set_text(f'{instr.address:08x}:    {instr.mnemonic:<10}{instr.op_str}')
+
+        logger.debug("Updating stack view")
+        stack_dwords = []
+        for i in range(8):
+            stack_dwords.append(f'SP + {i * 4:02}:    0x{target_info.top_stack_dwords[i]:08x}\n')
+        self._stack_view.set_text(stack_dwords)
