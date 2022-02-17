@@ -174,11 +174,12 @@ void get_target_info(TargetInfo *p_target_info, TaskContext *p_task_ctx)
     if (p_task_ctx) {
         // target is still running, add task context, next instruction and top 8 dwords on the stack
         memcpy(&p_target_info->task_context, p_task_ctx, sizeof(TaskContext));
+        // TODO: Better way to check for valid addresses, catching also a wrap-around?
         if (VALID_ADDRESS(p_task_ctx->p_reg_pc) && VALID_ADDRESS(((uint8_t *) p_task_ctx->p_reg_pc) + 8)) {
             memcpy(&p_target_info->next_instr_bytes, p_task_ctx->p_reg_pc, 8);
         }
-        if (VALID_ADDRESS(p_task_ctx->p_reg_sp) && VALID_ADDRESS(((uint8_t *) p_task_ctx->p_reg_pc) + 32)) {
-            memcpy(&p_target_info->top_stack_dwords, ((uint8_t *) p_task_ctx->p_reg_pc) + 32, 32);
+        if (VALID_ADDRESS(p_task_ctx->p_reg_sp) && VALID_ADDRESS(((uint8_t *) p_task_ctx->p_reg_sp) + 32)) {
+            memcpy(&p_target_info->top_stack_dwords, p_task_ctx->p_reg_sp, 32);
         }
     }
 }

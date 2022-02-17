@@ -5,6 +5,8 @@
 # Copyright(C) 2018-2022 Constantin Wiemer
 
 
+import capstone
+
 from loguru import logger
 from typing import Any
 from urwid import AttrMap, Columns, Edit, ExitMainLoop, Filler, Frame, LineBox, MainLoop, Padding, Pile, Text
@@ -60,6 +62,7 @@ class CommandInput(Edit):
             self.set_edit_text('')
 
             if target_info:
+                # TODO: Should we clear all views if we don't have a target_info?
                 self._main_screen.update_views(target_info)
         else:
             return super().keypress(size, key)
@@ -196,6 +199,9 @@ class MainScreen:
         logger.remove()
         logger.add(UrwidHandler(self._log_view))
         logger.info("Created main screen, starting event loop")
+
+        self._disassembler = capstone.Cs(capstone.CS_ARCH_M68K, capstone.CS_MODE_32)
+
         loop = MainLoop(screen, PALETTE, unhandled_input=_handle_global_input)
         loop.run()
 
@@ -207,3 +213,7 @@ class MainScreen:
             regs.append(f'A{i}=0x{target_info.task_context.reg_a[i]:08x}        D{i}=0x{target_info.task_context.reg_d[i]:08x}\n')
         regs.append(f'A7=0x{target_info.task_context.reg_sp:08x}        D7=0x{target_info.task_context.reg_d[7]:08x}\n')
         self._register_view.set_text(regs)
+
+        logger.debug("Updating disassembler view")
+        instr = next(self._disassembler.disasm(bytes(target_info.next_instr_bytes), target_info.task_context.reg_pc, 1))
+        self._disasm_view.set_text(f'{instr.address:08x}:    {instr.mnemonic:<10}{instr.op_str}')

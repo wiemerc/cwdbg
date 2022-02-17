@@ -47,7 +47,8 @@
 //
 // macros
 //
-#define VALID_ADDRESS(x) (((uint32_t) x >= 0x00000000) && ((uint32_t) x <= 0x00ffffff))
+// TODO: What is the maximum address?
+#define VALID_ADDRESS(x) ((((uint32_t) (x)) >= 0x00000000) && (((uint32_t) (x)) <= 0x07ffffff))
 
 
 /*
