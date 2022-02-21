@@ -46,24 +46,24 @@ class CommandInput(Edit):
     def keypress(self, size, key):
         if key == 'enter':
             command = self.get_edit_text()
-            logger.debug(f"Entered command: {command}")
-            try:
-                result, target_info = process_cli_command(self._server_conn, command)
-            except QuitDebuggerException:
-                logger.debug("Exiting debugger...")
-                raise ExitMainLoop()
+            if command:
+                try:
+                    result, target_info = process_cli_command(self._server_conn, command)
+                except QuitDebuggerException:
+                    logger.debug("Exiting debugger...")
+                    raise ExitMainLoop()
+                if target_info:
+                    # TODO: Should we clear all views if we don't have a target_info?
+                    self._main_screen.update_views(target_info)
 
             self._history.append(f"> {command}")
-            if result:
+            if command and result:
                 self._history.append(result)
             if len(self._history) > INPUT_WIDGET_HEIGHT:
                 del self._history[0:len(self._history) - INPUT_WIDGET_HEIGHT]
             self.set_caption('\n'.join(self._history) + '\n> ')
             self.set_edit_text('')
 
-            if target_info:
-                # TODO: Should we clear all views if we don't have a target_info?
-                self._main_screen.update_views(target_info)
         else:
             return super().keypress(size, key)
 
@@ -71,9 +71,17 @@ class CommandInput(Edit):
 class MainScreen:
     def __init__(self, verbose: bool, server_conn: ServerConnection):
         def _handle_global_input(key: str):
-            if key == 'f10':
-                raise ExitMainLoop()
-            # TODO: Implement other function keys
+            if key == 'f5':
+                self._input_view.set_edit_text('cont')
+                self._input_view.keypress(0, 'enter')
+            elif key == 'f8':
+                self._input_view.set_edit_text('step')
+                self._input_view.keypress(0, 'enter')
+            elif key == 'f10':
+                self._input_view.set_edit_text('quit')
+                self._input_view.keypress(0, 'enter')
+            else:
+                logger.error(f"Function key '{key}' not implemented")
 
 
         self._source_view = Text("Source code will be shown here...")
@@ -181,7 +189,7 @@ class MainScreen:
         )
 
         title = AttrMap(Text("CWDebug - a source-level debugger for the AmigaOS", align='center'), 'banner')
-        menu = AttrMap(Text("F5 = Run / Continue, F8 = Step over, F9 = Step in, F10 = Quit"), 'banner')
+        menu = AttrMap(Text("F5 = Continue, F8 = Single-step over, F10 = Quit"), 'banner')
         screen = Frame(
             header=title,
             body=Pile([

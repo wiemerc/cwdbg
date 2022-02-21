@@ -39,7 +39,7 @@ def process_cli_command(server_conn: ServerConnection, cmd_line: str) -> Tuple[O
     # TODO: Catch -h / --help in sub-parsers, probably by adding a custom action, see https://stackoverflow.com/questions/58367375/can-i-prevent-argparse-from-exiting-if-the-user-specifies-h
     # TODO: Align commands with GDB
     # TODO: Implement connect / disconnect commands
-    # TODO: Implement commands to hexdump / disassemble memory
+    # TODO: Implement command to inspect / disassemble memory (like 'x' in GDB)
     subparsers = parser.add_subparsers(dest='command', help="Available commands")
     subparsers.add_parser('break', aliases=('b',), help="Set breakpoint").add_argument(
         'offset',
@@ -63,7 +63,6 @@ def process_cli_command(server_conn: ServerConnection, cmd_line: str) -> Tuple[O
         if not command_ok:
             return error, None
 
-        # TODO: *** Have the return key repeat the last command
         if args.command in ('break', 'b'):
             server_conn.execute_command(MsgTypes.MSG_SET_BP, struct.pack(FMT_UINT32, args.offset))
             return None, None
