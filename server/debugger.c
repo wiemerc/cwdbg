@@ -119,8 +119,10 @@ void quit_debugger(int exit_code)
 {
     BreakPoint *p_bpoint;
 
+    // TODO: Does not work when called from target process, which can happen at the moment
     LOG(INFO, "Exiting...");
-    // TODO: Kill target if it's still running
+    if (g_dstate.target_state & TS_RUNNING)
+        DeleteTask(g_dstate.p_target_task);
     while ((p_bpoint = (BreakPoint *) RemHead(&g_dstate.bpoints)))
         FreeVec(p_bpoint);
     UnLoadSeg(g_dstate.p_seglist);
@@ -189,6 +191,7 @@ void get_target_info(TargetInfo *p_target_info, TaskContext *p_task_ctx)
 //
 // TODO: Send message to debugger process instead of calling process_remote_commands() directly. It would be a cleaner
 //       design if the debugger process did all the work and wouldn't share state and the serial device with the
+//       target process. This would also fix the problem that quit_debugger() does not work when called from the 
 //       target process.
 
 void handle_breakpoint(TaskContext *p_task_ctx)
