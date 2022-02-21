@@ -20,10 +20,13 @@
 /*
  * constants
  */
-#define TRAP_NUM            0
-#define TRAP_OPCODE         0x4e40
-#define TARGET_STACK_SIZE   8192
-#define SIG_TARGET_EXITED   1
+#define TRAP_NUM              0
+#define TRAP_OPCODE           0x4e40
+#define TARGET_STACK_SIZE     8192
+#define SIG_TARGET_EXITED     1
+#define NUM_NEXT_INSTRUCTIONS 8
+#define NUM_TOP_STACK_DWORDS  8
+#define MAX_INSTR_BYTES       8
 
 /*
  * target states
@@ -42,13 +45,6 @@
 //
 #define ERROR_NOT_ENOUGH_MEMORY 1
 #define ERROR_INVALID_ADDRESS   2
-
-
-//
-// macros
-//
-// TODO: What is the maximum address?
-#define VALID_ADDRESS(x) ((((uint32_t) (x)) >= 0x00000000) && (((uint32_t) (x)) <= 0x07ffffff))
 
 
 /*
@@ -75,8 +71,10 @@ typedef struct {
     TaskContext  task_context;          // task context of target
     int          target_state;          // current target state
     int          exit_code;             // exit code if target has exited
-    uint8_t      next_instr_bytes[8];   // instruction bytes for the next instruction
-    uint32_t     top_stack_dwords[8];   // top 8 dwords on the stack
+    // instruction bytes for the next n instructions, one instruction can be 8(?) bytes long at the most
+    uint8_t      next_instr_bytes[NUM_NEXT_INSTRUCTIONS * MAX_INSTR_BYTES];
+    // top n dwords on the stack
+    uint32_t     top_stack_dwords[NUM_TOP_STACK_DWORDS];
 } TargetInfo;
 
 typedef struct {

@@ -172,14 +172,13 @@ void get_target_info(TargetInfo *p_target_info, TaskContext *p_task_ctx)
     p_target_info->target_state = g_dstate.target_state;
     p_target_info->exit_code    = g_dstate.exit_code;
     if (p_task_ctx) {
-        // target is still running, add task context, next instruction and top 8 dwords on the stack
+        // target is still running, add task context, next n instructions and top n dwords on the stack
         memcpy(&p_target_info->task_context, p_task_ctx, sizeof(TaskContext));
-        // TODO: Better way to check for valid addresses, catching also a wrap-around?
-        if (VALID_ADDRESS(p_task_ctx->p_reg_pc) && VALID_ADDRESS(((uint8_t *) p_task_ctx->p_reg_pc) + 8)) {
-            memcpy(&p_target_info->next_instr_bytes, p_task_ctx->p_reg_pc, 8);
+        if ((uint32_t) p_task_ctx->p_reg_pc <= (0xffffffff - NUM_NEXT_INSTRUCTIONS * MAX_INSTR_BYTES)) {
+            memcpy(&p_target_info->next_instr_bytes, p_task_ctx->p_reg_pc, NUM_NEXT_INSTRUCTIONS * MAX_INSTR_BYTES);
         }
-        if (VALID_ADDRESS(p_task_ctx->p_reg_sp) && VALID_ADDRESS(((uint8_t *) p_task_ctx->p_reg_sp) + 32)) {
-            memcpy(&p_target_info->top_stack_dwords, p_task_ctx->p_reg_sp, 32);
+        if ((uint32_t) p_task_ctx->p_reg_sp <= (0xffffffff - NUM_TOP_STACK_DWORDS * 4)) {
+            memcpy(&p_target_info->top_stack_dwords, p_task_ctx->p_reg_sp, NUM_TOP_STACK_DWORDS * 4);
         }
     }
 }

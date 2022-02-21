@@ -12,7 +12,7 @@ from typing import Any
 from urwid import AttrMap, Columns, Edit, ExitMainLoop, Filler, Frame, LineBox, MainLoop, Padding, Pile, Text
 
 from cli import process_cli_command, QuitDebuggerException
-from debugger import TargetInfo
+from debugger import TargetInfo, NUM_NEXT_INSTRUCTIONS, NUM_TOP_STACK_DWORDS
 from serio import ServerConnection
 
 
@@ -215,11 +215,13 @@ class MainScreen:
         self._register_view.set_text(regs)
 
         logger.debug("Updating disassembler view")
-        instr = next(self._disassembler.disasm(bytes(target_info.next_instr_bytes), target_info.task_context.reg_pc, 1))
-        self._disasm_view.set_text(f'{instr.address:08x}:    {instr.mnemonic:<10}{instr.op_str}')
+        instructions = []
+        for instr in self._disassembler.disasm(bytes(target_info.next_instr_bytes), target_info.task_context.reg_pc, NUM_NEXT_INSTRUCTIONS):
+            instructions.append(f'0x{instr.address:08x} (PC + {instr.address - target_info.task_context.reg_pc:02}):    {instr.mnemonic:<10}{instr.op_str}\n')
+        self._disasm_view.set_text(instructions)
 
         logger.debug("Updating stack view")
         stack_dwords = []
-        for i in range(8):
+        for i in range(NUM_TOP_STACK_DWORDS):
             stack_dwords.append(f'SP + {i * 4:02}:    0x{target_info.top_stack_dwords[i]:08x}\n')
         self._stack_view.set_text(stack_dwords)

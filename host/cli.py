@@ -56,8 +56,10 @@ def process_cli_command(conn: ServerConnection, cmd_line: str) -> Tuple[Optional
         except ArgumentParserError:
             return "Invalid command / argument\n" + parser.format_help(), None
 
-        # TODO: Check for correct target state like is_correct_target_state_for_command() in cli.c
+        # TODO: *** Check for correct target state like is_correct_target_state_for_command() in cli.c
+        # TODO: *** Have the return key repeat the last command
         # TODO: Implement connect / disconnect commands
+        # TODO: Implement commands to hexdump / disassemble memory
         if args.command in ('break', 'b'):
             conn.execute_command(MsgTypes.MSG_SET_BP, struct.pack(FMT_UINT32, args.offset))
             return None, None
@@ -68,6 +70,8 @@ def process_cli_command(conn: ServerConnection, cmd_line: str) -> Tuple[Optional
 
         elif args.command in ('help', 'h'):
             return parser.format_help(), None
+
+        # TODO: *** Implement 'kill' command
 
         elif args.command in ('quit', 'q'):
             conn.execute_command(MsgTypes.MSG_QUIT)

@@ -9,6 +9,12 @@ from ctypes import BigEndianStructure, c_uint8, c_uint16, c_uint32
 from enum import IntEnum
 
 
+# keep in sync with values in debugger.h
+NUM_NEXT_INSTRUCTIONS = 8
+MAX_INSTR_BYTES       = 8
+NUM_TOP_STACK_DWORDS  = 8
+
+
 class TaskContext(BigEndianStructure):
     _pack_ = 2
     _fields_ = (
@@ -27,8 +33,8 @@ class TargetInfo(BigEndianStructure):
         ('task_context', TaskContext),
         ('target_state', c_uint32),
         ('exit_code', c_uint32),
-        ('next_instr_bytes', c_uint8 * 8),
-        ('top_stack_dwords', c_uint32 * 8)
+        ('next_instr_bytes', c_uint8 * NUM_NEXT_INSTRUCTIONS * MAX_INSTR_BYTES),
+        ('top_stack_dwords', c_uint32 * NUM_TOP_STACK_DWORDS)
     )
 
 
