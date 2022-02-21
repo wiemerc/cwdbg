@@ -20,8 +20,8 @@ PALETTE = [
     ('banner', 'black,bold', 'dark green'),
 ]
 
-INPUT_WIDGET_HEIGHT = 10
-MAX_NUM_OF_LOG_MESSAGES = 5
+INPUT_WIDGET_HEIGHT = 15
+MAX_NUM_OF_LOG_MESSAGES = 10
 
 
 class UrwidHandler:
