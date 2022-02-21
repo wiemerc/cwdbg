@@ -12,7 +12,7 @@ from enum import IntEnum
 from loguru import logger
 from typing import Optional
 
-from debugger import TargetInfo
+from debugger import TargetInfo, TargetStates
 
 
 #
@@ -49,7 +49,7 @@ class ProtoMessage(BigEndianStructure):
         ("checksum", c_uint16),
         ("type", c_uint8),
         ("length", c_uint8)
-        # Field data omitted because we just append the data
+        # field data omitted because we just append the data
     )
 
 
@@ -66,6 +66,7 @@ class ServerConnection:
             raise RuntimeError(f"Could not connect to server '{host}:{port}'") from e
         logger.debug("Sending MSG_INIT message to server")
         self.execute_command(MsgTypes.MSG_INIT)
+        self.target_state = TargetStates.TS_IDLE
 
 
     # TODO: Move class / this method to debugger.py just keep send_message() / receive_message() here
@@ -97,6 +98,7 @@ class ServerConnection:
                 self.send_message(MsgTypes.MSG_ACK)
                 target_info = TargetInfo.from_buffer(data)
                 logger.info(f"Target has stopped, state = {target_info.target_state}")
+                self.target_state = target_info.target_state
                 return target_info
             else:
                 raise ConnectionError(f"Received unexpected message {MsgTypes(msg.type).name} from server, expected MSG_TARGET_STOPPED")

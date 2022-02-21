@@ -245,7 +245,6 @@ static void send_target_stopped_msg(TargetInfo *p_target_info)
 
 static int is_correct_target_state_for_command(uint8_t msg_type)
 {
-    // TODO
     if (!(g_dstate.target_state & TS_RUNNING) && (
         (msg_type == MSG_CONT) ||
         (msg_type == MSG_STEP) ||

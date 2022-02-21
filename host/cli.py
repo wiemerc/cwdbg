@@ -34,10 +34,12 @@ class ThrowingArgumentParser(argparse.ArgumentParser):
         raise ArgumentParserError(message)
 
 
-def process_cli_command(conn: ServerConnection, cmd_line: str) -> Tuple[Optional[str], Optional[TargetInfo]]:
+def process_cli_command(server_conn: ServerConnection, cmd_line: str) -> Tuple[Optional[str], Optional[TargetInfo]]:
     parser = ThrowingArgumentParser(prog='', description="CWDebug, a source-level debugger for the AmigaOS", add_help=False)
     # TODO: Catch -h / --help in sub-parsers, probably by adding a custom action, see https://stackoverflow.com/questions/58367375/can-i-prevent-argparse-from-exiting-if-the-user-specifies-h
     # TODO: Align commands with GDB
+    # TODO: Implement connect / disconnect commands
+    # TODO: Implement commands to hexdump / disassemble memory
     subparsers = parser.add_subparsers(dest='command', help="Available commands")
     subparsers.add_parser('break', aliases=('b',), help="Set breakpoint").add_argument(
         'offset',
@@ -57,41 +59,51 @@ def process_cli_command(conn: ServerConnection, cmd_line: str) -> Tuple[Optional
         except ArgumentParserError:
             return "Invalid command / argument\n" + parser.format_help(), None
 
-        # TODO: *** Check for correct target state like is_correct_target_state_for_command() in cli.c
+        command_ok, error = _is_correct_target_state_for_command(server_conn.target_state, args.command)
+        if not command_ok:
+            return error, None
+
         # TODO: *** Have the return key repeat the last command
-        # TODO: Implement connect / disconnect commands
-        # TODO: Implement commands to hexdump / disassemble memory
         if args.command in ('break', 'b'):
-            conn.execute_command(MsgTypes.MSG_SET_BP, struct.pack(FMT_UINT32, args.offset))
+            server_conn.execute_command(MsgTypes.MSG_SET_BP, struct.pack(FMT_UINT32, args.offset))
             return None, None
 
         elif args.command in ('continue', 'cont', 'c'):
-            target_info = conn.execute_command(MsgTypes.MSG_CONT)
+            target_info = server_conn.execute_command(MsgTypes.MSG_CONT)
             return _get_target_status_for_ui(target_info)
 
         elif args.command in ('help', 'h'):
             return parser.format_help(), None
 
         elif args.command in ('kill', 'k'):
-            target_info =conn.execute_command(MsgTypes.MSG_KILL)
+            target_info =server_conn.execute_command(MsgTypes.MSG_KILL)
             return _get_target_status_for_ui(target_info)
 
         elif args.command in ('quit', 'q'):
-            conn.execute_command(MsgTypes.MSG_QUIT)
+            server_conn.execute_command(MsgTypes.MSG_QUIT)
             raise QuitDebuggerException()
 
         elif args.command in ('run', 'r'):
-            target_info = conn.execute_command(MsgTypes.MSG_RUN)
+            target_info = server_conn.execute_command(MsgTypes.MSG_RUN)
             return _get_target_status_for_ui(target_info)
 
         elif args.command in ('step', 's'):
-            target_info = conn.execute_command(MsgTypes.MSG_STEP)
+            target_info = server_conn.execute_command(MsgTypes.MSG_STEP)
             return _get_target_status_for_ui(target_info)
 
     except QuitDebuggerException:
         raise
     except Exception as e:
         raise RuntimeError(f"Error occurred while processing CLI commands") from e
+
+
+def _is_correct_target_state_for_command(target_state: int, command: str) -> Tuple[bool, Optional[str]]:
+    # keep lists of commands in sync with process_cli_command()
+    if not (target_state & TargetStates.TS_RUNNING) and command[0] in ('c', 's', 'k'):
+        return False, f"Incorrect state for command '{command}': target is not yet running"
+    if (target_state & TargetStates.TS_RUNNING) and command[0] in ('r', 'q'):
+        return False, f"Incorrect state for command '{command}': target is already / still running"
+    return True, None
 
 
 def _get_target_status_for_ui(target_info: TargetInfo) -> Tuple[Optional[str], Optional[TargetInfo]]:
