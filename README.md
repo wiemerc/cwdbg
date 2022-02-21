@@ -1,5 +1,5 @@
 # CWDebug - Simple assembly-level debugger for AmigaOS
 
-Copyright (c) 2018, 2019, Constantin Wiemer
+Copyright (c) 2018-2022, Constantin Wiemer
 
-CWDebug is a simple assembly-level debugger for AmigaOS. It has a simple CLI (similiar to the one provided by GDB) and allows single-stepping through the code, setting breakpoints and inspecting registers, memory and the stack. I wrote it just for educational purposes and fun, so it has only basic functionality and will for sure contain bugs. Originally, I had planned to add source-level debugging capabilities and remote debugging via a serial link. Maybe I will do this at a later time.
+CWDebug is a simple assembly-level debugger for the AmigaOS. It has a simple CLI (similiar to the one provided by GDB) and allows single-stepping through the code, setting breakpoints and inspecting registers, memory and the stack. In addition, it allows remote debugging via a serial link, where on the (emulated) Amiga only a small debugger server runs and most of the functionality is provided by the debugger host. This host can run on Linux or macOS and features a TUI (character-based UI). The server is written in C and a bit of assembly, the host is written in Python using [Capstone](https://github.com/capstone-engine/capstone) as disassembler and [Urwid](https://github.com/urwid/urwid) for the TUI. I wrote CWDebug just for educational purposes and fun, so it has only basic functionality and will for sure contain bugs. Hopefully, I will add source-level debugging capabilities in the near future.
