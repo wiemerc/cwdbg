@@ -84,8 +84,13 @@ void run_target()
     }
     LOG(DEBUG, "Waiting for signal from target...");
     Wait(SIG_TARGET_EXITED);
-    g_dstate.target_state = TS_EXITED;
-    LOG(INFO, "Target terminated with exit code %d", g_dstate.exit_code);
+    if (g_dstate.target_state == TS_KILLED) {
+        LOG(INFO, "Target has been killed");
+    }
+    else {
+        g_dstate.target_state = TS_EXITED;
+        LOG(INFO, "Target terminated with exit code %d", g_dstate.exit_code);
+    }
 }
 
 

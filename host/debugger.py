@@ -43,6 +43,7 @@ class TargetStates(IntEnum):
     TS_RUNNING                = 1
     TS_SINGLE_STEPPING        = 2
     TS_EXITED                 = 4
-    TS_STOPPED_BY_BREAKPOINT  = 8
-    TS_STOPPED_BY_SINGLE_STEP = 16
-    TS_STOPPED_BY_EXCEPTION   = 32
+    TS_KILLED                 = 8
+    TS_STOPPED_BY_BREAKPOINT  = 16
+    TS_STOPPED_BY_SINGLE_STEP = 32
+    TS_STOPPED_BY_EXCEPTION   = 64

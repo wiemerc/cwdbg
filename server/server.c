@@ -136,6 +136,15 @@ void process_remote_commands(TaskContext *p_task_ctx)
                 set_single_step_mode(p_task_ctx);
                 return;
 
+            case MSG_KILL:
+                send_ack_msg(NULL, 0);
+                // TODO: restore breakpoint if necessary
+                g_dstate.target_state = TS_KILLED;
+                Signal(g_dstate.p_debugger_task, SIG_TARGET_EXITED);
+                // TODO: Switch to DeleteTask() once process_remote_commands() is no longer called by the target process
+                RemTask(NULL);
+                return;  // We don't get here anyway...
+
             case MSG_QUIT:
                 LOG(DEBUG, "Terminating connection");
                 send_ack_msg(NULL, 0);

@@ -36,9 +36,10 @@
 #define TS_RUNNING                  (1l << 0)
 #define TS_SINGLE_STEPPING          (1l << 1)
 #define TS_EXITED                   (1l << 2)
-#define TS_STOPPED_BY_BREAKPOINT    (1l << 3)
-#define TS_STOPPED_BY_SINGLE_STEP   (1l << 4)
-#define TS_STOPPED_BY_EXCEPTION     (1l << 5)
+#define TS_KILLED                   (1l << 3)
+#define TS_STOPPED_BY_BREAKPOINT    (1l << 4)
+#define TS_STOPPED_BY_SINGLE_STEP   (1l << 5)
+#define TS_STOPPED_BY_EXCEPTION     (1l << 6)
 
 //
 // error codes

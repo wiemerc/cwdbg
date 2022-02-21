@@ -46,6 +46,7 @@ def process_cli_command(conn: ServerConnection, cmd_line: str) -> Tuple[Optional
     )
     subparsers.add_parser('continue', aliases=('c', 'cont'), help="Continue target")
     subparsers.add_parser('help', aliases=('h',), help="Show help message")
+    subparsers.add_parser('kill', aliases=('k',), help="Kill target")
     subparsers.add_parser('quit', aliases=('q',), help="Quit debugger", add_help=True)
     subparsers.add_parser('run', aliases=('r',), help="Run target")
     subparsers.add_parser('step', aliases=('s',), help="Single-step target")
@@ -71,7 +72,9 @@ def process_cli_command(conn: ServerConnection, cmd_line: str) -> Tuple[Optional
         elif args.command in ('help', 'h'):
             return parser.format_help(), None
 
-        # TODO: *** Implement 'kill' command
+        elif args.command in ('kill', 'k'):
+            target_info =conn.execute_command(MsgTypes.MSG_KILL)
+            return _get_target_status_for_ui(target_info)
 
         elif args.command in ('quit', 'q'):
             conn.execute_command(MsgTypes.MSG_QUIT)
@@ -96,7 +99,9 @@ def _get_target_status_for_ui(target_info: TargetInfo) -> Tuple[Optional[str], O
         return f"Target has hit breakpoint at address {hex(target_info.task_context.reg_pc)}", target_info
     elif target_info.target_state & TargetStates.TS_STOPPED_BY_EXCEPTION:
         return f"Target has been stopped by exception #{target_info.task_context.exc_num}", target_info
-    elif target_info.target_state & TargetStates.TS_EXITED:
+    elif target_info.target_state == TargetStates.TS_EXITED:
         return f"Target exited with code {target_info.exit_code}", None
+    elif target_info.target_state == TargetStates.TS_KILLED:
+        return f"Target has been killed", None
     else:
         return None, target_info
