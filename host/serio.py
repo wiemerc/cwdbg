@@ -7,7 +7,7 @@
 
 import socket
 
-from ctypes import BigEndianStructure, c_uint8, c_uint16, c_uint32, sizeof
+from ctypes import BigEndianStructure, c_uint8, c_uint16, sizeof
 from enum import IntEnum
 from loguru import logger
 from typing import Optional
@@ -59,6 +59,7 @@ class ConnectionError(Exception):
 
 class ServerConnection:
     def __init__(self, host: str, port: int):
+        logger.info("Connecting to server...")
         try:
             self._conn = socket.create_connection((host, port))
             self._next_seqnum = 0

@@ -4,7 +4,7 @@
 #              This is the debugger host that contains all the logic for source-level
 #              debugging and talks to the remote server.
 #
-# Copyright(C) 2018-2021 Constantin Wiemer
+# Copyright(C) 2018-2022 Constantin Wiemer
 
 
 import argparse
@@ -13,10 +13,10 @@ import sys
 from loguru import logger
 
 from cli import process_cli_command, QuitDebuggerException
+from hunklib import read_exe, BlockTypes
 from serio import ServerConnection
+from stabslib import read_stabs_info
 from ui import MainScreen
-#from hunklib import ...
-#from stabslib import read_stabs_info, build_program_tree, ...
 
 
 RETURN_OK    = 0
@@ -29,13 +29,15 @@ def main():
 
     conn = None
     try:
+        debug_infos = read_stabs_info(read_exe(args.executable)[BlockTypes.HUNK_DEBUG])
         conn = ServerConnection(args.host, args.port)
+
         if args.no_tui:
             _print_banner()
             while True:
-                command = input('> ')
+                cmd_line = input('> ')
                 try:
-                    result, target_info = process_cli_command(conn, command)
+                    result, target_info = process_cli_command(conn, cmd_line)
                     if result:
                         print(result)
                 except QuitDebuggerException:
@@ -52,10 +54,11 @@ def main():
 
 def _parse_command_line() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="CWDebug, a source-level debugger for the AmigaOS")
+    parser.add_argument('executable', help="Executable you want to debug (with debug information)")
     parser.add_argument('--verbose', '-v', help="Enable verbose logging", action="store_true")
     parser.add_argument('--host', '-H', default='127.0.0.1', help="IP address / name of debugger server (default=127.0.0.1)")
     parser.add_argument('--port', '-P', type=int, default=1234, help="Port of debugger server(default=1234)")
-    parser.add_argument('--no-tui', action='store_true', default=False, help="Disable TUI (mainly for debugging)")
+    parser.add_argument('--no-tui', action='store_true', default=False, help="Disable TUI (mainly for debugging the debugger itself)")
     args = parser.parse_args()
     return args
 
