@@ -7,7 +7,7 @@
 
 
 from enum import IntEnum
-from ctypes import BigEndianStructure, c_ubyte, c_ushort, c_uint, sizeof
+from ctypes import BigEndianStructure, c_uint8, c_uint16, c_uint32, sizeof
 from loguru import logger
 from typing import List
 
@@ -88,11 +88,11 @@ class StabTypes(IntEnum):
 
 class Stab(BigEndianStructure):
     _fields_ = [
-        ('offset', c_uint),
-        ('type', c_ubyte),
-        ('other', c_ubyte),
-        ('desc', c_ushort),
-        ('value', c_uint),
+        ('offset', c_uint32),
+        ('type', c_uint8),
+        ('other', c_uint8),
+        ('desc', c_uint16),
+        ('value', c_uint32),
     ]
 
 
@@ -117,7 +117,7 @@ class ProgramNode:
 
 
 def read_stabs_info(data: bytes) -> ProgramNode:
-    # With GCC, the stab table starts with a stab of type StabTypes.N_UNDF. The description field
+    # With GCC, the stab table starts with a stab of type N_UNDF. The description field
     # of this stab contains the size of the stabs table in bytes for this compilation unit
     # (including this first stab), the value field is the size of the string table.
     # This format is somewhat described in the file binutils-gdb/bfd/stabs.c of the
@@ -183,8 +183,8 @@ def read_stabs_info(data: bytes) -> ProgramNode:
             # add stab to list for building tree structure
             stabs.append((stab, string))
 
-    # build tree structure from the stabs describing the program (sort of a simplified AST)
-    # reverse list so that build_program_tree() can use pop()
+    # build tree structure from the stabs describing the program (sort of a simplified AST), reverse list first 
+    # so that _build_program_tree() can use pop()
     stabs.reverse()
     # root node of program
     program = ProgramNode(StabTypes.N_UNDF, '')
@@ -227,10 +227,10 @@ def _build_program_tree(stabs: List[Stab], nodes: List[ProgramNode] = []) -> Pro
     # when we see the beginning of the enclosing scope.
     # Nested scopes on the other hand appear in the correct order, that is from outer to
     # inner. We handle them by recursively calling ourselves for each range of stabs
-    # between StabTypes.N_LBRAC and StabTypes.N_RBRAC. Tricky stuff...
+    # between N_LBRAC and N_RBRAC. Tricky stuff...
     node = None
     # set source directory to empty string because if there is just one compilation unit
-    # there is no StabTypes.N_SO stab for the directory
+    # there is no N_SO stab for the directory
     srcdir = ''
     while stabs:
         stab, string = stabs.pop()
@@ -261,21 +261,21 @@ def _build_program_tree(stabs: List[Stab], nodes: List[ProgramNode] = []) -> Pro
 
         elif stab.type in (StabTypes.N_LSYM, StabTypes.N_PSYM, StabTypes.N_RSYM):
             # local variable or function parameter => put it on the stack,the stab for the
-            # scope (StabTypes.N_LBRAC) comes later. In case of register variables (StabTypes.N_RSYM), the value
+            # scope (N_LBRAC) comes later. In case of register variables (N_RSYM), the value
             # is the register number with 0..7 = D0..D7 and 8..15 = A0..A7.
             symbol, typeid = string.split(':', 1)
             nodes.append(ProgramNode(stab.type, symbol, typeid=typeid, start_addr=stab.value))
 
         elif stab.type  == StabTypes.N_FUN:
-            # function => put it on the stack, the stab for the scope (StabTypes.N_LBRAC) comes later
-            # We change the type to StabTypes.N_FNAME so that we can differentiate between a node with
-            # the scope of the function (StabTypes.N_FUN) and a node with just its name and start address (StabTypes.N_FNAME).
-            # TODO: Maybe it would be better to use our own types for the program nodes (XXX).
+            # function => put it on the stack, the stab for the scope (N_LBRAC) comes later
+            # We change the type to N_FNAME so that we can differentiate between a node with
+            # the scope of the function (N_FUN) and a node with just its name and start address (N_FNAME).
+            # TODO: Maybe it would be better to use our own types for the program nodes.
             symbol, typeid = string.split(':', 1)
             nodes.append(ProgramNode(StabTypes.N_FNAME, symbol, typeid=typeid, start_addr=stab.value))
 
         elif stab.type  == StabTypes.N_SLINE:
-            # line number / address tuple => put it on the stack, the stab for the scope (StabTypes.N_LBRAC) comes later
+            # line number / address tuple => put it on the stack, the stab for the scope (N_LBRAC) comes later
             # TODO: The tuples appear in the tree sorted by address in descending order. Is this
             # ok for the debugger? What about duplicate line numbers / addresses? Should we keep
             # only the first / the last?
@@ -305,7 +305,7 @@ def _build_program_tree(stabs: List[Stab], nodes: List[ProgramNode] = []) -> Pro
                     child = nodes.pop()
                     node.children.append(child)
                     if child.type == StabTypes.N_FNAME:
-                        # change type to StabTypes.N_FUN so that our caller will put this scope onto the stack
+                        # change type to N_FUN so that our caller will put this scope onto the stack
                         # and change name to the function's name
                         node.type = StabTypes.N_FUN
                         node.name = child.name
