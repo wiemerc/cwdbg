@@ -6,7 +6,7 @@ LDLIBS  := -lamiga -lnix
 
 .PHONY: all clean
 
-all: stabs-test debug-test amihello loop
+all: stabs-test debug-test amihello loop crash
 
 clean:
 	rm -f *.o stabs-test debug-test amihello loop
@@ -25,3 +25,6 @@ debug-test: debug-test.o
 
 loop: loop.o
 	$(CC) $(LDFLAGS) -nostdlib -o $@ $^
+
+crash: crash.o ../server/dump-core.o ../server/catch-exc.o
+	$(CC) $(LDFLAGS) -o $@  $@.o ../server/dump-core.o ../server/catch-exc.o

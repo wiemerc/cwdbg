@@ -7,7 +7,7 @@ SRCFILES := cli.c debugger.c m68kdasm.c main.c serio.c server.c util.c
 
 .PHONY: all musashi clean
 
-all: musashi cwdebug
+all: musashi cwdebug catch-exc.o dump-core.o
 
 # This target is just there to trigger a build of m68k.h on a clean build. On a clean build the object
 # files dont' have any dependencies because the rules with dependencies (the *.d files) haven't been
@@ -27,6 +27,9 @@ clean:
 	patch -p0 < $@.patch
 
 exc-handler.o: exc-handler.s
+	$(AS) -o $@ $^
+
+catch-exc.o: catch-exc.s
 	$(AS) -o $@ $^
 
 cwdebug: $(SRCFILES:%.c=%.o) exc-handler.o
