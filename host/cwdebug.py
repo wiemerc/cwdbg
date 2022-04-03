@@ -15,7 +15,7 @@ from loguru import logger
 from cli import process_cli_command, QuitDebuggerException
 from hunklib import read_exe, BlockTypes
 from serio import ServerConnection
-from stabslib import read_stabs_info
+from stabslib import ProgramWithDebugInfo
 from ui import MainScreen
 
 
@@ -29,7 +29,7 @@ def main():
 
     conn = None
     try:
-        debug_infos = read_stabs_info(read_exe(args.executable)[BlockTypes.HUNK_DEBUG])
+        program = ProgramWithDebugInfo.from_stabs_data(read_exe(args.executable)[BlockTypes.HUNK_DEBUG])
         conn = ServerConnection(args.host, args.port)
 
         if args.no_tui:
