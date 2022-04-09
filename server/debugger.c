@@ -2,7 +2,7 @@
  * debugger.c - part of CWDebug, a source-level debugger for the AmigaOS
  *              This file contains the core routines of the debugger.
  *
- * Copyright(C) 2018-2021 Constantin Wiemer
+ * Copyright(C) 2018-2022 Constantin Wiemer
  */
 
 
@@ -12,6 +12,7 @@
 #include <proto/alib.h>
 #include <proto/dos.h>
 #include <proto/exec.h>
+#include <stdlib.h>
 
 #include "cli.h"
 #include "debugger.h"
@@ -77,7 +78,11 @@ void run_target()
         NP_Input, Input(),
         NP_Output, Output(),
         NP_CloseInput, FALSE,
-        NP_CloseOutput, FALSE
+        NP_CloseOutput, FALSE,
+        // TODO: The startup code used by GCC checks if pr_CLI is NULL and, if so, waits for the Workbench startup
+        // message and therefore hangs. So we have to specify NP_Cli = TRUE, but this causes the CLI process, in which
+        // the debugger was launched, to terminate upon exit. Should we hand-craft our own CLI struct in wrap_target()?
+        NP_Cli, TRUE
     )) == NULL) {
         LOG(CRIT, "Could not start target as process");
         quit_debugger(RETURN_FAIL);
@@ -132,7 +137,7 @@ void quit_debugger(int exit_code)
         FreeVec(p_bpoint);
     UnLoadSeg(g_dstate.p_seglist);
     serio_exit();
-    Exit(exit_code);
+    exit(exit_code);
 }
 
 
@@ -271,6 +276,7 @@ static void wrap_target()
 {
     // allocate trap and install exception handler
     g_dstate.p_target_task->tc_TrapCode = exc_handler;
+    // TODO: Also allocate trap for restoring context
     if (AllocTrap(TRAP_NUM) == -1) {
         LOG(CRIT, "Internal error: could not allocate trap");
         quit_debugger(RETURN_FAIL);
@@ -282,7 +288,14 @@ static void wrap_target()
         (uint32_t) g_dstate.p_entry,
         (uint32_t) g_dstate.p_target_task->tc_SPUpper - 2
     );
-    g_dstate.exit_code = g_dstate.p_entry();
+    // We need to use RunCommand() instead of just calling the entry point if we specify NP_Cli in CreateNewProcTags(),
+    // otherwise we get a crash. The entry point needs to be converted to a segment list pointer first though.
+    g_dstate.exit_code = RunCommand(
+        (BPTR) (((uint32_t) g_dstate.p_entry >> 2) - 1),
+        TARGET_STACK_SIZE,
+        "",
+        0
+    );
 
     // signal debugger that target has finished
     Signal(g_dstate.p_debugger_task, SIG_TARGET_EXITED);

@@ -146,10 +146,8 @@ void process_remote_commands(TaskContext *p_task_ctx)
                 return;  // We don't get here anyway...
 
             case MSG_QUIT:
-                LOG(DEBUG, "Terminating connection");
                 send_ack_msg(NULL, 0);
                 quit_debugger(RETURN_OK);
-                break;
 
             default:
                 LOG(CRIT, "Internal error: unknown command %d", msg.type);

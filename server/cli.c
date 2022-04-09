@@ -77,7 +77,6 @@ void process_cli_commands(TaskContext *p_task_ctx)
 
             case 'q':   // quit debugger
                 quit_debugger(RETURN_OK);
-                return;
 
             case 'c':   // continue target
                 set_continue_mode(p_task_ctx);
