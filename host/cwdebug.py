@@ -29,22 +29,22 @@ def main():
 
     conn = None
     try:
-        program = ProgramWithDebugInfo.from_stabs_data(read_exe(args.executable)[BlockTypes.HUNK_DEBUG])
         conn = ServerConnection(args.host, args.port)
+        program = ProgramWithDebugInfo.from_stabs_data(read_exe(args.executable)[BlockTypes.HUNK_DEBUG])
 
         if args.no_tui:
             _print_banner()
             while True:
                 cmd_line = input('> ')
                 try:
-                    result, target_info = process_cli_command(conn, cmd_line)
+                    result, target_info = process_cli_command(conn, program, cmd_line)
                     if result:
                         print(result)
                 except QuitDebuggerException:
                     logger.debug("Exiting debugger...")
                     break
         else:
-            main_screen = MainScreen(args.verbose, conn)
+            main_screen = MainScreen(args.verbose, conn, program)
     except Exception as e:
         logger.exception(f"Internal error occurred: {e}")
     finally:

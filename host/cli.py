@@ -6,7 +6,7 @@
 
 
 import argparse
-import functools
+import re
 import readline
 import shlex
 import struct
@@ -16,6 +16,7 @@ from typing import Optional, Tuple
 
 from debugger import TargetInfo, TargetStates
 from serio import ServerConnection, MsgTypes
+from stabslib import ProgramWithDebugInfo
 
 
 FMT_UINT32 = '>I'
@@ -34,17 +35,26 @@ class ThrowingArgumentParser(argparse.ArgumentParser):
         raise ArgumentParserError(message)
 
 
-def process_cli_command(server_conn: ServerConnection, cmd_line: str) -> Tuple[Optional[str], Optional[TargetInfo]]:
+def process_cli_command(
+    server_conn: ServerConnection,
+    program: ProgramWithDebugInfo,
+    cmd_line: str
+) -> Tuple[Optional[str], Optional[TargetInfo]]:
     parser = ThrowingArgumentParser(prog='', description="CWDebug, a source-level debugger for the AmigaOS", add_help=False)
     # TODO: Catch -h / --help in sub-parsers, probably by adding a custom action, see https://stackoverflow.com/questions/58367375/can-i-prevent-argparse-from-exiting-if-the-user-specifies-h
     # TODO: Align commands with GDB
     # TODO: Implement connect / disconnect commands
     # TODO: Implement command to inspect / disassemble memory (like 'x' in GDB)
+    # TODO: Implement 'backtrace' command
+    # TODO: Implement 'next' command
+    # TODO: Repeat last command with 'enter'
     subparsers = parser.add_subparsers(dest='command', help="Available commands")
     subparsers.add_parser('break', aliases=('b',), help="Set breakpoint").add_argument(
-        'offset',
-        type=functools.partial(int, base=0),
-        help="Offset relative to entry point",
+        'location',
+        help="Location of the breakpoint, meaning depends on format: "
+             "hex number = offset relative to entry point, "
+             "decimal number = line number, "
+             "string = function name",
     )
     subparsers.add_parser('continue', aliases=('c', 'cont'), help="Continue target")
     subparsers.add_parser('help', aliases=('h',), help="Show help message")
@@ -64,7 +74,16 @@ def process_cli_command(server_conn: ServerConnection, cmd_line: str) -> Tuple[O
             return error, None
 
         if args.command in ('break', 'b'):
-            server_conn.execute_command(MsgTypes.MSG_SET_BP, struct.pack(FMT_UINT32, args.offset))
+            if re.search(r'^0x[0-9a-fA-F]+$', args.location):
+                offset = int(args.location, 16)
+            elif re.search('^\d+$', args.location):
+                offset = program.get_addr_for_lineno(int(args.location, 10))
+            elif re.search(r'^[a-zA-Z_]\w+$', args.location):
+                offset = program.get_addr_for_func_name(args.location)
+            else:
+                # TODO: Implement <file name>:<line number> as location
+                return "Invalid format of breakpoint location", None
+            server_conn.execute_command(MsgTypes.MSG_SET_BP, struct.pack(FMT_UINT32, offset))
             return None, None
 
         elif args.command in ('continue', 'cont', 'c'):
@@ -87,6 +106,7 @@ def process_cli_command(server_conn: ServerConnection, cmd_line: str) -> Tuple[O
             return _get_target_status_for_ui(target_info)
 
         elif args.command in ('step', 's'):
+            # TODO: Implement single-stepping on C level (next line instead of next instruction)
             target_info = server_conn.execute_command(MsgTypes.MSG_STEP)
             return _get_target_status_for_ui(target_info)
 

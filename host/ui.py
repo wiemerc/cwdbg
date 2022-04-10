@@ -14,6 +14,7 @@ from urwid import AttrMap, Columns, Edit, ExitMainLoop, Filler, Frame, LineBox, 
 from cli import process_cli_command, QuitDebuggerException
 from debugger import TargetInfo, NUM_NEXT_INSTRUCTIONS, NUM_TOP_STACK_DWORDS
 from serio import ServerConnection
+from stabslib import ProgramWithDebugInfo
 
 
 PALETTE = [
@@ -37,10 +38,11 @@ class UrwidHandler:
 
 
 class CommandInput(Edit):
-    def __init__(self, main_screen: Any, server_conn: ServerConnection):
+    def __init__(self, main_screen: Any, server_conn: ServerConnection, program: ProgramWithDebugInfo):
         super().__init__(caption='> ')
         self._main_screen = main_screen
         self._server_conn = server_conn
+        self._program = program
         self._history = []
 
     def keypress(self, size, key):
@@ -48,7 +50,7 @@ class CommandInput(Edit):
             command = self.get_edit_text()
             if command:
                 try:
-                    result, target_info = process_cli_command(self._server_conn, command)
+                    result, target_info = process_cli_command(self._server_conn, self._program, command)
                 except QuitDebuggerException:
                     logger.debug("Exiting debugger...")
                     raise ExitMainLoop()
@@ -69,7 +71,7 @@ class CommandInput(Edit):
 
 
 class MainScreen:
-    def __init__(self, verbose: bool, server_conn: ServerConnection):
+    def __init__(self, verbose: bool, server_conn: ServerConnection, program: ProgramWithDebugInfo):
         def _handle_global_input(key: str):
             if key == 'f5':
                 self._input_view.set_edit_text('cont')
@@ -164,7 +166,7 @@ class MainScreen:
             )
         )
 
-        self._input_view = CommandInput(self, server_conn)
+        self._input_view = CommandInput(self, server_conn, program)
         input_widget = LineBox(
             Padding(
                 Filler(
