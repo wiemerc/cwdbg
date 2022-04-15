@@ -44,8 +44,9 @@
 //
 // error codes
 //
-#define ERROR_NOT_ENOUGH_MEMORY 1
-#define ERROR_INVALID_ADDRESS   2
+#define ERROR_NOT_ENOUGH_MEMORY  1
+#define ERROR_INVALID_ADDRESS    2
+#define ERROR_UNKNOWN_BREAKPOINT 3
 
 
 /*

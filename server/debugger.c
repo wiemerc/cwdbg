@@ -222,6 +222,7 @@ void get_target_info(TargetInfo *p_target_info, TaskContext *p_task_ctx)
         if ((uint32_t) p_task_ctx->p_reg_sp <= (0xffffffff - NUM_TOP_STACK_DWORDS * 4)) {
             memcpy(&p_target_info->top_stack_dwords, p_task_ctx->p_reg_sp, NUM_TOP_STACK_DWORDS * 4);
         }
+        // TODO: Include breakpoint structure if target has hit breakpoint
     }
 }
 

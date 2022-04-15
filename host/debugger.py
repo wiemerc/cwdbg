@@ -47,3 +47,10 @@ class TargetStates(IntEnum):
     TS_STOPPED_BY_BREAKPOINT  = 16
     TS_STOPPED_BY_SINGLE_STEP = 32
     TS_STOPPED_BY_EXCEPTION   = 64
+
+
+# keep in sync with values in debugger.h
+class ErrorCodes(IntEnum):
+    ERROR_NOT_ENOUGH_MEMORY   = 1
+    ERROR_INVALID_ADDRESS     = 2
+    ERROR_UNKNOWN_BREAKPOINT  = 3

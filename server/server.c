@@ -65,6 +65,7 @@ void process_remote_commands(TaskContext *p_task_ctx)
     ProtoMessage msg;
     TargetInfo   target_info;
     uint8_t      dbg_errno;
+    BreakPoint   *p_bpoint;
 
     // If we've been called by one of the handle_* routines, we get a task context and the target is still
     // running. In this case the host is waiting for us and we send a MSG_TARGET_STOPPED message to indicate
@@ -111,6 +112,7 @@ void process_remote_commands(TaskContext *p_task_ctx)
 
             case MSG_SET_BP:
                 if ((dbg_errno = set_breakpoint(*(uint32_t *) msg.data)) == 0) {
+                    // TODO: Return breakpoint number
                     send_ack_msg(NULL, 0);
                 }
                 else {
@@ -118,6 +120,18 @@ void process_remote_commands(TaskContext *p_task_ctx)
                     send_nack_msg(dbg_errno);
                 }
                 break;
+
+            case MSG_CLEAR_BP:
+                if ((p_bpoint = find_bpoint_by_num(&g_dstate.bpoints, *(uint32_t *) msg.data)) != NULL) {
+                    clear_breakpoint(p_bpoint);
+                    send_ack_msg(NULL, 0);
+                }
+                else {
+                    LOG(ERROR, "Breakpoint #%d not found", *((uint32_t *) msg.data));
+                    send_nack_msg(ERROR_UNKNOWN_BREAKPOINT);
+                }
+                break;
+
 
             case MSG_RUN:
                 send_ack_msg(NULL, 0);
@@ -142,16 +156,15 @@ void process_remote_commands(TaskContext *p_task_ctx)
                 g_dstate.target_state = TS_KILLED;
                 Signal(g_dstate.p_debugger_task, SIG_TARGET_EXITED);
                 // TODO: Switch to DeleteTask() once process_remote_commands() is no longer called by the target process
-                RemTask(NULL);
-                return;  // We don't get here anyway...
+                RemTask(NULL);  // will not return
 
             case MSG_QUIT:
                 send_ack_msg(NULL, 0);
-                quit_debugger(RETURN_OK);
+                quit_debugger(RETURN_OK);  // will not return
 
             default:
                 LOG(CRIT, "Internal error: unknown command %d", msg.type);
-                quit_debugger(RETURN_FAIL);
+                quit_debugger(RETURN_FAIL);  // will not return
         }
     }
 }

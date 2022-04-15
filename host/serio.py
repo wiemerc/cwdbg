@@ -10,7 +10,7 @@ import socket
 from ctypes import BigEndianStructure, c_uint8, c_uint16, sizeof
 from enum import IntEnum
 from loguru import logger
-from typing import Optional
+from typing import Optional, Tuple
 
 from debugger import TargetInfo, TargetStates
 
@@ -71,24 +71,29 @@ class ServerConnection:
 
 
     # TODO: Move class / this method to debugger.py just keep send_message() / receive_message() here
-    def execute_command(self, command: c_uint8, data: Optional[bytes] = None) -> Optional[TargetInfo]:
+    # TODO: Return data class with error code and optionally the TargetInfo object and / or any data
+    def execute_command(self, command: c_uint8, data: Optional[bytes] = None) -> Tuple[int, Optional[TargetInfo]]:
         logger.debug(f"Sending message {MsgTypes(command).name}")
         self.send_message(command, data)
         msg, data = self.recv_message()
-        if msg.type == MsgTypes.MSG_ACK:
+        if msg.type in (MsgTypes.MSG_ACK, MsgTypes.MSG_NACK):
             if msg.seqnum == self._next_seqnum:
-                logger.debug(f"Received ACK for message {MsgTypes(command).name}")
+                logger.debug(f"Received ACK / NACK for message {MsgTypes(command).name}")
                 self._next_seqnum += 1
+                if msg.type == MsgTypes.MSG_ACK:
+                    error_code = 0
+                else:
+                    error_code = data[0]
             else:
                 raise ConnectionError(
-                    "Received ACK for message {} with wrong sequence number, expected {}, got {}".format(
+                    "Received ACK / NACK for message {} with wrong sequence number, expected {}, got {}".format(
                         MsgTypes(command).name,
                         self._next_seqnum,
                         msg.seqnum
                     )
                 )
         else:
-            raise ConnectionError(f"Received unexpected message of type {MsgTypes(msg.type).name} from server instead of the expected ACK")
+            raise ConnectionError(f"Received unexpected message of type {MsgTypes(msg.type).name} from server instead of the expected ACK / NACK")
 
         # If we just sent a command that causes the target to run / single-step / terminate, we need to wait for the MSG_TARGET_STOPPED message.
         if command in (MsgTypes.MSG_RUN, MsgTypes.MSG_STEP, MsgTypes.MSG_CONT, MsgTypes.MSG_KILL):
@@ -100,10 +105,11 @@ class ServerConnection:
                 target_info = TargetInfo.from_buffer(data)
                 logger.info(f"Target has stopped, state = {target_info.target_state}")
                 self.target_state = target_info.target_state
-                return target_info
+                return error_code, target_info
             else:
                 raise ConnectionError(f"Received unexpected message {MsgTypes(msg.type).name} from server, expected MSG_TARGET_STOPPED")
-
+        else:
+            return error_code, None
 
 
     def send_message(self, msg_type: c_uint8, data: Optional[bytes] = None):

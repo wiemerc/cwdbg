@@ -14,7 +14,7 @@ import struct
 from loguru import logger
 from typing import Optional, Tuple
 
-from debugger import TargetInfo, TargetStates
+from debugger import ErrorCodes, TargetInfo, TargetStates
 from serio import ServerConnection, MsgTypes
 from stabslib import ProgramWithDebugInfo
 
@@ -41,6 +41,7 @@ def process_cli_command(
     cmd_line: str
 ) -> Tuple[Optional[str], Optional[TargetInfo]]:
     parser = ThrowingArgumentParser(prog='', description="CWDebug, a source-level debugger for the AmigaOS", add_help=False)
+    # TODO: Rewrite with a table of commands, their argument(s) and handler functions
     # TODO: Catch -h / --help in sub-parsers, probably by adding a custom action, see https://stackoverflow.com/questions/58367375/can-i-prevent-argparse-from-exiting-if-the-user-specifies-h
     # TODO: Align commands with GDB
     # TODO: Implement connect / disconnect commands
@@ -57,6 +58,11 @@ def process_cli_command(
              "string = function name",
     )
     subparsers.add_parser('continue', aliases=('c', 'cont'), help="Continue target")
+    subparsers.add_parser('delete', aliases=('d', 'del'), help="Delete breakpoint").add_argument(
+        'number',
+        type=int,
+        help="Breakpoint number",
+    )
     subparsers.add_parser('help', aliases=('h',), help="Show help message")
     subparsers.add_parser('kill', aliases=('k',), help="Kill target")
     subparsers.add_parser('quit', aliases=('q',), help="Quit debugger", add_help=True)
@@ -83,31 +89,41 @@ def process_cli_command(
             else:
                 # TODO: Implement <file name>:<line number> as location
                 return "Invalid format of breakpoint location", None
-            server_conn.execute_command(MsgTypes.MSG_SET_BP, struct.pack(FMT_UINT32, offset))
-            return None, None
+            error_code, _ = server_conn.execute_command(MsgTypes.MSG_SET_BP, struct.pack(FMT_UINT32, offset))
+            if error_code == 0:
+                return "Breakpoint set", None
+            else:
+                return f"Setting breakpoint failed: {ErrorCodes(error_code).name}", None
+
+        elif args.command in ('delete', 'del', 'd'):
+            error_code, _ = server_conn.execute_command(MsgTypes.MSG_CLEAR_BP, struct.pack(FMT_UINT32, args.number))
+            if error_code == 0:
+                return "Breakpoint cleared", None
+            else:
+                return f"Clearing breakpoint failed: {ErrorCodes(error_code).name}", None
 
         elif args.command in ('continue', 'cont', 'c'):
-            target_info = server_conn.execute_command(MsgTypes.MSG_CONT)
+            _, target_info = server_conn.execute_command(MsgTypes.MSG_CONT)
             return _get_target_status_for_ui(target_info)
 
         elif args.command in ('help', 'h'):
             return parser.format_help(), None
 
         elif args.command in ('kill', 'k'):
-            target_info =server_conn.execute_command(MsgTypes.MSG_KILL)
+            _, target_info =server_conn.execute_command(MsgTypes.MSG_KILL)
             return _get_target_status_for_ui(target_info)
 
         elif args.command in ('quit', 'q'):
-            server_conn.execute_command(MsgTypes.MSG_QUIT)
+            _, _ = server_conn.execute_command(MsgTypes.MSG_QUIT)
             raise QuitDebuggerException()
 
         elif args.command in ('run', 'r'):
-            target_info = server_conn.execute_command(MsgTypes.MSG_RUN)
+            _, target_info = server_conn.execute_command(MsgTypes.MSG_RUN)
             return _get_target_status_for_ui(target_info)
 
         elif args.command in ('step', 's'):
             # TODO: Implement single-stepping on C level (next line instead of next instruction)
-            target_info = server_conn.execute_command(MsgTypes.MSG_STEP)
+            _, target_info = server_conn.execute_command(MsgTypes.MSG_STEP)
             return _get_target_status_for_ui(target_info)
 
     except QuitDebuggerException:
