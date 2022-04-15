@@ -38,6 +38,8 @@ void process_cli_commands(TaskContext *p_task_ctx)
     uint32_t            offset;                 // offset from entry point
     void                *p_maddr;               // address of memory block to print
     uint32_t            msize;                  // size of memory block
+    uint32_t            bp_num;                 // number of breakpoint
+    BreakPoint          *p_bpoint;              // pointer to breakpoint
 
     if (g_dstate.target_state & TS_RUNNING)
         print_instr(p_task_ctx);
@@ -58,25 +60,40 @@ void process_cli_commands(TaskContext *p_task_ctx)
 
             case 'b':   // set breakpoint
                 if (nargs != 2) {
-                    LOG(ERROR, "command 'b' requires an address");
+                    LOG(ERROR, "Command 'b' requires an address");
                     break;
                 }
                 if (sscanf(p_args[1], "%x", &offset) == 0) {
-                    LOG(ERROR, "invalid format of breakpoint offset");
+                    LOG(ERROR, "Invalid format of breakpoint offset");
                     break;
                 }
                 set_breakpoint(offset);
+                break;
+
+            case 'd':   // delete breakpoint
+                if (nargs != 2) {
+                    LOG(ERROR, "Command 'd' requires a breakpoint number");
+                    break;
+                }
+                if (sscanf(p_args[1], "%d", &bp_num) == 0) {
+                    LOG(ERROR, "Invalid format of breakpoint number");
+                    break;
+                }
+                if ((p_bpoint = find_bpoint_by_num(&g_dstate.bpoints, bp_num)) == 0) {
+                    LOG(ERROR, "Breakpoint #%d not found", bp_num);
+                    break;
+                }
+                clear_breakpoint(p_bpoint);
                 break;
 
             case 'k':   // kill (abort) target
                 // TODO: restore breakpoint if necessary
                 g_dstate.target_state = TS_KILLED;
                 Signal(g_dstate.p_debugger_task, SIG_TARGET_EXITED);
-                RemTask(NULL);
-                return;  // We don't get here anyway...
+                RemTask(NULL);  // will not return
 
             case 'q':   // quit debugger
-                quit_debugger(RETURN_OK);
+                quit_debugger(RETURN_OK);  // will not return
 
             case 'c':   // continue target
                 set_continue_mode(p_task_ctx);
@@ -89,7 +106,7 @@ void process_cli_commands(TaskContext *p_task_ctx)
 
             case 'i':   // inspect ...
                 if (nargs != 2) {
-                    LOG(ERROR, "command 'i' requires a subcommand, either 'r' or 's'");
+                    LOG(ERROR, "Command 'i' requires a subcommand, either 'r' or 's'");
                     break;
                 }
                 switch (p_args[1][0]) {
@@ -100,28 +117,29 @@ void process_cli_commands(TaskContext *p_task_ctx)
                         print_stack(p_task_ctx, g_dstate.p_target_task->tc_SPUpper - 2);
                         break;
                     default:
-                        LOG(ERROR, "unknown command 'i %c'", p_args[1][0]);
+                        LOG(ERROR, "Unknown command 'i %c'", p_args[1][0]);
                 }
                 break;
 
             case 'p':   // print memory
                 if (nargs != 3) {
-                    LOG(ERROR, "command 'p' requires address and size");
+                    LOG(ERROR, "Command 'p' requires address and size");
                     break;
                 }
                 if ((sscanf(p_args[1], "%p", &p_maddr) == 0) || (sscanf(p_args[2], "%d", &msize) == 0)) {
-                    LOG(ERROR, "invalid format for address / size");
+                    LOG(ERROR, "Invalid format for address / size");
                     break;
                 }
                 print_memory(p_maddr, msize);
                 break;
 
-            case 'd':   // disassemble memory
+            case 'x':   // disassemble memory
                 // TODO: implement disassembling the next n instructions
+                // TODO: combine 'p' command with 'x', like 'x' in GDB
                 break;
 
             default:
-                LOG(ERROR, "unknown command '%c'", p_args[0][0]);
+                LOG(ERROR, "Unknown command '%c'", p_args[0][0]);
                 break;
         }
     }
@@ -151,7 +169,7 @@ static uint8_t parse_args(char *p_cmd, char **pp_args)
 static int is_correct_target_state_for_command(char cmd)
 {
     // keep list of commands (the 1st argument of strchr()) in sync with process_cli_commands()
-    if (!(g_dstate.target_state & TS_RUNNING) && (strchr("cs\nik", cmd) != NULL)) {
+    if (!(g_dstate.target_state & TS_RUNNING) && (strchr("cs\nikx", cmd) != NULL)) {
         LOG(ERROR, "incorrect state for command '%c': target is not yet running", cmd);
         return 0;
     }
