@@ -81,7 +81,8 @@ void run_target()
         NP_CloseOutput, FALSE,
         // TODO: The startup code used by GCC checks if pr_CLI is NULL and, if so, waits for the Workbench startup
         // message and therefore hangs. So we have to specify NP_Cli = TRUE, but this causes the CLI process, in which
-        // the debugger was launched, to terminate upon exit. Should we hand-craft our own CLI struct in wrap_target()?
+        // the debugger was launched, to terminate upon exit (sometimes closing the console windows with it).
+        // Should we hand-craft our own CLI struct in wrap_target()?
         NP_Cli, TRUE
     )) == NULL) {
         LOG(CRIT, "Could not start target as process");
@@ -101,12 +102,11 @@ void run_target()
 
 void set_continue_mode(TaskContext *p_task_ctx)
 {
-    // If we continue from a breakpoint, it has to be restored first, so we
-    // single-step the original instruction at the breakpoint and remember
-    // to restore the breakpoint afterwards (see handle_single_step() below).
-    // TODO: just continue in case of a deleted breakpoint
+    // If we continue from a breakpoint which hasn't been deleted (so g_dstate.p_current_bpoint still points to it),
+    // it has to be restored first, so we single-step the original instruction at the breakpoint and remember to
+    // restore the breakpoint afterwards (see handle_single_step() below).
     g_dstate.target_state &= ~TS_SINGLE_STEPPING;
-    if (g_dstate.target_state & TS_STOPPED_BY_BREAKPOINT) {
+    if ((g_dstate.target_state & TS_STOPPED_BY_BREAKPOINT) && g_dstate.p_current_bpoint) {
         p_task_ctx->reg_sr &= 0xbfff;    // clear T0
         p_task_ctx->reg_sr |= 0x8700;    // set T1 and interrupt mask
     }
@@ -116,10 +116,9 @@ void set_continue_mode(TaskContext *p_task_ctx)
 void set_single_step_mode(TaskContext *p_task_ctx)
 {
     g_dstate.target_state |= TS_SINGLE_STEPPING;
-    // In trace mode, *all* interrupts must be disabled (except for the NMI),
-    // otherwise OS code could be executed while the trace bit is still set,
-    // which would cause the OS exception handler (an alert) to be executed instead
-    // of ours => value 0x8700 is ORed with the SR.
+    // In trace mode, *all* interrupts must be disabled (except for the NMI), otherwise OS code could be executed while
+    // the trace bit is still set, which would cause the OS exception handler (an alert) to be executed instead of ours
+    // => value 0x8700 is ORed with the SR.
     p_task_ctx->reg_sr &= 0xbfff;    // clear T0
     p_task_ctx->reg_sr |= 0x8700;    // set T1 and interrupt mask
 }
@@ -158,12 +157,27 @@ uint8_t set_breakpoint(uint32_t offset)
     p_bpoint->count     = 0;
     AddTail(&g_dstate.bpoints, (struct Node *) p_bpoint);
     *((uint16_t *) p_baddr) = TRAP_OPCODE;
-    LOG(DEBUG, "Breakpoint set at entry + 0x%08lx", offset);
+    LOG(DEBUG, "Breakpoint #%ld at entry + 0x%08lx set", p_bpoint->num, offset);
     return 0;
 }
 
 
-BreakPoint *find_bpoint_by_addr(struct List *p_bpoints, void *p_baddr)
+void clear_breakpoint(BreakPoint *p_bpoint)
+{
+    Remove((struct Node *) p_bpoint);
+    FreeVec(p_bpoint);
+    if (g_dstate.p_current_bpoint == p_bpoint)
+        g_dstate.p_current_bpoint = NULL;
+    LOG(
+        DEBUG,
+        "Breakpoint #%ld at entry + 0x%08lx cleared",
+        p_bpoint->num,
+        ((uint32_t) p_bpoint->p_address - (uint32_t) g_dstate.p_entry)
+    );
+}
+
+
+BreakPoint *find_bpoint_by_addr(struct List *p_bpoints, void *p_bp_addr)
 {
     BreakPoint *p_bpoint;
 
@@ -172,7 +186,23 @@ BreakPoint *find_bpoint_by_addr(struct List *p_bpoints, void *p_baddr)
     for (p_bpoint = (BreakPoint *) p_bpoints->lh_Head;
          p_bpoint != (BreakPoint *) p_bpoints->lh_Tail;
          p_bpoint = (BreakPoint *) p_bpoint->node.ln_Succ) {
-        if (p_bpoint->p_address == p_baddr)
+        if (p_bpoint->p_address == p_bp_addr)
+            return p_bpoint;
+    }
+    return NULL;
+}
+
+
+BreakPoint *find_bpoint_by_num(struct List *p_bpoints, uint32_t bp_num)
+{
+    BreakPoint *p_bpoint;
+
+    if (IsListEmpty(p_bpoints))
+        return NULL;
+    for (p_bpoint = (BreakPoint *) p_bpoints->lh_Head;
+         p_bpoint != (BreakPoint *) p_bpoints->lh_Tail;
+         p_bpoint = (BreakPoint *) p_bpoint->node.ln_Succ) {
+        if (p_bpoint->num == bp_num)
             return p_bpoint;
     }
     return NULL;
@@ -217,11 +247,20 @@ void handle_breakpoint(TaskContext *p_task_ctx)
         p_task_ctx->p_reg_pc = p_baddr;
         *((uint16_t *) p_baddr) = p_bpoint->opcode;
         ++p_bpoint->count;
-        LOG(INFO, "Target has hit breakpoint #%ld at entry + 0x%08lx, hit count = %ld", 
-            p_bpoint->num, ((uint32_t) p_baddr - (uint32_t) g_dstate.p_entry), p_bpoint->count);
+        LOG(
+            INFO,
+            "Target has hit breakpoint #%ld at entry + 0x%08lx, hit count = %ld", 
+            p_bpoint->num,
+            ((uint32_t) p_baddr - (uint32_t) g_dstate.p_entry),
+            p_bpoint->count
+        );
     }
     else {
-        LOG(CRIT, "Internal error: target has hit unknown breakpoint at entry + 0x%08lx", ((uint32_t) p_baddr - (uint32_t) g_dstate.p_entry));
+        LOG(
+            CRIT,
+            "Internal error: target has hit unknown breakpoint at entry + 0x%08lx",
+            ((uint32_t) p_baddr - (uint32_t) g_dstate.p_entry)
+        );
         quit_debugger(RETURN_FAIL);
     }
 
