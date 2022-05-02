@@ -7,10 +7,11 @@
 
 import socket
 
+from dataclasses import dataclass
 from ctypes import BigEndianStructure, c_uint8, c_uint16, sizeof
 from enum import IntEnum
 from loguru import logger
-from typing import Optional, Tuple
+from typing import Optional
 
 from debugger import TargetInfo, TargetStates
 
@@ -57,6 +58,13 @@ class ConnectionError(Exception):
     pass
 
 
+@dataclass
+class CommandResult:
+    error_code: int
+    data: bytes | None = None
+    target_info: TargetInfo | None = None
+
+
 class ServerConnection:
     def __init__(self, host: str, port: int):
         logger.info("Connecting to server...")
@@ -70,20 +78,18 @@ class ServerConnection:
         self.target_state = TargetStates.TS_IDLE
 
 
-    # TODO: Move class / this method to debugger.py just keep send_message() / receive_message() here
-    # TODO: Return data class with error code and optionally the TargetInfo object and / or any data
-    def execute_command(self, command: c_uint8, data: Optional[bytes] = None) -> Tuple[int, Optional[TargetInfo]]:
+    def execute_command(self, command: c_uint8, data: bytes | None = None) -> CommandResult:
         logger.debug(f"Sending message {MsgTypes(command).name}")
-        self.send_message(command, data)
-        msg, data = self.recv_message()
+        self._send_message(command, data)
+        msg, data = self._recv_message()
         if msg.type in (MsgTypes.MSG_ACK, MsgTypes.MSG_NACK):
             if msg.seqnum == self._next_seqnum:
                 logger.debug(f"Received ACK / NACK for message {MsgTypes(command).name}")
                 self._next_seqnum += 1
                 if msg.type == MsgTypes.MSG_ACK:
-                    error_code = 0
+                    result = CommandResult(error_code=0, data=data)
                 else:
-                    error_code = data[0]
+                    result = CommandResult(error_code=data[0])
             else:
                 raise ConnectionError(
                     "Received ACK / NACK for message {} with wrong sequence number, expected {}, got {}".format(
@@ -98,21 +104,26 @@ class ServerConnection:
         # If we just sent a command that causes the target to run / single-step / terminate, we need to wait for the MSG_TARGET_STOPPED message.
         if command in (MsgTypes.MSG_RUN, MsgTypes.MSG_STEP, MsgTypes.MSG_CONT, MsgTypes.MSG_KILL):
             logger.info("Waiting for MSG_TARGET_STOPPED message from server...")
-            msg, data = self.recv_message()
+            msg, data = self._recv_message()
             if msg.type == MsgTypes.MSG_TARGET_STOPPED:
                 logger.debug("Received MSG_TARGET_STOPPED message from server, sending ACK")
-                self.send_message(MsgTypes.MSG_ACK)
+                self._send_message(MsgTypes.MSG_ACK)
                 target_info = TargetInfo.from_buffer(data)
                 logger.info(f"Target has stopped, state = {target_info.target_state}")
                 self.target_state = target_info.target_state
-                return error_code, target_info
+                result.target_info = target_info
+                return result
             else:
                 raise ConnectionError(f"Received unexpected message {MsgTypes(msg.type).name} from server, expected MSG_TARGET_STOPPED")
         else:
-            return error_code, None
+            return result
 
 
-    def send_message(self, msg_type: c_uint8, data: Optional[bytes] = None):
+    def close(self):
+        self._conn.close()
+
+
+    def _send_message(self, msg_type: c_uint8, data: Optional[bytes] = None):
         try:
             msg = ProtoMessage(
                 seqnum=self._next_seqnum,
@@ -136,7 +147,7 @@ class ServerConnection:
             raise ConnectionError(f"Could not send message to server") from e
 
 
-    def recv_message(self):
+    def _recv_message(self):
         try:
             # check if there is already a complete SLIP frame in the buffer, if not 
             # read data from the connection until we have a complete frame
@@ -161,7 +172,3 @@ class ServerConnection:
             return msg, data
         except Exception as e:
             raise ConnectionError(f"Could not read message from server") from e
-
-
-    def close(self):
-        self._conn.close()

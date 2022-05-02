@@ -89,42 +89,42 @@ def process_cli_command(
             else:
                 # TODO: Implement <file name>:<line number> as location
                 return "Invalid format of breakpoint location", None
-            error_code, _ = server_conn.execute_command(MsgTypes.MSG_SET_BP, struct.pack(FMT_UINT32, offset))
-            if error_code == 0:
+            result = server_conn.execute_command(MsgTypes.MSG_SET_BP, struct.pack(FMT_UINT32, offset))
+            if result.error_code == 0:
                 return "Breakpoint set", None
             else:
-                return f"Setting breakpoint failed: {ErrorCodes(error_code).name}", None
+                return f"Setting breakpoint failed: {ErrorCodes(result.result.error_code).name}", None
 
         elif args.command in ('delete', 'del', 'd'):
-            error_code, _ = server_conn.execute_command(MsgTypes.MSG_CLEAR_BP, struct.pack(FMT_UINT32, args.number))
-            if error_code == 0:
+            result = server_conn.execute_command(MsgTypes.MSG_CLEAR_BP, struct.pack(FMT_UINT32, args.number))
+            if result.error_code == 0:
                 return "Breakpoint cleared", None
             else:
-                return f"Clearing breakpoint failed: {ErrorCodes(error_code).name}", None
+                return f"Clearing breakpoint failed: {ErrorCodes(result.error_code).name}", None
 
         elif args.command in ('continue', 'cont', 'c'):
-            _, target_info = server_conn.execute_command(MsgTypes.MSG_CONT)
-            return _get_target_status_for_ui(target_info)
+            result = server_conn.execute_command(MsgTypes.MSG_CONT)
+            return _get_target_status_for_ui(result.target_info)
 
         elif args.command in ('help', 'h'):
             return parser.format_help(), None
 
         elif args.command in ('kill', 'k'):
-            _, target_info =server_conn.execute_command(MsgTypes.MSG_KILL)
-            return _get_target_status_for_ui(target_info)
+            result =server_conn.execute_command(MsgTypes.MSG_KILL)
+            return _get_target_status_for_ui(result.target_info)
 
         elif args.command in ('quit', 'q'):
-            _, _ = server_conn.execute_command(MsgTypes.MSG_QUIT)
+            result = server_conn.execute_command(MsgTypes.MSG_QUIT)
             raise QuitDebuggerException()
 
         elif args.command in ('run', 'r'):
-            _, target_info = server_conn.execute_command(MsgTypes.MSG_RUN)
-            return _get_target_status_for_ui(target_info)
+            result = server_conn.execute_command(MsgTypes.MSG_RUN)
+            return _get_target_status_for_ui(result.target_info)
 
         elif args.command in ('step', 's'):
             # TODO: Implement single-stepping on C level (next line instead of next instruction)
-            _, target_info = server_conn.execute_command(MsgTypes.MSG_STEP)
-            return _get_target_status_for_ui(target_info)
+            result = server_conn.execute_command(MsgTypes.MSG_STEP)
+            return _get_target_status_for_ui(result.target_info)
 
     except QuitDebuggerException:
         raise
