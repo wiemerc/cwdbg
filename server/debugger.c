@@ -30,6 +30,9 @@ static void wrap_target();
 //
 // exported routines
 //
+// TODO: Have the routines return an error code instead of calling quit_debugger() so that
+//       process_remote_commands() can inform the host
+// TODO: Create a target class with the functions here as methods, if applicable
 
 int load_and_init_target(const char *p_program_path)
 {
@@ -146,6 +149,7 @@ uint8_t set_breakpoint(uint32_t offset)
     void       *p_baddr;
 
     // TODO: Check if offset is valid
+    // TODO: Use attribute of target / debugger class instead of lh_Type for the next breakpoint number once we've made the code object-oriented
     if ((p_bpoint = AllocVec(sizeof(BreakPoint), 0)) == NULL) {
         LOG(ERROR, "Could not allocate memory for breakpoint");
         return ERROR_NOT_ENOUGH_MEMORY;
@@ -164,6 +168,7 @@ uint8_t set_breakpoint(uint32_t offset)
 
 void clear_breakpoint(BreakPoint *p_bpoint)
 {
+    *((uint16_t *) p_bpoint->p_address) = p_bpoint->opcode;
     Remove((struct Node *) p_bpoint);
     FreeVec(p_bpoint);
     if (g_dstate.p_current_bpoint == p_bpoint)
