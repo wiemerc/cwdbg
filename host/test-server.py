@@ -8,7 +8,7 @@
 import pytest
 
 from debugger import ErrorCodes, TargetStates
-from serio import MsgTypes, ServerConnection
+from serio import CmdClearBreakpoint, CmdContinue, CmdQuit, CmdRun, CmdSetBreakpoint, ServerCommandError, ServerConnection
 
 
 @pytest.fixture(scope='module')
@@ -23,33 +23,32 @@ def test_connect(server_conn: ServerConnection):
 
 
 def test_set_bpoint(server_conn: ServerConnection):
-    result = server_conn.execute_command(MsgTypes.MSG_SET_BP, b'\x00\x00\x00\x24')
-    assert result.error_code == 0
+    CmdSetBreakpoint(bpoint_offset=0x24).execute(server_conn)
 
 
 def test_clear_bpoint(server_conn: ServerConnection):
-    result = server_conn.execute_command(MsgTypes.MSG_CLEAR_BP, b'\x00\x00\x00\x01')
-    assert result.error_code == 0
+    CmdClearBreakpoint(bpoint_num=1).execute(server_conn)
 
 
 def test_clear_bpoint_wrong_number(server_conn: ServerConnection):
-    result = server_conn.execute_command(MsgTypes.MSG_CLEAR_BP, b'\x00\x00\x00\x02')
-    assert result.error_code == ErrorCodes.ERROR_UNKNOWN_BREAKPOINT.value
+    with pytest.raises(ServerCommandError):
+        cmd = CmdClearBreakpoint(bpoint_num=2).execute(server_conn)
+        assert cmd.error_code == ErrorCodes.ERROR_UNKNOWN_BREAKPOINT.value
 
 
 def test_run_to_bpoint(server_conn: ServerConnection):
-    server_conn.execute_command(MsgTypes.MSG_SET_BP, b'\x00\x00\x00\x24')
-    result = server_conn.execute_command(MsgTypes.MSG_RUN)
-    assert result.target_info is not None
-    assert result.target_info.target_state == TargetStates.TS_RUNNING | TargetStates.TS_STOPPED_BY_BREAKPOINT
+    CmdSetBreakpoint(bpoint_offset=0x24).execute(server_conn)
+    cmd = CmdRun().execute(server_conn)
+    assert cmd.target_info is not None
+    assert cmd.target_info.target_state == TargetStates.TS_RUNNING | TargetStates.TS_STOPPED_BY_BREAKPOINT
 
 
 def test_continue_from_bpoint(server_conn: ServerConnection):
-    server_conn.execute_command(MsgTypes.MSG_CLEAR_BP, b'\x00\x00\x00\x02')
-    result = server_conn.execute_command(MsgTypes.MSG_CONT)
-    assert result.target_info is not None
-    assert result.target_info.target_state == TargetStates.TS_EXITED
-    assert result.target_info.exit_code == 0
+    CmdClearBreakpoint(bpoint_num=2).execute(server_conn)
+    cmd = CmdContinue().execute(server_conn)
+    assert cmd.target_info is not None
+    assert cmd.target_info.target_state == TargetStates.TS_EXITED
+    assert cmd.target_info.exit_code == 0
 
 
 def test_disconnect(server_conn: ServerConnection):
@@ -57,5 +56,4 @@ def test_disconnect(server_conn: ServerConnection):
 
 
 def test_quit(server_conn: ServerConnection):
-    result = server_conn.execute_command(MsgTypes.MSG_QUIT)
-    assert result.error_code == 0
+    CmdQuit().execute(server_conn)

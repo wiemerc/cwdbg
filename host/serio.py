@@ -6,20 +6,22 @@
 
 
 import socket
+import struct
 
 from dataclasses import dataclass
 from ctypes import BigEndianStructure, c_uint8, c_uint16, sizeof
 from enum import IntEnum
 from loguru import logger
-from typing import Optional
 
-from debugger import TargetInfo, TargetStates
+from debugger import ErrorCodes, TargetInfo, TargetStates
 
 
 #
 # constants
 #
 MAX_FRAME_SIZE = 4096       # maximum number of bytes we try to read at once
+
+FMT_UINT32 = '>I'
 
 # SLIP special characters
 SLIP_END           = b'\xc0'
@@ -54,15 +56,12 @@ class ProtoMessage(BigEndianStructure):
     )
 
 
-class ConnectionError(Exception):
+class ConnectionError(RuntimeError):
     pass
 
 
-@dataclass
-class CommandResult:
-    error_code: int
-    data: bytes | None = None
-    target_info: TargetInfo | None = None
+class ServerCommandError(RuntimeError):
+    pass
 
 
 class ServerConnection:
@@ -73,57 +72,15 @@ class ServerConnection:
             self._next_seqnum = 0
         except ConnectionRefusedError as e:
             raise RuntimeError(f"Could not connect to server '{host}:{port}'") from e
-        logger.debug("Sending MSG_INIT message to server")
-        self.execute_command(MsgTypes.MSG_INIT)
-        self.target_state = TargetStates.TS_IDLE
 
-
-    def execute_command(self, command: c_uint8, data: bytes | None = None) -> CommandResult:
-        logger.debug(f"Sending message {MsgTypes(command).name}")
-        self._send_message(command, data)
-        msg, data = self._recv_message()
-        if msg.type in (MsgTypes.MSG_ACK, MsgTypes.MSG_NACK):
-            if msg.seqnum == self._next_seqnum:
-                logger.debug(f"Received ACK / NACK for message {MsgTypes(command).name}")
-                self._next_seqnum += 1
-                if msg.type == MsgTypes.MSG_ACK:
-                    result = CommandResult(error_code=0, data=data)
-                else:
-                    result = CommandResult(error_code=data[0])
-            else:
-                raise ConnectionError(
-                    "Received ACK / NACK for message {} with wrong sequence number, expected {}, got {}".format(
-                        MsgTypes(command).name,
-                        self._next_seqnum,
-                        msg.seqnum
-                    )
-                )
-        else:
-            raise ConnectionError(f"Received unexpected message of type {MsgTypes(msg.type).name} from server instead of the expected ACK / NACK")
-
-        # If we just sent a command that causes the target to run / single-step / terminate, we need to wait for the MSG_TARGET_STOPPED message.
-        if command in (MsgTypes.MSG_RUN, MsgTypes.MSG_STEP, MsgTypes.MSG_CONT, MsgTypes.MSG_KILL):
-            logger.info("Waiting for MSG_TARGET_STOPPED message from server...")
-            msg, data = self._recv_message()
-            if msg.type == MsgTypes.MSG_TARGET_STOPPED:
-                logger.debug("Received MSG_TARGET_STOPPED message from server, sending ACK")
-                self._send_message(MsgTypes.MSG_ACK)
-                target_info = TargetInfo.from_buffer(data)
-                logger.info(f"Target has stopped, state = {target_info.target_state}")
-                self.target_state = target_info.target_state
-                result.target_info = target_info
-                return result
-            else:
-                raise ConnectionError(f"Received unexpected message {MsgTypes(msg.type).name} from server, expected MSG_TARGET_STOPPED")
-        else:
-            return result
+        CmdInit().execute(self)
 
 
     def close(self):
         self._conn.close()
 
 
-    def _send_message(self, msg_type: c_uint8, data: Optional[bytes] = None):
+    def send_message(self, msg_type: c_uint8, data: bytes | None = None):
         try:
             msg = ProtoMessage(
                 seqnum=self._next_seqnum,
@@ -140,6 +97,12 @@ class ServerConnection:
             buffer = buffer.replace(SLIP_END, SLIP_ESC + SLIP_ESCAPED_END)
             buffer += SLIP_END
 
+            logger.debug("Sending message to server: seqnum={}, checksum={}, type={}, length={}".format(
+                msg.seqnum,
+                hex(msg.checksum),
+                MsgTypes(msg.type).name,
+                msg.length
+            ))
             self._conn.send(buffer)
             if msg_type in (MsgTypes.MSG_ACK, MsgTypes.MSG_NACK):
                 self._next_seqnum += 1
@@ -147,7 +110,7 @@ class ServerConnection:
             raise ConnectionError(f"Could not send message to server") from e
 
 
-    def _recv_message(self):
+    def recv_message(self) -> tuple[c_uint8, bytes | None]:
         try:
             # check if there is already a complete SLIP frame in the buffer, if not 
             # read data from the connection until we have a complete frame
@@ -163,12 +126,93 @@ class ServerConnection:
 
             msg = ProtoMessage.from_buffer(buffer)
             data = buffer[sizeof(ProtoMessage) : sizeof(ProtoMessage) + msg.length]
-            logger.debug("Message from server received: seqnum={}, checksum={}, type={}, length={}".format(
+            logger.debug("Received message from server: seqnum={}, checksum={}, type={}, length={}".format(
                 msg.seqnum,
                 hex(msg.checksum),
                 MsgTypes(msg.type).name,
                 msg.length
             ))
-            return msg, data
+
+            # TODO: Check that checksum is correct first
+
+            if msg.type in (MsgTypes.MSG_ACK, MsgTypes.MSG_NACK):
+                if msg.seqnum == self._next_seqnum:
+                    logger.debug("Received ACK / NACK with correct sequence number")
+                    self._next_seqnum += 1
+                else:
+                    raise ConnectionError(
+                        f"Received ACK / NACK with wrong sequence number, expected {self._next_seqnum}, got {msg.seqnum}"
+                    )
+
+            return msg.type, data
         except Exception as e:
             raise ConnectionError(f"Could not read message from server") from e
+
+
+@dataclass
+class ServerCommand:
+    msg_type: c_uint8
+    data: bytes | None = None
+    error_code: int = -1
+    target_info: TargetInfo | None = None
+
+    def execute(self, server_conn: ServerConnection):
+        logger.debug(f"Sending message {MsgTypes(self.msg_type).name}")
+        server_conn.send_message(self.msg_type, self.data)
+        msg_type, data = server_conn.recv_message()
+        if msg_type not in (MsgTypes.MSG_ACK, MsgTypes.MSG_NACK):
+            raise ConnectionError(f"Received unexpected message of type {MsgTypes(msg_type).name} from server instead of the expected ACK / NACK")
+        if msg_type == MsgTypes.MSG_ACK:
+            self.error_code = 0
+            self.data = data
+        else:
+            self.error_code = data[0]
+            raise ServerCommandError(f"Server command failed with error {ErrorCodes(self.error_code).name} ({self.error_code})")
+
+        # If we just sent a message that caused the target to stop / terminate, we need to wait for the MSG_TARGET_STOPPED message.
+        if self.msg_type in (MsgTypes.MSG_RUN, MsgTypes.MSG_STEP, MsgTypes.MSG_CONT, MsgTypes.MSG_KILL):
+            logger.info("Waiting for MSG_TARGET_STOPPED message from server...")
+            msg_type, data = server_conn.recv_message()
+            if msg_type == MsgTypes.MSG_TARGET_STOPPED:
+                logger.debug("Received MSG_TARGET_STOPPED message from server, sending ACK")
+                server_conn.send_message(MsgTypes.MSG_ACK)
+                self.target_info = TargetInfo.from_buffer(data)
+                logger.info(f"Target has stopped, state = {self.target_info.target_state}")
+            else:
+                raise ConnectionError(f"Received unexpected message {MsgTypes(msg_type).name} from server, expected MSG_TARGET_STOPPED")
+        return self
+
+
+class CmdClearBreakpoint(ServerCommand):
+    def __init__(self, bpoint_num: int):
+        super().__init__(MsgTypes.MSG_CLEAR_BP, struct.pack(FMT_UINT32, bpoint_num))
+
+
+class CmdContinue(ServerCommand):
+    def __init__(self):
+        super().__init__(MsgTypes.MSG_CONT)
+
+
+class CmdInit(ServerCommand):
+    def __init__(self):
+        super().__init__(MsgTypes.MSG_INIT)
+
+
+class CmdQuit(ServerCommand):
+    def __init__(self):
+        super().__init__(MsgTypes.MSG_QUIT)
+
+
+class CmdRun(ServerCommand):
+    def __init__(self):
+        super().__init__(MsgTypes.MSG_RUN)
+
+
+class CmdSetBreakpoint(ServerCommand):
+    def __init__(self, bpoint_offset: int):
+        super().__init__(MsgTypes.MSG_SET_BP, struct.pack(FMT_UINT32, bpoint_offset))
+
+
+class CmdStep(ServerCommand):
+    def __init__(self):
+        super().__init__(MsgTypes.MSG_STEP)
