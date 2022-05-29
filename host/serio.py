@@ -73,7 +73,7 @@ class ServerConnection:
         except ConnectionRefusedError as e:
             raise RuntimeError(f"Could not connect to server '{host}:{port}'") from e
 
-        CmdInit().execute(self)
+        SrvInit().execute(self)
 
 
     def close(self):
@@ -149,6 +149,11 @@ class ServerConnection:
             raise ConnectionError(f"Could not read message from server") from e
 
 
+#
+# Classes for the debugger commands
+# ServerCommand itself implements the commands by sending and receiving the appropriate protocol messages. The
+# derived classes just set the message type and serialize the command's arguments, if any.
+#
 @dataclass
 class ServerCommand:
     msg_type: c_uint8
@@ -156,7 +161,7 @@ class ServerCommand:
     error_code: int = -1
     target_info: TargetInfo | None = None
 
-    def execute(self, server_conn: ServerConnection):
+    def execute(self, server_conn: ServerConnection) -> 'ServerCommand':
         logger.debug(f"Sending message {MsgTypes(self.msg_type).name}")
         server_conn.send_message(self.msg_type, self.data)
         msg_type, data = server_conn.recv_message()
@@ -183,36 +188,41 @@ class ServerCommand:
         return self
 
 
-class CmdClearBreakpoint(ServerCommand):
+class SrvClearBreakpoint(ServerCommand):
     def __init__(self, bpoint_num: int):
         super().__init__(MsgTypes.MSG_CLEAR_BP, struct.pack(FMT_UINT32, bpoint_num))
 
 
-class CmdContinue(ServerCommand):
+class SrvContinue(ServerCommand):
     def __init__(self):
         super().__init__(MsgTypes.MSG_CONT)
 
 
-class CmdInit(ServerCommand):
+class SrvInit(ServerCommand):
     def __init__(self):
         super().__init__(MsgTypes.MSG_INIT)
 
 
-class CmdQuit(ServerCommand):
+class SrvKill(ServerCommand):
+    def __init__(self):
+        super().__init__(MsgTypes.MSG_KILL)
+
+
+class SrvQuit(ServerCommand):
     def __init__(self):
         super().__init__(MsgTypes.MSG_QUIT)
 
 
-class CmdRun(ServerCommand):
+class SrvRun(ServerCommand):
     def __init__(self):
         super().__init__(MsgTypes.MSG_RUN)
 
 
-class CmdSetBreakpoint(ServerCommand):
+class SrvSetBreakpoint(ServerCommand):
     def __init__(self, bpoint_offset: int):
         super().__init__(MsgTypes.MSG_SET_BP, struct.pack(FMT_UINT32, bpoint_offset))
 
 
-class CmdStep(ServerCommand):
+class SrvSingleStep(ServerCommand):
     def __init__(self):
         super().__init__(MsgTypes.MSG_STEP)
