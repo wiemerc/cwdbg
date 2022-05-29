@@ -6,7 +6,9 @@
 
 
 from ctypes import BigEndianStructure, c_uint8, c_uint16, c_uint32
+from dataclasses import dataclass
 from enum import IntEnum
+from typing import Optional
 
 
 # keep in sync with values in debugger.h
@@ -54,3 +56,10 @@ class ErrorCodes(IntEnum):
     ERROR_NOT_ENOUGH_MEMORY   = 1
     ERROR_INVALID_ADDRESS     = 2
     ERROR_UNKNOWN_BREAKPOINT  = 3
+
+
+@dataclass
+class DebuggerState:
+    program: Optional['ProgramWithDebugInfo'] = None
+    server_conn: Optional['ServerConnection'] = None
+    target_state: int = TargetStates.TS_IDLE

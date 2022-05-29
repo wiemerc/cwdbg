@@ -12,7 +12,8 @@ import sys
 
 from loguru import logger
 
-from cli import process_cli_command, QuitDebuggerException
+from cli import Cli, QuitDebuggerException
+from debugger import DebuggerState
 from hunklib import read_exe, BlockTypes
 from serio import ServerConnection
 from stabslib import ProgramWithDebugInfo
@@ -27,29 +28,33 @@ def main():
     args = _parse_command_line()
     _setup_logging(args.verbose)
 
-    conn = None
     try:
-        conn = ServerConnection(args.host, args.port)
-        program = ProgramWithDebugInfo.from_stabs_data(read_exe(args.executable)[BlockTypes.HUNK_DEBUG])
+        dbg_state = DebuggerState()
+        # TODO: Make server connection optional and implement 'connect' and 'disconnect' commands
+        dbg_state.server_conn = ServerConnection(args.host, args.port)
+        # TODO: Make program optional
+        dbg_state.program = ProgramWithDebugInfo.from_stabs_data(read_exe(args.executable)[BlockTypes.HUNK_DEBUG])
+        # TODO: Turn cli into an attribute of DebuggerState and make DebuggerState a singleton
+        cli = Cli(dbg_state)
 
         if args.no_tui:
             _print_banner()
             while True:
                 cmd_line = input('> ')
                 try:
-                    result, target_info = process_cli_command(conn, program, cmd_line)
-                    if result:
-                        print(result)
+                    result = cli.process_command(cmd_line)
+                    if result[0]:
+                        print(result[0])
                 except QuitDebuggerException:
                     logger.debug("Exiting debugger...")
                     break
         else:
-            main_screen = MainScreen(args.verbose, conn, program)
+            main_screen = MainScreen(args.verbose, dbg_state)
     except Exception as e:
         logger.exception(f"Internal error occurred: {e}")
     finally:
-        if conn:
-            conn.close()
+        if dbg_state.server_conn:
+            dbg_state.server_conn.close()
 
 
 def _parse_command_line() -> argparse.Namespace:

@@ -1,6 +1,6 @@
 #
 # cli.py - part of CWDebug, a source-level debugger for the AmigaOS
-#          This file contains the routines for the CLI on the host machine.
+#          This file contains the classes for the CLI on the host machine.
 #
 # Copyright(C) 2018-2022 Constantin Wiemer
 
@@ -9,24 +9,29 @@ import argparse
 import re
 import readline
 import shlex
-import struct
+from abc import abstractmethod
+from dataclasses import dataclass
 
 from loguru import logger
-from typing import Optional, Tuple
 
-from debugger import ErrorCodes, TargetInfo, TargetStates
-from serio import ServerConnection, MsgTypes
-from stabslib import ProgramWithDebugInfo
+from debugger import DebuggerState, TargetInfo, TargetStates
+from serio import (
+    ServerCommandError,
+    SrvClearBreakpoint,
+    SrvContinue,
+    SrvKill,
+    SrvQuit,
+    SrvRun,
+    SrvSetBreakpoint,
+    SrvSingleStep
+)
 
 
-FMT_UINT32 = '>I'
-
-
-class QuitDebuggerException(Exception):
+class QuitDebuggerException(RuntimeError):
     pass
 
 
-class ArgumentParserError(Exception):
+class ArgumentParserError(RuntimeError):
     pass
 
 
@@ -35,120 +40,251 @@ class ThrowingArgumentParser(argparse.ArgumentParser):
         raise ArgumentParserError(message)
 
 
-def process_cli_command(
-    server_conn: ServerConnection,
-    program: ProgramWithDebugInfo,
-    cmd_line: str
-) -> Tuple[Optional[str], Optional[TargetInfo]]:
-    parser = ThrowingArgumentParser(prog='', description="CWDebug, a source-level debugger for the AmigaOS", add_help=False)
-    # TODO: Rewrite with a table of commands, their argument(s) and handler functions
-    # TODO: Catch -h / --help in sub-parsers, probably by adding a custom action, see https://stackoverflow.com/questions/58367375/can-i-prevent-argparse-from-exiting-if-the-user-specifies-h
-    # TODO: Align commands with GDB
-    # TODO: Implement connect / disconnect commands
-    # TODO: Implement command to inspect / disassemble memory (like 'x' in GDB)
-    # TODO: Implement 'backtrace' command
-    # TODO: Implement 'next' command
-    # TODO: Repeat last command with 'enter'
-    subparsers = parser.add_subparsers(dest='command', help="Available commands")
-    subparsers.add_parser('break', aliases=('b',), help="Set breakpoint").add_argument(
-        'location',
-        help="Location of the breakpoint, meaning depends on format: "
-             "hex number = offset relative to entry point, "
-             "decimal number = line number, "
-             "string = function name",
-    )
-    subparsers.add_parser('continue', aliases=('c', 'cont'), help="Continue target")
-    subparsers.add_parser('delete', aliases=('d', 'del'), help="Delete breakpoint").add_argument(
-        'number',
-        type=int,
-        help="Breakpoint number",
-    )
-    subparsers.add_parser('help', aliases=('h',), help="Show help message")
-    subparsers.add_parser('kill', aliases=('k',), help="Kill target")
-    subparsers.add_parser('quit', aliases=('q',), help="Quit debugger", add_help=True)
-    subparsers.add_parser('run', aliases=('r',), help="Run target")
-    subparsers.add_parser('step', aliases=('s',), help="Single-step target")
+@dataclass
+class CliCommandArg:
+    name: str
+    help: str
+    type: type = str
 
-    try:
+
+#
+# Classes for the debugger commands
+# Each class derived from CliCommand encapsulates the information necessary for the argument parser (name, aliases,
+# help and arguments) and implements the command using the classes derived from ServerCommand in serio.py.
+#
+@dataclass
+class CliCommand:
+    command: str
+    aliases: tuple[str]
+    help: str
+    arg_spec: tuple[CliCommandArg] = tuple()
+
+    @abstractmethod
+    def execute(self, dbg_state: DebuggerState, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+        pass
+
+    def is_correct_target_state_for_command(self, dbg_state: DebuggerState) -> tuple[bool, str | None]:
+        return True, None
+
+    def _get_target_status_for_ui(self, target_info: TargetInfo) -> tuple[str | None, TargetInfo | None]:
+        if target_info.target_state & TargetStates.TS_STOPPED_BY_BREAKPOINT:
+            return f"Target has hit breakpoint at address {hex(target_info.task_context.reg_pc)}", target_info
+        elif target_info.target_state & TargetStates.TS_STOPPED_BY_EXCEPTION:
+            return f"Target has been stopped by exception #{target_info.task_context.exc_num}", target_info
+        elif target_info.target_state == TargetStates.TS_EXITED:
+            return f"Target exited with code {target_info.exit_code}", None
+        elif target_info.target_state == TargetStates.TS_KILLED:
+            return f"Target has been killed", None
+        else:
+            return None, target_info
+
+
+class CliClearBreakpoint(CliCommand):
+    def __init__(self):
+        super().__init__(
+            'delete',
+            ('d', 'del'),
+            'Delete breakpoint',
+            (
+                CliCommandArg(
+                    'number',
+                    'Breakpoint number',
+                    int,
+                ),
+            ),
+        )
+
+    def execute(self, dbg_state: DebuggerState, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
         try:
-            args = parser.parse_args(shlex.split(cmd_line))
-        except ArgumentParserError:
-            return "Invalid command / argument\n" + parser.format_help(), None
+            SrvClearBreakpoint(args.number).execute(dbg_state.server_conn)
+            return "Breakpoint cleared", None
+        except ServerCommandError as e:
+            return f"Clearing breakpoint failed: {e}", None
 
-        command_ok, error = _is_correct_target_state_for_command(server_conn.target_state, args.command)
-        if not command_ok:
-            return error, None
 
-        if args.command in ('break', 'b'):
-            if re.search(r'^0x[0-9a-fA-F]+$', args.location):
-                offset = int(args.location, 16)
-            elif re.search('^\d+$', args.location):
-                offset = program.get_addr_for_lineno(int(args.location, 10))
-            elif re.search(r'^[a-zA-Z_]\w+$', args.location):
-                offset = program.get_addr_for_func_name(args.location)
+class CliContinue(CliCommand):
+    def __init__(self):
+        super().__init__('continue', ('c', 'cont'), 'Continue target')
+
+    def execute(self, dbg_state: DebuggerState, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+        try:
+            cmd = SrvContinue().execute(dbg_state.server_conn)
+            dbg_state.target_state = cmd.target_info.target_state
+            return self._get_target_status_for_ui(cmd.target_info)
+        except ServerCommandError as e:
+            return f"Continuing target failed: {e}", None
+
+    def is_correct_target_state_for_command(self, dbg_state: DebuggerState) -> tuple[bool, str | None]:
+        if not (dbg_state.target_state & TargetStates.TS_RUNNING):
+            return False, "Incorrect state for command 'continue': target is not yet running"
+        else:
+            return True, None
+
+
+class CliKill(CliCommand):
+    def __init__(self):
+        super().__init__('kill', ('k',), 'Kill target')
+
+    def execute(self, dbg_state: DebuggerState, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+        try:
+            cmd = SrvKill().execute(dbg_state.server_conn)
+            dbg_state.target_state = cmd.target_info.target_state
+            return self._get_target_status_for_ui(cmd.target_info)
+        except ServerCommandError as e:
+            return f"Killing target failed: {e}", None
+
+    def is_correct_target_state_for_command(self, dbg_state: DebuggerState) -> tuple[bool, str | None]:
+        if not (dbg_state.target_state & TargetStates.TS_RUNNING):
+            return False, "Incorrect state for command 'kill': target is not yet running"
+        else:
+            return True, None
+
+
+class CliQuit(CliCommand):
+    def __init__(self):
+        super().__init__('quit', ('q', ), 'Quit debugger')
+
+    def execute(self, dbg_state: DebuggerState, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+        SrvQuit().execute(dbg_state.server_conn)
+        raise QuitDebuggerException()
+
+    def is_correct_target_state_for_command(self, dbg_state: DebuggerState) -> tuple[bool, str | None]:
+        if dbg_state.target_state & TargetStates.TS_RUNNING:
+            return False, "Incorrect state for command 'quit': target is still running"
+        else:
+            return True, None
+
+
+class CliRun(CliCommand):
+    def __init__(self):
+        super().__init__('run', ('r', ), 'Run target')
+
+    def execute(self, dbg_state: DebuggerState, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+        try:
+            cmd = SrvRun().execute(dbg_state.server_conn)
+            dbg_state.target_state = cmd.target_info.target_state
+            return self._get_target_status_for_ui(cmd.target_info)
+        except ServerCommandError as e:
+            return f"Running target failed: {e}", None
+
+    def is_correct_target_state_for_command(self, dbg_state: DebuggerState) -> tuple[bool, str | None]:
+        if dbg_state.target_state & TargetStates.TS_RUNNING:
+            return False, "Incorrect state for command 'run': target is already running"
+        else:
+            return True, None
+
+
+class CliSetBreakpoint(CliCommand):
+    def __init__(self):
+        super().__init__(
+            'break',
+            ('b', ),
+            'Set breakpoint',
+            (
+                CliCommandArg(
+                    'location',
+                    'Location of the breakpoint, meaning depends on format: '
+                    'hex number = offset relative to entry point, '
+                    'decimal number = line number, '
+                    'string = function name',
+                ),
+            ),
+        )
+
+    def execute(self, dbg_state: DebuggerState, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+        if re.search(r'^0x[0-9a-fA-F]+$', args.location):
+            offset = int(args.location, 16)
+        elif re.search('^\d+$', args.location):
+            offset = dbg_state.program.get_addr_for_lineno(int(args.location, 10))
+        elif re.search(r'^[a-zA-Z_]\w+$', args.location):
+            offset = dbg_state.program.get_addr_for_func_name(args.location)
+        else:
+            # TODO: Implement <file name>:<line number> as location
+            return "Invalid format of breakpoint location", None
+        try:
+            SrvSetBreakpoint(offset).execute(dbg_state.server_conn)
+            return "Breakpoint set", None
+        except ServerCommandError as e:
+            return f"Setting breakpoint failed: {e}", None
+
+
+class CliSingleStep(CliCommand):
+    def __init__(self):
+        super().__init__('step', ('s',), 'Single-step target')
+
+    def execute(self, dbg_state: DebuggerState, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+        try:
+            cmd = SrvSingleStep().execute(dbg_state.server_conn)
+            dbg_state.target_state = cmd.target_info.target_state
+            return self._get_target_status_for_ui(cmd.target_info)
+        except ServerCommandError as e:
+            return f"Single-stepping target failed: {e}", None
+
+    def is_correct_target_state_for_command(self, dbg_state: DebuggerState) -> tuple[bool, str | None]:
+        if not (dbg_state.target_state & TargetStates.TS_RUNNING):
+            return False, "Incorrect state for command 'step': target is not yet running"
+        else:
+            return True, None
+
+
+# TODO: Align commands with GDB
+# TODO: Implement connect / disconnect commands
+# TODO: Implement command to inspect / disassemble memory (like 'x' in GDB)
+# TODO: Implement 'backtrace' command
+# TODO: Implement 'next' command
+CLI_COMMANDS = [
+    CliClearBreakpoint(),
+    CliContinue(),
+    CliKill(),
+    CliQuit(),
+    CliRun(),
+    CliSetBreakpoint(),
+    CliSingleStep(),
+]
+
+
+class Cli:
+    def __init__(self, dbg_state: DebuggerState):
+        self._dbg_state = dbg_state
+
+        self._commands_by_name: dict[str, CliCommand] = {}
+        self._parser = ThrowingArgumentParser(prog='', description="CWDebug, a source-level debugger for the AmigaOS", add_help=False)
+        # TODO: Catch -h / --help in sub-parsers, probably by adding a custom action, see https://stackoverflow.com/questions/58367375/can-i-prevent-argparse-from-exiting-if-the-user-specifies-h
+        subparsers = self._parser.add_subparsers(dest='command', help="Available commands")
+        subparsers.add_parser('help', aliases=('h',), help="Show help message")
+        for cmd in CLI_COMMANDS:
+            if cmd.command not in self._commands_by_name:
+                self._commands_by_name[cmd.command] = cmd
             else:
-                # TODO: Implement <file name>:<line number> as location
-                return "Invalid format of breakpoint location", None
-            result = server_conn.execute_command(MsgTypes.MSG_SET_BP, struct.pack(FMT_UINT32, offset))
-            if result.error_code == 0:
-                return "Breakpoint set", None
+                raise ValueError(f"Command name '{cmd.command}' already used by command '{self._commands_by_name[cmd.command]}'")
+            for alias in cmd.aliases:
+                if alias not in self._commands_by_name:
+                    self._commands_by_name[alias] = cmd
+                else:
+                    raise ValueError(f"Command alias '{alias}' already used by command '{self._commands_by_name[alias]}'")
+            subparser = subparsers.add_parser(cmd.command, aliases=cmd.aliases, help=cmd.help)
+            for arg in cmd.arg_spec:
+                subparser.add_argument(arg.name, help=arg.help, type=arg.type)
+
+
+    def process_command(self, cmd_line: str) -> tuple[str | None, TargetInfo | None]:
+        # TODO: Repeat last command with 'enter'
+        try:
+            try:
+                args = self._parser.parse_args(shlex.split(cmd_line))
+            except ArgumentParserError:
+                return "Invalid command / argument\n" + self._parser.format_help(), None
+
+            if args.command in ('help', 'h'):
+                return self._parser.format_help(), None
             else:
-                return f"Setting breakpoint failed: {ErrorCodes(result.result.error_code).name}", None
+                cmd = self._commands_by_name[args.command]
+                command_ok, error = cmd.is_correct_target_state_for_command(self._dbg_state)
+                if not command_ok:
+                    return error, None
+                return cmd.execute(self._dbg_state, args)
 
-        elif args.command in ('delete', 'del', 'd'):
-            result = server_conn.execute_command(MsgTypes.MSG_CLEAR_BP, struct.pack(FMT_UINT32, args.number))
-            if result.error_code == 0:
-                return "Breakpoint cleared", None
-            else:
-                return f"Clearing breakpoint failed: {ErrorCodes(result.error_code).name}", None
-
-        elif args.command in ('continue', 'cont', 'c'):
-            result = server_conn.execute_command(MsgTypes.MSG_CONT)
-            return _get_target_status_for_ui(result.target_info)
-
-        elif args.command in ('help', 'h'):
-            return parser.format_help(), None
-
-        elif args.command in ('kill', 'k'):
-            result =server_conn.execute_command(MsgTypes.MSG_KILL)
-            return _get_target_status_for_ui(result.target_info)
-
-        elif args.command in ('quit', 'q'):
-            result = server_conn.execute_command(MsgTypes.MSG_QUIT)
-            raise QuitDebuggerException()
-
-        elif args.command in ('run', 'r'):
-            result = server_conn.execute_command(MsgTypes.MSG_RUN)
-            return _get_target_status_for_ui(result.target_info)
-
-        elif args.command in ('step', 's'):
-            # TODO: Implement single-stepping on C level (next line instead of next instruction)
-            result = server_conn.execute_command(MsgTypes.MSG_STEP)
-            return _get_target_status_for_ui(result.target_info)
-
-    except QuitDebuggerException:
-        raise
-    except Exception as e:
-        raise RuntimeError(f"Error occurred while processing CLI commands") from e
-
-
-def _is_correct_target_state_for_command(target_state: int, command: str) -> Tuple[bool, Optional[str]]:
-    # keep lists of commands in sync with process_cli_command()
-    if not (target_state & TargetStates.TS_RUNNING) and command[0] in ('c', 's', 'k'):
-        return False, f"Incorrect state for command '{command}': target is not yet running"
-    if (target_state & TargetStates.TS_RUNNING) and command[0] in ('r', 'q'):
-        return False, f"Incorrect state for command '{command}': target is already / still running"
-    return True, None
-
-
-def _get_target_status_for_ui(target_info: TargetInfo) -> Tuple[Optional[str], Optional[TargetInfo]]:
-    if target_info.target_state & TargetStates.TS_STOPPED_BY_BREAKPOINT:
-        return f"Target has hit breakpoint at address {hex(target_info.task_context.reg_pc)}", target_info
-    elif target_info.target_state & TargetStates.TS_STOPPED_BY_EXCEPTION:
-        return f"Target has been stopped by exception #{target_info.task_context.exc_num}", target_info
-    elif target_info.target_state == TargetStates.TS_EXITED:
-        return f"Target exited with code {target_info.exit_code}", None
-    elif target_info.target_state == TargetStates.TS_KILLED:
-        return f"Target has been killed", None
-    else:
-        return None, target_info
+        except QuitDebuggerException:
+            raise
+        except Exception as e:
+            raise RuntimeError(f"Error occurred while processing CLI commands") from e
