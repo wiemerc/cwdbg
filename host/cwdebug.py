@@ -15,7 +15,7 @@ from loguru import logger
 from cli import Cli, QuitDebuggerException
 from debugger import dbg_state
 from hunklib import get_debug_infos_from_exe
-from serio import ServerConnection
+from server import ServerConnection
 from stabslib import ProgramWithDebugInfo
 from ui import MainScreen
 

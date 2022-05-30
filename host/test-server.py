@@ -8,7 +8,7 @@
 import pytest
 
 from debugger import ErrorCodes, TargetStates
-from serio import (
+from server import (
     SrvClearBreakpoint,
     SrvContinue,
     SrvQuit,

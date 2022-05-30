@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from loguru import logger
 
 from debugger import TargetInfo, TargetStates, dbg_state
-from serio import (
+from server import (
     ServerCommandError,
     SrvClearBreakpoint,
     SrvContinue,
@@ -50,7 +50,7 @@ class CliCommandArg:
 #
 # Classes for the debugger commands
 # Each class derived from CliCommand encapsulates the information necessary for the argument parser (name, aliases,
-# help and arguments) and implements the command using the classes derived from ServerCommand in serio.py.
+# help and arguments) and implements the command using the classes derived from ServerCommand in server.py.
 #
 @dataclass
 class CliCommand:
