@@ -14,7 +14,7 @@ from loguru import logger
 
 from cli import Cli, QuitDebuggerException
 from debugger import dbg_state
-from hunklib import read_exe, BlockTypes
+from hunklib import get_debug_infos_from_exe
 from serio import ServerConnection
 from stabslib import ProgramWithDebugInfo
 from ui import MainScreen
@@ -32,7 +32,7 @@ def main():
         # TODO: Make server connection optional and implement 'connect' and 'disconnect' commands
         dbg_state.server_conn = ServerConnection(args.host, args.port)
         if args.prog:
-            dbg_state.program = ProgramWithDebugInfo.from_stabs_data(read_exe(args.prog)[BlockTypes.HUNK_DEBUG])
+            dbg_state.program = ProgramWithDebugInfo.from_stabs_data(get_debug_infos_from_exe(args.prog))
         dbg_state.cli = Cli()
 
         if args.no_tui:

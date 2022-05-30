@@ -7,10 +7,8 @@
 
 
 from enum import IntEnum
-from unicodedata import name
 from loguru import logger
 from struct import unpack
-from typing import Dict
 
 
 # block types from from dos/doshunks.h
@@ -148,8 +146,8 @@ def _read_reloc32_block(exe_file):
         if noffsets == 0:
             break
 
-        refhnum = _read_word(exe_file)
-        logger.debug(f"Relocations referencing hunk #{refhnum}:")
+        ref_hnum = _read_word(exe_file)
+        logger.debug(f"Relocations referencing hunk #{ref_hnum}:")
         for i in range(0, noffsets):
             logger.debug(f"Position = 0x{_read_word(exe_file)}")
 
@@ -202,9 +200,8 @@ READ_FUNC_BY_BLOCK_TYPE = {
 }
 
 
-# TODO: Create and return AmigaExe object with getter functions for the content of the individual blocks
-def read_exe(fname: str) -> Dict[int, bytes]:
-    content_by_type: Dict[int, bytes] = {}
+def read_exe(fname: str) -> dict[int, bytes]:
+    content_by_type: dict[int, bytes] = {}
     hunk_num = 0
     logger.info("Reading executable...")
     with open(fname, 'rb') as exe_file:
@@ -236,3 +233,7 @@ def read_exe(fname: str) -> Dict[int, bytes]:
                 raise
 
     return content_by_type
+
+
+def get_debug_infos_from_exe(fname: str) -> bytes:
+    return read_exe(fname)[BlockTypes.HUNK_DEBUG]
