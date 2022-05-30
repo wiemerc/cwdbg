@@ -13,7 +13,7 @@ import sys
 from loguru import logger
 
 from cli import Cli, QuitDebuggerException
-from debugger import DebuggerState
+from debugger import dbg_state
 from hunklib import read_exe, BlockTypes
 from serio import ServerConnection
 from stabslib import ProgramWithDebugInfo
@@ -29,27 +29,25 @@ def main():
     _setup_logging(args.verbose)
 
     try:
-        dbg_state = DebuggerState()
         # TODO: Make server connection optional and implement 'connect' and 'disconnect' commands
         dbg_state.server_conn = ServerConnection(args.host, args.port)
         # TODO: Make program optional
         dbg_state.program = ProgramWithDebugInfo.from_stabs_data(read_exe(args.executable)[BlockTypes.HUNK_DEBUG])
-        # TODO: Turn cli into an attribute of DebuggerState and make DebuggerState a singleton
-        cli = Cli(dbg_state)
+        dbg_state.cli = Cli()
 
         if args.no_tui:
             _print_banner()
             while True:
                 cmd_line = input('> ')
                 try:
-                    result = cli.process_command(cmd_line)
+                    result = dbg_state.cli.process_command(cmd_line)
                     if result[0]:
                         print(result[0])
                 except QuitDebuggerException:
                     logger.debug("Exiting debugger...")
                     break
         else:
-            main_screen = MainScreen(args.verbose, dbg_state)
+            main_screen = MainScreen(args.verbose)
     except Exception as e:
         logger.exception(f"Internal error occurred: {e}")
     finally:

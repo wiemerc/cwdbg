@@ -60,6 +60,9 @@ class ErrorCodes(IntEnum):
 
 @dataclass
 class DebuggerState:
+    cli: Optional['Cli'] = None
     program: Optional['ProgramWithDebugInfo'] = None
     server_conn: Optional['ServerConnection'] = None
     target_state: int = TargetStates.TS_IDLE
+
+dbg_state = DebuggerState()

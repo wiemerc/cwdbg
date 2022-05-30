@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 from loguru import logger
 
-from debugger import DebuggerState, TargetInfo, TargetStates
+from debugger import TargetInfo, TargetStates, dbg_state
 from serio import (
     ServerCommandError,
     SrvClearBreakpoint,
@@ -60,10 +60,10 @@ class CliCommand:
     arg_spec: tuple[CliCommandArg] = tuple()
 
     @abstractmethod
-    def execute(self, dbg_state: DebuggerState, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+    def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
         pass
 
-    def is_correct_target_state_for_command(self, dbg_state: DebuggerState) -> tuple[bool, str | None]:
+    def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
         return True, None
 
     def _get_target_status_for_ui(self, target_info: TargetInfo) -> tuple[str | None, TargetInfo | None]:
@@ -94,7 +94,7 @@ class CliClearBreakpoint(CliCommand):
             ),
         )
 
-    def execute(self, dbg_state: DebuggerState, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+    def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
         try:
             SrvClearBreakpoint(args.number).execute(dbg_state.server_conn)
             return "Breakpoint cleared", None
@@ -106,7 +106,7 @@ class CliContinue(CliCommand):
     def __init__(self):
         super().__init__('continue', ('c', 'cont'), 'Continue target')
 
-    def execute(self, dbg_state: DebuggerState, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+    def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
         try:
             cmd = SrvContinue().execute(dbg_state.server_conn)
             dbg_state.target_state = cmd.target_info.target_state
@@ -114,7 +114,7 @@ class CliContinue(CliCommand):
         except ServerCommandError as e:
             return f"Continuing target failed: {e}", None
 
-    def is_correct_target_state_for_command(self, dbg_state: DebuggerState) -> tuple[bool, str | None]:
+    def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
         if not (dbg_state.target_state & TargetStates.TS_RUNNING):
             return False, "Incorrect state for command 'continue': target is not yet running"
         else:
@@ -125,7 +125,7 @@ class CliKill(CliCommand):
     def __init__(self):
         super().__init__('kill', ('k',), 'Kill target')
 
-    def execute(self, dbg_state: DebuggerState, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+    def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
         try:
             cmd = SrvKill().execute(dbg_state.server_conn)
             dbg_state.target_state = cmd.target_info.target_state
@@ -133,7 +133,7 @@ class CliKill(CliCommand):
         except ServerCommandError as e:
             return f"Killing target failed: {e}", None
 
-    def is_correct_target_state_for_command(self, dbg_state: DebuggerState) -> tuple[bool, str | None]:
+    def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
         if not (dbg_state.target_state & TargetStates.TS_RUNNING):
             return False, "Incorrect state for command 'kill': target is not yet running"
         else:
@@ -144,11 +144,11 @@ class CliQuit(CliCommand):
     def __init__(self):
         super().__init__('quit', ('q', ), 'Quit debugger')
 
-    def execute(self, dbg_state: DebuggerState, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+    def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
         SrvQuit().execute(dbg_state.server_conn)
         raise QuitDebuggerException()
 
-    def is_correct_target_state_for_command(self, dbg_state: DebuggerState) -> tuple[bool, str | None]:
+    def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
         if dbg_state.target_state & TargetStates.TS_RUNNING:
             return False, "Incorrect state for command 'quit': target is still running"
         else:
@@ -159,7 +159,7 @@ class CliRun(CliCommand):
     def __init__(self):
         super().__init__('run', ('r', ), 'Run target')
 
-    def execute(self, dbg_state: DebuggerState, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+    def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
         try:
             cmd = SrvRun().execute(dbg_state.server_conn)
             dbg_state.target_state = cmd.target_info.target_state
@@ -167,7 +167,7 @@ class CliRun(CliCommand):
         except ServerCommandError as e:
             return f"Running target failed: {e}", None
 
-    def is_correct_target_state_for_command(self, dbg_state: DebuggerState) -> tuple[bool, str | None]:
+    def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
         if dbg_state.target_state & TargetStates.TS_RUNNING:
             return False, "Incorrect state for command 'run': target is already running"
         else:
@@ -191,7 +191,7 @@ class CliSetBreakpoint(CliCommand):
             ),
         )
 
-    def execute(self, dbg_state: DebuggerState, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+    def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
         if re.search(r'^0x[0-9a-fA-F]+$', args.location):
             offset = int(args.location, 16)
         elif re.search('^\d+$', args.location):
@@ -212,7 +212,7 @@ class CliSingleStep(CliCommand):
     def __init__(self):
         super().__init__('step', ('s',), 'Single-step target')
 
-    def execute(self, dbg_state: DebuggerState, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+    def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
         try:
             cmd = SrvSingleStep().execute(dbg_state.server_conn)
             dbg_state.target_state = cmd.target_info.target_state
@@ -220,7 +220,7 @@ class CliSingleStep(CliCommand):
         except ServerCommandError as e:
             return f"Single-stepping target failed: {e}", None
 
-    def is_correct_target_state_for_command(self, dbg_state: DebuggerState) -> tuple[bool, str | None]:
+    def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
         if not (dbg_state.target_state & TargetStates.TS_RUNNING):
             return False, "Incorrect state for command 'step': target is not yet running"
         else:
@@ -244,9 +244,7 @@ CLI_COMMANDS = [
 
 
 class Cli:
-    def __init__(self, dbg_state: DebuggerState):
-        self._dbg_state = dbg_state
-
+    def __init__(self):
         self._commands_by_name: dict[str, CliCommand] = {}
         self._parser = ThrowingArgumentParser(prog='', description="CWDebug, a source-level debugger for the AmigaOS", add_help=False)
         # TODO: Catch -h / --help in sub-parsers, probably by adding a custom action, see https://stackoverflow.com/questions/58367375/can-i-prevent-argparse-from-exiting-if-the-user-specifies-h
@@ -279,10 +277,10 @@ class Cli:
                 return self._parser.format_help(), None
             else:
                 cmd = self._commands_by_name[args.command]
-                command_ok, error = cmd.is_correct_target_state_for_command(self._dbg_state)
+                command_ok, error = cmd.is_correct_target_state_for_command()
                 if not command_ok:
                     return error, None
-                return cmd.execute(self._dbg_state, args)
+                return cmd.execute(args)
 
         except QuitDebuggerException:
             raise

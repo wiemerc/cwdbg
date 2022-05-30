@@ -11,10 +11,8 @@ from loguru import logger
 from typing import Any
 from urwid import AttrMap, Columns, Edit, ExitMainLoop, Filler, Frame, LineBox, MainLoop, Padding, Pile, Text
 
-from cli import process_cli_command, QuitDebuggerException
-from debugger import TargetInfo, NUM_NEXT_INSTRUCTIONS, NUM_TOP_STACK_DWORDS
-from serio import ServerConnection
-from stabslib import ProgramWithDebugInfo
+from cli import QuitDebuggerException
+from debugger import TargetInfo, NUM_NEXT_INSTRUCTIONS, NUM_TOP_STACK_DWORDS, dbg_state
 
 
 PALETTE = [
@@ -38,19 +36,17 @@ class UrwidHandler:
 
 
 class CommandInput(Edit):
-    def __init__(self, main_screen: Any, server_conn: ServerConnection, program: ProgramWithDebugInfo):
+    def __init__(self, main_screen: Any):
         super().__init__(caption='> ')
         self._main_screen = main_screen
-        self._server_conn = server_conn
-        self._program = program
         self._history = []
 
     def keypress(self, size, key):
         if key == 'enter':
-            command = self.get_edit_text()
-            if command:
+            cmd_line = self.get_edit_text()
+            if cmd_line:
                 try:
-                    result, target_info = process_cli_command(self._server_conn, self._program, command)
+                    result, target_info = dbg_state.cli.process_command(cmd_line)
                 except QuitDebuggerException:
                     logger.debug("Exiting debugger...")
                     raise ExitMainLoop()
@@ -58,8 +54,8 @@ class CommandInput(Edit):
                     # TODO: Should we clear all views if we don't have a target_info?
                     self._main_screen.update_views(target_info)
 
-            self._history.append(f"> {command}")
-            if command and result:
+            self._history.append(f"> {cmd_line}")
+            if cmd_line and result:
                 self._history.append(result)
             if len(self._history) > INPUT_WIDGET_HEIGHT:
                 del self._history[0:len(self._history) - INPUT_WIDGET_HEIGHT]
@@ -71,7 +67,7 @@ class CommandInput(Edit):
 
 
 class MainScreen:
-    def __init__(self, verbose: bool, server_conn: ServerConnection, program: ProgramWithDebugInfo):
+    def __init__(self, verbose: bool):
         def _handle_global_input(key: str):
             if key == 'f5':
                 self._input_view.set_edit_text('cont')
@@ -166,7 +162,7 @@ class MainScreen:
             )
         )
 
-        self._input_view = CommandInput(self, server_conn, program)
+        self._input_view = CommandInput(self)
         input_widget = LineBox(
             Padding(
                 Filler(
