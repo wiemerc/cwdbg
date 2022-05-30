@@ -195,9 +195,15 @@ class CliSetBreakpoint(CliCommand):
         if re.search(r'^0x[0-9a-fA-F]+$', args.location):
             offset = int(args.location, 16)
         elif re.search('^\d+$', args.location):
-            offset = dbg_state.program.get_addr_for_lineno(int(args.location, 10))
+            if dbg_state.program:
+                offset = dbg_state.program.get_addr_for_lineno(int(args.location, 10))
+            else:
+                return "Program not loaded on host, source-level debugging not available", None
         elif re.search(r'^[a-zA-Z_]\w+$', args.location):
-            offset = dbg_state.program.get_addr_for_func_name(args.location)
+            if dbg_state.program:
+                offset = dbg_state.program.get_addr_for_func_name(args.location)
+            else:
+                return "Program not loaded on host, source-level debugging not available", None
         else:
             # TODO: Implement <file name>:<line number> as location
             return "Invalid format of breakpoint location", None

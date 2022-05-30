@@ -31,8 +31,8 @@ def main():
     try:
         # TODO: Make server connection optional and implement 'connect' and 'disconnect' commands
         dbg_state.server_conn = ServerConnection(args.host, args.port)
-        # TODO: Make program optional
-        dbg_state.program = ProgramWithDebugInfo.from_stabs_data(read_exe(args.executable)[BlockTypes.HUNK_DEBUG])
+        if args.prog:
+            dbg_state.program = ProgramWithDebugInfo.from_stabs_data(read_exe(args.prog)[BlockTypes.HUNK_DEBUG])
         dbg_state.cli = Cli()
 
         if args.no_tui:
@@ -57,8 +57,8 @@ def main():
 
 def _parse_command_line() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="CWDebug, a source-level debugger for the AmigaOS")
-    parser.add_argument('executable', help="Executable you want to debug (with debug information)")
-    parser.add_argument('--verbose', '-v', help="Enable verbose logging", action="store_true")
+    parser.add_argument('--prog', help="Program you want to debug (with debug information)")
+    parser.add_argument('--verbose', '-v', action="store_true", default=False, help="Enable verbose logging")
     parser.add_argument('--host', '-H', default='127.0.0.1', help="IP address / name of debugger server (default=127.0.0.1)")
     parser.add_argument('--port', '-P', type=int, default=1234, help="Port of debugger server(default=1234)")
     parser.add_argument('--no-tui', action='store_true', default=False, help="Disable TUI (mainly for debugging the debugger itself)")
