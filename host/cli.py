@@ -272,10 +272,12 @@ class Cli:
 
 
     def process_command(self, cmd_line: str) -> tuple[str | None, TargetInfo | None]:
-        # TODO: Repeat last command with 'enter'
         try:
             try:
-                args = self._parser.parse_args(shlex.split(cmd_line))
+                if cmd_line:
+                    args = self._stored_args = self._parser.parse_args(shlex.split(cmd_line))
+                else:
+                    args = self._stored_args
             except ArgumentParserError:
                 return "Invalid command / argument\n" + self._parser.format_help(), None
 
