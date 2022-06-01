@@ -17,12 +17,12 @@
 #include "util.h"
 
 
-static uint16_t g_next_seqnum = 0;
+static void init_host_conn(HostConnection *p_conn, uint16_t initial_seq_num);
+static void send_ack_msg(HostConnection *p_conn, uint8_t *p_data, uint8_t data_len);
+static void send_nack_msg(HostConnection *p_conn, uint8_t error_code);
+static void send_target_stopped_msg(HostConnection *p_conn, TargetInfo *p_target_info);
 
-
-static void send_ack_msg(uint8_t *p_data, uint8_t data_len);
-static void send_nack_msg(uint8_t error_code);
-static void send_target_stopped_msg(TargetInfo *p_target_info);
+// TODO: Convert to method of a target class
 static int is_correct_target_state_for_command(uint8_t msg_type);
 
 
@@ -60,8 +60,11 @@ static int is_correct_target_state_for_command(uint8_t msg_type);
 // Host -> User: display target infos and prompt
 // @enduml
 //
+// TODO: Create response objects and send them back to host
+//
 void process_remote_commands(TaskContext *p_task_ctx)
 {
+    static HostConnection host_conn;
     ProtoMessage msg;
     TargetInfo   target_info;
     uint8_t      dbg_errno;
@@ -72,7 +75,7 @@ void process_remote_commands(TaskContext *p_task_ctx)
     // that the target has stopped and provide the target information to the host.
     if (p_task_ctx) {
         get_target_info(&target_info, p_task_ctx);
-        send_target_stopped_msg(&target_info);
+        send_target_stopped_msg(&host_conn, &target_info);
     }
 
     // TODO: Catch Ctrl-C
@@ -91,11 +94,11 @@ void process_remote_commands(TaskContext *p_task_ctx)
             msg.type,
             msg.length
         );
-        if (msg.seqnum != g_next_seqnum) {
+        if (msg.seqnum != host_conn.next_seq_num) {
             LOG(
                 ERROR,
                 "Received message with wrong sequence number, expected %d, got %d",
-                g_next_seqnum,
+                host_conn.next_seq_num,
                 msg.seqnum
             );
             quit_debugger(RETURN_ERROR);
@@ -107,51 +110,52 @@ void process_remote_commands(TaskContext *p_task_ctx)
         switch (msg.type) {
             case MSG_INIT:
                 LOG(DEBUG, "Initializing connection");
-                send_ack_msg(NULL, 0);
+                init_host_conn(&host_conn, msg.seqnum);
+                send_ack_msg(&host_conn, NULL, 0);
                 break;
 
             case MSG_SET_BP:
                 if ((dbg_errno = set_breakpoint(*(uint32_t *) msg.data)) == 0) {
                     // TODO: Return breakpoint number
-                    send_ack_msg(NULL, 0);
+                    send_ack_msg(&host_conn, NULL, 0);
                 }
                 else {
                     LOG(ERROR, "Failed to set breakpoint");
-                    send_nack_msg(dbg_errno);
+                    send_nack_msg(&host_conn, dbg_errno);
                 }
                 break;
 
             case MSG_CLEAR_BP:
                 if ((p_bpoint = find_bpoint_by_num(&g_dstate.bpoints, *(uint32_t *) msg.data)) != NULL) {
                     clear_breakpoint(p_bpoint);
-                    send_ack_msg(NULL, 0);
+                    send_ack_msg(&host_conn, NULL, 0);
                 }
                 else {
                     LOG(ERROR, "Breakpoint #%d not found", *((uint32_t *) msg.data));
-                    send_nack_msg(ERROR_UNKNOWN_BREAKPOINT);
+                    send_nack_msg(&host_conn, ERROR_UNKNOWN_BREAKPOINT);
                 }
                 break;
 
 
             case MSG_RUN:
-                send_ack_msg(NULL, 0);
+                send_ack_msg(&host_conn, NULL, 0);
                 run_target();
                 get_target_info(&target_info, NULL);
-                send_target_stopped_msg(&target_info);
+                send_target_stopped_msg(&host_conn, &target_info);
                 break;
 
             case MSG_CONT:
-                send_ack_msg(NULL, 0);
+                send_ack_msg(&host_conn, NULL, 0);
                 set_continue_mode(p_task_ctx);
                 return;
 
             case MSG_STEP:
-                send_ack_msg(NULL, 0);
+                send_ack_msg(&host_conn, NULL, 0);
                 set_single_step_mode(p_task_ctx);
                 return;
 
             case MSG_KILL:
-                send_ack_msg(NULL, 0);
+                send_ack_msg(&host_conn, NULL, 0);
                 // TODO: restore breakpoint if necessary
                 g_dstate.target_state = TS_KILLED;
                 Signal(g_dstate.p_debugger_task, SIG_TARGET_EXITED);
@@ -159,7 +163,7 @@ void process_remote_commands(TaskContext *p_task_ctx)
                 RemTask(NULL);  // will not return
 
             case MSG_QUIT:
-                send_ack_msg(NULL, 0);
+                send_ack_msg(&host_conn, NULL, 0);
                 quit_debugger(RETURN_OK);  // will not return
 
             default:
@@ -174,7 +178,14 @@ void process_remote_commands(TaskContext *p_task_ctx)
 // local routines
 //
 
-static void send_ack_msg(uint8_t *p_data, uint8_t data_len)
+static void init_host_conn(HostConnection *p_conn, uint16_t initial_seq_num)
+{
+    p_conn->state = CONN_STATE_INITIAL;
+    p_conn->next_seq_num = initial_seq_num;
+}
+
+
+static void send_ack_msg(HostConnection *p_conn, uint8_t *p_data, uint8_t data_len)
 {
     ProtoMessage msg;
 
@@ -182,7 +193,7 @@ static void send_ack_msg(uint8_t *p_data, uint8_t data_len)
         LOG(CRIT, "Internal error: send_ack_msg() has been called with more than MAX_MSG_DATA_LEN data");
         quit_debugger(RETURN_FAIL);
     }
-    msg.seqnum = g_next_seqnum;
+    msg.seqnum = p_conn->next_seq_num;
     msg.type   = MSG_ACK;
     msg.length = data_len;
     memcpy(&msg.data, p_data, data_len);
@@ -190,14 +201,14 @@ static void send_ack_msg(uint8_t *p_data, uint8_t data_len)
         LOG(ERROR, "Failed to send message to host");
         quit_debugger(RETURN_ERROR);
     }
-    ++g_next_seqnum;
+    p_conn->next_seq_num++;
 }
 
 
-static void send_nack_msg(uint8_t error_code)
+static void send_nack_msg(HostConnection *p_conn, uint8_t error_code)
 {
     ProtoMessage msg;
-    msg.seqnum  = g_next_seqnum;
+    msg.seqnum  = p_conn->next_seq_num;
     msg.type    = MSG_NACK;
     msg.length  = 1;
     msg.data[0] = error_code;
@@ -205,11 +216,11 @@ static void send_nack_msg(uint8_t error_code)
         LOG(ERROR, "Failed to send message to host");
         quit_debugger(RETURN_ERROR);
     }
-    ++g_next_seqnum;
+    p_conn->next_seq_num++;
 }
 
 
-static void send_target_stopped_msg(TargetInfo *p_target_info)
+static void send_target_stopped_msg(HostConnection *p_conn, TargetInfo *p_target_info)
 {
     ProtoMessage msg;
 
@@ -218,7 +229,7 @@ static void send_target_stopped_msg(TargetInfo *p_target_info)
         quit_debugger(RETURN_FAIL);
     }
     LOG(DEBUG, "Sending MSG_TARGET_STOPPED message to host");
-    msg.seqnum = g_next_seqnum;
+    msg.seqnum = p_conn->next_seq_num;
     msg.type   = MSG_TARGET_STOPPED;
     msg.length = sizeof(TargetInfo);
     memcpy(&msg.data, p_target_info, sizeof(TargetInfo));
@@ -233,15 +244,15 @@ static void send_target_stopped_msg(TargetInfo *p_target_info)
         quit_debugger(RETURN_ERROR);
     }
     if (msg.type == MSG_ACK) {
-        if (msg.seqnum == g_next_seqnum) {
+        if (msg.seqnum == p_conn->next_seq_num) {
             LOG(DEBUG, "Received ACK for MSG_TARGET_STOPPED message");
-            ++g_next_seqnum;
+            p_conn->next_seq_num++;
         }
         else {
             LOG(
                 ERROR,
                 "Received ACK for MSG_TARGET_STOPPED message with wrong sequence number, expected %d, got %d",
-                g_next_seqnum,
+                p_conn->next_seq_num,
                 msg.seqnum
             );
             quit_debugger(RETURN_ERROR);

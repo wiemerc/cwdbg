@@ -32,6 +32,18 @@
 #define MSG_CLEAR_BP        0x0b
 #define MSG_TARGET_STOPPED  0x0c
 
+// connection states - for future use
+#define CONN_STATE_INITIAL 0
+
+
+//
+// type definitions
+//
+typedef struct {
+    int state;
+    uint16_t next_seq_num;
+} HostConnection;
+
 
 //
 // exported functions
