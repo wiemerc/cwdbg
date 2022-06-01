@@ -7,11 +7,11 @@ clean:
 	$(MAKE) --directory=examples clean
 
 server:
-	docker run -d --name cwdebug-build-server --rm cwdebug-build-server
-	docker cp $@ cwdebug-build-server:/tmp/build/
-	docker exec -w /tmp/build cwdebug-build-server make
-	docker cp cwdebug-build-server:/tmp/build/. $@
-	docker kill cwdebug-build-server
+	docker run -d --name cwdebug-build-server-container --rm cwdebug-build-server && \
+	docker cp $@ cwdebug-build-server-container:/tmp/build/ && \
+	(docker exec -w /tmp/build cwdebug-build-server-container make || (docker kill cwdebug-build-server-container; exit 1)) && \
+	docker cp cwdebug-build-server-container:/tmp/build/. $@ && \
+	docker kill cwdebug-build-server-container
 
 examples:
 	$(MAKE) --directory=$@
