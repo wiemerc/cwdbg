@@ -31,6 +31,7 @@ void logmsg(const char *p_fname, int lineno, const char *p_func, uint8_t level, 
     va_list args;
     char location[32];
 
+    Forbid();
     if (level < g_loglevel)
         return;
 
@@ -41,4 +42,5 @@ void logmsg(const char *p_fname, int lineno, const char *p_func, uint8_t level, 
     vprintf(p_fmtstr, args);
     va_end(args);
     printf("\n");
+    Permit();
 }
