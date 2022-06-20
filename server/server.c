@@ -158,9 +158,10 @@ void process_remote_commands(TaskContext *p_task_ctx)
                 send_ack_msg(&host_conn, NULL, 0);
                 // TODO: restore breakpoint if necessary
                 g_dstate.target_state = TS_KILLED;
-                Signal(g_dstate.p_debugger_task, SIG_TARGET_EXITED);
-                // TODO: Switch to DeleteTask() once process_remote_commands() is no longer called by the target process
-                RemTask(NULL);  // will not return
+                RemTask(g_dstate.p_target_task);
+                get_target_info(&target_info, NULL);
+                send_target_stopped_msg(&host_conn, &target_info);
+                break;
 
             case MSG_QUIT:
                 send_ack_msg(&host_conn, NULL, 0);

@@ -89,8 +89,9 @@ void process_cli_commands(TaskContext *p_task_ctx)
             case 'k':   // kill (abort) target
                 // TODO: restore breakpoint if necessary
                 g_dstate.target_state = TS_KILLED;
-                Signal(g_dstate.p_debugger_task, SIG_TARGET_EXITED);
-                RemTask(NULL);  // will not return
+                RemTask(g_dstate.p_target_task);
+                LOG(INFO, "Target has been killed");
+                break;
 
             case 'q':   // quit debugger
                 quit_debugger(RETURN_OK);  // will not return

@@ -28,6 +28,7 @@
 // - start all log messages with an uppercase letter
 int main()
 {
+    // TODO: Make p_rdargs an attribute of g_dstate and call FreeArgs() in quit_debugger()
     struct RDArgs *p_rdargs;
     long args[3] = {0l, 0l, 0l}, f_debug, f_server;
     char *p_target;
@@ -43,15 +44,20 @@ int main()
     if (f_debug == DOSTRUE)
         g_loglevel = DEBUG;
 
-    LOG(INFO, "Initializing...");
-    if (load_and_init_target(p_target) == DOSFALSE) {
-        LOG(ERROR, "Could not load and initialize target")
+    if (init_debugger() == DOSFALSE) {
+        LOG(ERROR, "Could not initialize debugger");
         FreeArgs(p_rdargs);
         return RETURN_FAIL;
     }
-    else {
-        LOG(INFO, "Loaded and initialized target");
+    LOG(INFO, "Initialized debugger");
+
+    // TODO: Use quit_debugger() to exit from here onwards
+    if (load_target(p_target) == DOSFALSE) {
+        LOG(ERROR, "Could not load target")
+        FreeArgs(p_rdargs);
+        return RETURN_FAIL;
     }
+    LOG(INFO, "Loaded target");
 
     if (f_server == DOSTRUE) {
         if (serio_init() == DOSFALSE) {
