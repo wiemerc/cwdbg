@@ -93,7 +93,7 @@ typedef struct {
     BreakPoint     *p_current_bpoint;     // current breakpoint that needs to be restored
     // function that handles either CLI or remote commands, called by the handle_* functions
     void           (*p_process_commands_func)(TaskContext *);
-} DebuggerState;
+} Debugger;
 
 typedef struct {
     struct Message  exec_msg;
@@ -117,23 +117,26 @@ extern void exc_handler();
 /*
  * exported functions
  */
-int init_debugger();
-int load_target(const char *p_program_path);
-void run_target();
-void set_continue_mode(TaskContext *p_task_ctx);
-void set_single_step_mode(TaskContext *p_task_ctx);
-void quit_debugger(int exit_code);
-uint8_t set_breakpoint(uint32_t offset);
-void clear_breakpoint(BreakPoint *p_bpoint);
-BreakPoint *find_bpoint_by_addr(struct List *p_bpoints, void *p_baddr);
-BreakPoint *find_bpoint_by_num(struct List *p_bpoints, uint32_t bp_num);
-void get_target_info(TargetInfo *p_target_info, TaskContext *p_task_ctx);
+int init_debugger(Debugger *p_dbg);
+int load_target(Debugger *p_dbg, const char *p_program_path);
+void run_target(Debugger *p_dbg);
+void set_continue_mode(Debugger *p_dbg, TaskContext *p_task_ctx);
+void set_single_step_mode(Debugger *p_dbg, TaskContext *p_task_ctx);
+void quit_debugger(Debugger *p_dbg, int exit_code);
+uint8_t set_breakpoint(Debugger *p_dbg, uint32_t offset);
+void clear_breakpoint(Debugger *p_dbg, BreakPoint *p_bpoint);
+BreakPoint *find_bpoint_by_addr(Debugger *p_dbg, void *p_baddr);
+BreakPoint *find_bpoint_by_num(Debugger *p_dbg, uint32_t bp_num);
+int get_target_state(Debugger *p_dbg);
+void get_target_info(Debugger *p_dbg, TargetInfo *p_target_info, TaskContext *p_task_ctx);
+void *get_initial_pc_of_target(Debugger *p_dbg);
+void kill_target(Debugger *p_dbg);
 void handle_stopped_target(int stop_reason, TaskContext *p_task_ctx);
 
 
 /*
  * external references
  */
-extern DebuggerState g_dstate;    /* global debugger state */
+extern Debugger g_dstate;    /* global debugger state */
 
 #endif /* CWDEBUG_DEBUGGER_H */

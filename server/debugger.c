@@ -21,15 +21,15 @@
 #include "util.h"
 
 
-DebuggerState g_dstate;
+Debugger g_dstate;
 
 
 static void init_target_startup_msg(TargetStartupMsg *p_msg, struct MsgPort *p_reply_port);
 static void init_target_stopped_msg(TargetStoppedMsg *p_msg, struct MsgPort *p_reply_port);
 static void wrap_target();
-static void handle_breakpoint(TaskContext *p_task_ctx);
-static void handle_single_step(TaskContext *p_task_ctx);
-static void handle_exception(TaskContext *p_task_ctx);
+static void handle_breakpoint(Debugger *p_dbg, TaskContext *p_task_ctx);
+static void handle_single_step(Debugger *p_dbg, TaskContext *p_task_ctx);
+static void handle_exception(Debugger *p_dbg, TaskContext *p_task_ctx);
 
 
 //
@@ -37,54 +37,53 @@ static void handle_exception(TaskContext *p_task_ctx);
 //
 // TODO: Have the routines return an error code instead of calling quit_debugger() so that
 //       process_remote_commands() can inform the host
-// TODO: Create a target class with the functions here as methods, if applicable
 
-int init_debugger()
+int init_debugger(Debugger *p_dbg)
 {
-    if ((g_dstate.p_debugger_port = CreatePort("CWDEBUG_DBG", 0)) == NULL) {
+    if ((p_dbg->p_debugger_port = CreatePort("CWDEBUG_DBG", 0)) == NULL) {
         LOG(ERROR, "Could not create message port for debugger");
         return DOSFALSE;
     }
-    if ((g_dstate.p_target_port = CreatePort("CWDEBUG_TARGET", 0)) == NULL) {
+    if ((p_dbg->p_target_port = CreatePort("CWDEBUG_TARGET", 0)) == NULL) {
         LOG(ERROR, "Could not create message port for target");
         return DOSFALSE;
     }
-    g_dstate.p_target_task = NULL;
-    g_dstate.p_seglist = NULL;
-    g_dstate.target_state = TS_IDLE;
-    g_dstate.exit_code = -1;
-    g_dstate.p_current_bpoint = NULL;
+    p_dbg->p_target_task = NULL;
+    p_dbg->p_seglist = NULL;
+    p_dbg->target_state = TS_IDLE;
+    p_dbg->exit_code = -1;
+    p_dbg->p_current_bpoint = NULL;
 
     // initialize list of breakpoints, lh_Type is used as number of breakpoints
-    NewList(&g_dstate.bpoints);
-    g_dstate.bpoints.lh_Type = 0;
+    NewList(&p_dbg->bpoints);
+    p_dbg->bpoints.lh_Type = 0;
 
     return DOSTRUE;
 }
 
 
-int load_target(const char *p_program_path)
+int load_target(Debugger *p_dbg, const char *p_program_path)
 {
-    if ((g_dstate.p_seglist = LoadSeg(p_program_path)) == NULL) {
+    if ((p_dbg->p_seglist = LoadSeg(p_program_path)) == NULL) {
         LOG(ERROR, "Could not load target: %ld", IoErr());
         return DOSFALSE;
     }
-    g_dstate.p_entry = (int (*)()) BCPL_TO_C_PTR(g_dstate.p_seglist + 1);
+    p_dbg->p_entry = (int (*)()) BCPL_TO_C_PTR(p_dbg->p_seglist + 1);
     return DOSTRUE;
 }
 
 
-void run_target()
+void run_target(Debugger *p_dbg)
 {
     BreakPoint *p_bpoint;
     TargetStartupMsg startup_msg;
     TargetStoppedMsg *p_stopped_msg;
 
     // reset breakpoint counters for each run
-    if (!IsListEmpty(&g_dstate.bpoints)) {
+    if (!IsListEmpty(&p_dbg->bpoints)) {
         for (
-            p_bpoint = (BreakPoint *) g_dstate.bpoints.lh_Head;
-            p_bpoint != (BreakPoint *) g_dstate.bpoints.lh_Tail;
+            p_bpoint = (BreakPoint *) p_dbg->bpoints.lh_Head;
+            p_bpoint != (BreakPoint *) p_dbg->bpoints.lh_Tail;
             p_bpoint = (BreakPoint *) p_bpoint->node.ln_Succ
         )
             p_bpoint->count = 0;
@@ -92,8 +91,8 @@ void run_target()
 
     // TODO: support arguments for target
     LOG(INFO, "Starting target");
-    g_dstate.target_state = TS_RUNNING;
-    if ((g_dstate.p_target_task = (struct Task *) CreateNewProcTags(
+    p_dbg->target_state = TS_RUNNING;
+    if ((p_dbg->p_target_task = (struct Task *) CreateNewProcTags(
         NP_Name, (uint32_t) "CWDEBUG_TARGET",
         NP_Entry, (uint32_t) wrap_target,
         NP_StackSize, TARGET_STACK_SIZE,
@@ -108,23 +107,23 @@ void run_target()
         NP_Cli, TRUE
     )) == NULL) {
         LOG(CRIT, "Could not start target as process");
-        quit_debugger(RETURN_FAIL);
+        quit_debugger(p_dbg, RETURN_FAIL);
     }
-    g_dstate.p_target_port->mp_SigTask = g_dstate.p_target_task;
+    p_dbg->p_target_port->mp_SigTask = p_dbg->p_target_task;
 
     LOG(DEBUG, "Sending startup message to target");
-    init_target_startup_msg(&startup_msg, g_dstate.p_debugger_port);
-    startup_msg.p_seglist = g_dstate.p_seglist;
-    PutMsg(g_dstate.p_target_port, (struct Message *) &startup_msg);
+    init_target_startup_msg(&startup_msg, p_dbg->p_debugger_port);
+    startup_msg.p_seglist = p_dbg->p_seglist;
+    PutMsg(p_dbg->p_target_port, (struct Message *) &startup_msg);
 
     LOG(DEBUG, "Waiting for messages from target...");
-    while (WaitPort(g_dstate.p_debugger_port)) {
-        p_stopped_msg = (TargetStoppedMsg *) GetMsg(g_dstate.p_debugger_port);
+    while (WaitPort(p_dbg->p_debugger_port)) {
+        p_stopped_msg = (TargetStoppedMsg *) GetMsg(p_dbg->p_debugger_port);
         LOG(DEBUG, "Received message from target process, stop reason = %d", p_stopped_msg->stop_reason);
         if (p_stopped_msg->stop_reason == TS_EXITED) {
             // message from wrap_target()
-            g_dstate.target_state = p_stopped_msg->stop_reason;
-            g_dstate.exit_code = p_stopped_msg->exit_code;
+            p_dbg->target_state = p_stopped_msg->stop_reason;
+            p_dbg->exit_code = p_stopped_msg->exit_code;
             LOG(INFO, "Target terminated with exit code %d", p_stopped_msg->exit_code);
             ReplyMsg((struct Message *) p_stopped_msg);
             return;
@@ -132,47 +131,47 @@ void run_target()
         // TODO: Handle TS_ERROR
         else {
             // message from handle_stopped_target()
-            g_dstate.target_state |= p_stopped_msg->stop_reason;
+            p_dbg->target_state |= p_stopped_msg->stop_reason;
             if (p_stopped_msg->stop_reason == TS_STOPPED_BY_BREAKPOINT) {
-                handle_breakpoint(p_stopped_msg->p_task_ctx);
-                g_dstate.p_process_commands_func(p_stopped_msg->p_task_ctx);
+                handle_breakpoint(p_dbg, p_stopped_msg->p_task_ctx);
+                p_dbg->p_process_commands_func(p_stopped_msg->p_task_ctx);
             }
             else if (p_stopped_msg->stop_reason == TS_STOPPED_BY_SINGLE_STEP) {
-                handle_single_step(p_stopped_msg->p_task_ctx);
-                if (g_dstate.target_state & TS_SINGLE_STEPPING)
-                    g_dstate.p_process_commands_func(p_stopped_msg->p_task_ctx);
+                handle_single_step(p_dbg, p_stopped_msg->p_task_ctx);
+                if (p_dbg->target_state & TS_SINGLE_STEPPING)
+                    p_dbg->p_process_commands_func(p_stopped_msg->p_task_ctx);
             }
             else if (p_stopped_msg->stop_reason == TS_STOPPED_BY_EXCEPTION) {
-                handle_exception(p_stopped_msg->p_task_ctx);
-                g_dstate.p_process_commands_func(p_stopped_msg->p_task_ctx);
+                handle_exception(p_dbg, p_stopped_msg->p_task_ctx);
+                p_dbg->p_process_commands_func(p_stopped_msg->p_task_ctx);
             }
             else {
                 LOG(CRIT, "Internal error: unknown stop reason %d", p_stopped_msg->stop_reason);
-                quit_debugger(RETURN_FAIL);
+                quit_debugger(p_dbg, RETURN_FAIL);
             }
-            g_dstate.target_state &= ~p_stopped_msg->stop_reason;
+            p_dbg->target_state &= ~p_stopped_msg->stop_reason;
             ReplyMsg((struct Message *) p_stopped_msg);
         }
     }
 }
 
 
-void set_continue_mode(TaskContext *p_task_ctx)
+void set_continue_mode(Debugger *p_dbg, TaskContext *p_task_ctx)
 {
-    // If we continue from a breakpoint which hasn't been deleted (so g_dstate.p_current_bpoint still points to it),
+    // If we continue from a breakpoint which hasn't been deleted (so p_dbg->p_current_bpoint still points to it),
     // it has to be restored first, so we single-step the original instruction at the breakpoint and remember to
     // restore the breakpoint afterwards (see handle_single_step() below).
-    g_dstate.target_state &= ~TS_SINGLE_STEPPING;
-    if ((g_dstate.target_state & TS_STOPPED_BY_BREAKPOINT) && g_dstate.p_current_bpoint) {
+    p_dbg->target_state &= ~TS_SINGLE_STEPPING;
+    if ((p_dbg->target_state & TS_STOPPED_BY_BREAKPOINT) && p_dbg->p_current_bpoint) {
         p_task_ctx->reg_sr &= 0xbfff;    // clear T0
         p_task_ctx->reg_sr |= 0x8700;    // set T1 and interrupt mask
     }
 }
 
 
-void set_single_step_mode(TaskContext *p_task_ctx)
+void set_single_step_mode(Debugger *p_dbg, TaskContext *p_task_ctx)
 {
-    g_dstate.target_state |= TS_SINGLE_STEPPING;
+    p_dbg->target_state |= TS_SINGLE_STEPPING;
     // In trace mode, *all* interrupts must be disabled (except for the NMI), otherwise OS code could be executed while
     // the trace bit is still set, which would cause the OS exception handler (an alert) to be executed instead of ours
     // => value 0x8700 is ORed with the SR.
@@ -181,27 +180,27 @@ void set_single_step_mode(TaskContext *p_task_ctx)
 }
 
 
-void quit_debugger(int exit_code)
+void quit_debugger(Debugger *p_dbg, int exit_code)
 {
     BreakPoint *p_bpoint;
 
     LOG(INFO, "Exiting...");
-    if (g_dstate.target_state & TS_RUNNING)
-        DeleteTask(g_dstate.p_target_task);
-    if (g_dstate.p_seglist);
-        UnLoadSeg(g_dstate.p_seglist);
-    while ((p_bpoint = (BreakPoint *) RemHead(&g_dstate.bpoints)))
+    if (p_dbg->target_state & TS_RUNNING)
+        DeleteTask(p_dbg->p_target_task);
+    if (p_dbg->p_seglist);
+        UnLoadSeg(p_dbg->p_seglist);
+    while ((p_bpoint = (BreakPoint *) RemHead(&p_dbg->bpoints)))
         FreeVec(p_bpoint);
-    if (g_dstate.p_target_port)
-        DeletePort(g_dstate.p_target_port);
-    if (g_dstate.p_debugger_port)
-        DeletePort(g_dstate.p_debugger_port);
+    if (p_dbg->p_target_port)
+        DeletePort(p_dbg->p_target_port);
+    if (p_dbg->p_debugger_port)
+        DeletePort(p_dbg->p_debugger_port);
     serio_exit();
     exit(exit_code);
 }
 
 
-uint8_t set_breakpoint(uint32_t offset)
+uint8_t set_breakpoint(Debugger *p_dbg, uint32_t offset)
 {
     BreakPoint *p_bpoint;
     void       *p_baddr;
@@ -212,42 +211,43 @@ uint8_t set_breakpoint(uint32_t offset)
         LOG(ERROR, "Could not allocate memory for breakpoint");
         return ERROR_NOT_ENOUGH_MEMORY;
     }
-    p_baddr = (void *) ((uint32_t) g_dstate.p_entry) + offset;
-    p_bpoint->num       = ++g_dstate.bpoints.lh_Type;
+    p_baddr = (void *) ((uint32_t) p_dbg->p_entry) + offset;
+    p_bpoint->num       = ++p_dbg->bpoints.lh_Type;
     p_bpoint->p_address = p_baddr;
     p_bpoint->opcode    = *((uint16_t *) p_baddr);
     p_bpoint->count     = 0;
-    AddTail(&g_dstate.bpoints, (struct Node *) p_bpoint);
+    AddTail(&p_dbg->bpoints, (struct Node *) p_bpoint);
     *((uint16_t *) p_baddr) = TRAP_OPCODE;
     LOG(DEBUG, "Breakpoint #%ld at entry + 0x%08lx set", p_bpoint->num, offset);
     return 0;
 }
 
 
-void clear_breakpoint(BreakPoint *p_bpoint)
+// TODO: Use breakpoint number to identify breakpoint
+void clear_breakpoint(Debugger *p_dbg, BreakPoint *p_bpoint)
 {
     *((uint16_t *) p_bpoint->p_address) = p_bpoint->opcode;
     Remove((struct Node *) p_bpoint);
     FreeVec(p_bpoint);
-    if (g_dstate.p_current_bpoint == p_bpoint)
-        g_dstate.p_current_bpoint = NULL;
+    if (p_dbg->p_current_bpoint == p_bpoint)
+        p_dbg->p_current_bpoint = NULL;
     LOG(
         DEBUG,
         "Breakpoint #%ld at entry + 0x%08lx cleared",
         p_bpoint->num,
-        ((uint32_t) p_bpoint->p_address - (uint32_t) g_dstate.p_entry)
+        ((uint32_t) p_bpoint->p_address - (uint32_t) p_dbg->p_entry)
     );
 }
 
 
-BreakPoint *find_bpoint_by_addr(struct List *p_bpoints, void *p_bp_addr)
+BreakPoint *find_bpoint_by_addr(Debugger *p_dbg, void *p_bp_addr)
 {
     BreakPoint *p_bpoint;
 
-    if (IsListEmpty(p_bpoints))
+    if (IsListEmpty(&p_dbg->bpoints))
         return NULL;
-    for (p_bpoint = (BreakPoint *) p_bpoints->lh_Head;
-         p_bpoint != (BreakPoint *) p_bpoints->lh_Tail;
+    for (p_bpoint = (BreakPoint *) p_dbg->bpoints.lh_Head;
+         p_bpoint != (BreakPoint *) p_dbg->bpoints.lh_Tail;
          p_bpoint = (BreakPoint *) p_bpoint->node.ln_Succ) {
         if (p_bpoint->p_address == p_bp_addr)
             return p_bpoint;
@@ -256,14 +256,14 @@ BreakPoint *find_bpoint_by_addr(struct List *p_bpoints, void *p_bp_addr)
 }
 
 
-BreakPoint *find_bpoint_by_num(struct List *p_bpoints, uint32_t bp_num)
+BreakPoint *find_bpoint_by_num(Debugger *p_dbg, uint32_t bp_num)
 {
     BreakPoint *p_bpoint;
 
-    if (IsListEmpty(p_bpoints))
+    if (IsListEmpty(&p_dbg->bpoints))
         return NULL;
-    for (p_bpoint = (BreakPoint *) p_bpoints->lh_Head;
-         p_bpoint != (BreakPoint *) p_bpoints->lh_Tail;
+    for (p_bpoint = (BreakPoint *) p_dbg->bpoints.lh_Head;
+         p_bpoint != (BreakPoint *) p_dbg->bpoints.lh_Tail;
          p_bpoint = (BreakPoint *) p_bpoint->node.ln_Succ) {
         if (p_bpoint->num == bp_num)
             return p_bpoint;
@@ -272,10 +272,16 @@ BreakPoint *find_bpoint_by_num(struct List *p_bpoints, uint32_t bp_num)
 }
 
 
-void get_target_info(TargetInfo *p_target_info, TaskContext *p_task_ctx)
+int get_target_state(Debugger *p_dbg)
 {
-    p_target_info->target_state = g_dstate.target_state;
-    p_target_info->exit_code    = g_dstate.exit_code;
+    return p_dbg->target_state;
+}
+
+
+void get_target_info(Debugger *p_dbg, TargetInfo *p_target_info, TaskContext *p_task_ctx)
+{
+    p_target_info->target_state = p_dbg->target_state;
+    p_target_info->exit_code    = p_dbg->exit_code;
     if (p_task_ctx) {
         // target is still running, add task context, next n instructions and top n dwords on the stack
         memcpy(&p_target_info->task_context, p_task_ctx, sizeof(TaskContext));
@@ -287,6 +293,21 @@ void get_target_info(TargetInfo *p_target_info, TaskContext *p_task_ctx)
         }
         // TODO: Include breakpoint structure if target has hit breakpoint
     }
+}
+
+
+void *get_initial_pc_of_target(Debugger *p_dbg)
+{
+    return p_dbg->p_target_task->tc_SPUpper - 2;
+}
+
+
+void kill_target(Debugger *p_dbg)
+{
+    // TODO: restore breakpoint if necessary
+    p_dbg->target_state = TS_KILLED;
+    RemTask(p_dbg->p_target_task);
+    LOG(INFO, "Target has been killed");
 }
 
 
@@ -378,14 +399,14 @@ static void init_target_stopped_msg(TargetStoppedMsg *p_msg, struct MsgPort *p_r
 }
 
 
-static void handle_breakpoint(TaskContext *p_task_ctx)
+static void handle_breakpoint(Debugger *p_dbg, TaskContext *p_task_ctx)
 {
     BreakPoint *p_bpoint;
     void       *p_baddr;
 
     p_baddr = p_task_ctx->p_reg_pc - 2;
-    if ((p_bpoint = find_bpoint_by_addr(&g_dstate.bpoints, p_baddr)) != NULL) {
-        g_dstate.p_current_bpoint = p_bpoint;
+    if ((p_bpoint = find_bpoint_by_addr(p_dbg, p_baddr)) != NULL) {
+        p_dbg->p_current_bpoint = p_bpoint;
         // rewind PC by 2 bytes and replace trap instruction with original instruction
         p_task_ctx->p_reg_pc = p_baddr;
         *((uint16_t *) p_baddr) = p_bpoint->opcode;
@@ -394,7 +415,7 @@ static void handle_breakpoint(TaskContext *p_task_ctx)
             INFO,
             "Target has hit breakpoint #%ld at entry + 0x%08lx, hit count = %ld", 
             p_bpoint->num,
-            ((uint32_t) p_baddr - (uint32_t) g_dstate.p_entry),
+            ((uint32_t) p_baddr - (uint32_t) p_dbg->p_entry),
             p_bpoint->count
         );
     }
@@ -402,39 +423,39 @@ static void handle_breakpoint(TaskContext *p_task_ctx)
         LOG(
             CRIT,
             "Internal error: target has hit unknown breakpoint at entry + 0x%08lx",
-            ((uint32_t) p_baddr - (uint32_t) g_dstate.p_entry)
+            ((uint32_t) p_baddr - (uint32_t) p_dbg->p_entry)
         );
-        quit_debugger(RETURN_FAIL);
+        quit_debugger(p_dbg, RETURN_FAIL);
     }
 }
 
 
-static void handle_single_step(TaskContext *p_task_ctx)
+static void handle_single_step(Debugger *p_dbg, TaskContext *p_task_ctx)
 {
-    if (g_dstate.p_current_bpoint) {
+    if (p_dbg->p_current_bpoint) {
         // breakpoint needs to be restored
         LOG(
             DEBUG,
             "Restoring breakpoint #%ld at entry + 0x%08lx",
-            g_dstate.p_current_bpoint->num,
-            ((uint32_t) g_dstate.p_current_bpoint->p_address - (uint32_t) g_dstate.p_entry)
+            p_dbg->p_current_bpoint->num,
+            ((uint32_t) p_dbg->p_current_bpoint->p_address - (uint32_t) p_dbg->p_entry)
         );
-        *((uint16_t *) g_dstate.p_current_bpoint->p_address) = TRAP_OPCODE;
-        g_dstate.p_current_bpoint = NULL;
+        *((uint16_t *) p_dbg->p_current_bpoint->p_address) = TRAP_OPCODE;
+        p_dbg->p_current_bpoint = NULL;
     }
-    if (g_dstate.target_state & TS_SINGLE_STEPPING) {
+    if (p_dbg->target_state & TS_SINGLE_STEPPING) {
         LOG(INFO, "Target has stopped after single step");
     }
 }
 
 
-static void handle_exception(TaskContext *p_task_ctx)
+static void handle_exception(Debugger *p_dbg, TaskContext *p_task_ctx)
 {
     // unhandled exception occurred
     LOG(
         INFO,
         "Unhandled exception #%ld occurred at entry + 0x%08lx",
         p_task_ctx->exc_num,
-        ((uint32_t) p_task_ctx->p_reg_pc - (uint32_t) g_dstate.p_entry)
+        ((uint32_t) p_task_ctx->p_reg_pc - (uint32_t) p_dbg->p_entry)
     );
 }

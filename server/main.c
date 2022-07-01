@@ -44,7 +44,7 @@ int main()
     if (f_debug == DOSTRUE)
         g_loglevel = DEBUG;
 
-    if (init_debugger() == DOSFALSE) {
+    if (init_debugger(&g_dstate) == DOSFALSE) {
         LOG(ERROR, "Could not initialize debugger");
         FreeArgs(p_rdargs);
         return RETURN_FAIL;
@@ -52,7 +52,7 @@ int main()
     LOG(INFO, "Initialized debugger");
 
     // TODO: Use quit_debugger() to exit from here onwards
-    if (load_target(p_target) == DOSFALSE) {
+    if (load_target(&g_dstate, p_target) == DOSFALSE) {
         LOG(ERROR, "Could not load target")
         FreeArgs(p_rdargs);
         return RETURN_FAIL;
