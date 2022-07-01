@@ -18,11 +18,11 @@
 
 
 static void init_host_conn(HostConnection *p_conn, uint16_t initial_seq_num);
-static void send_ack_msg(HostConnection *p_conn, uint8_t *p_data, uint8_t data_len);
-static void send_nack_msg(HostConnection *p_conn, uint8_t error_code);
-static void send_target_stopped_msg(HostConnection *p_conn, TargetInfo *p_target_info);
+static void send_ack_msg(Debugger *p_dbg, HostConnection *p_conn, uint8_t *p_data, uint8_t data_len);
+static void send_nack_msg(Debugger *p_dbg, HostConnection *p_conn, uint8_t error_code);
+static void send_target_stopped_msg(Debugger *p_dbg, HostConnection *p_conn, TargetInfo *p_target_info);
 
-static int is_correct_target_state_for_command(uint8_t msg_type);
+static int is_correct_target_state_for_command(Debugger *p_dbg, uint8_t msg_type);
 
 
 //
@@ -61,7 +61,7 @@ static int is_correct_target_state_for_command(uint8_t msg_type);
 //
 // TODO: Create response objects and send them back to host
 //
-void process_remote_commands(TaskContext *p_task_ctx)
+void process_remote_commands(Debugger *p_dbg, TaskContext *p_task_ctx)
 {
     static HostConnection host_conn;
     ProtoMessage msg;
@@ -73,8 +73,8 @@ void process_remote_commands(TaskContext *p_task_ctx)
     // running. In this case the host is waiting for us and we send a MSG_TARGET_STOPPED message to indicate
     // that the target has stopped and provide the target information to the host.
     if (p_task_ctx) {
-        get_target_info(&g_dstate, &target_info, p_task_ctx);
-        send_target_stopped_msg(&host_conn, &target_info);
+        get_target_info(p_dbg, &target_info, p_task_ctx);
+        send_target_stopped_msg(p_dbg, &host_conn, &target_info);
     }
 
     // TODO: Catch Ctrl-C
@@ -83,7 +83,7 @@ void process_remote_commands(TaskContext *p_task_ctx)
         // TODO: add timeout
         if (recv_message(&msg) == DOSFALSE) {
             LOG(ERROR, "Failed to receive message from host");
-            quit_debugger(&g_dstate, RETURN_ERROR);
+            quit_debugger(p_dbg, RETURN_ERROR);
         }
         // TODO: Log message type as string
         LOG(
@@ -100,73 +100,73 @@ void process_remote_commands(TaskContext *p_task_ctx)
                 host_conn.next_seq_num,
                 msg.seqnum
             );
-            quit_debugger(&g_dstate, RETURN_ERROR);
+            quit_debugger(p_dbg, RETURN_ERROR);
         }
-        if (!is_correct_target_state_for_command(msg.type)) {
-            quit_debugger(&g_dstate, RETURN_ERROR);
+        if (!is_correct_target_state_for_command(p_dbg, msg.type)) {
+            quit_debugger(p_dbg, RETURN_ERROR);
         }
 
         switch (msg.type) {
             case MSG_INIT:
                 LOG(DEBUG, "Initializing connection");
                 init_host_conn(&host_conn, msg.seqnum);
-                send_ack_msg(&host_conn, NULL, 0);
+                send_ack_msg(p_dbg, &host_conn, NULL, 0);
                 break;
 
             case MSG_SET_BP:
-                if ((dbg_errno = set_breakpoint(&g_dstate, *(uint32_t *) msg.data)) == 0) {
+                if ((dbg_errno = set_breakpoint(p_dbg, *(uint32_t *) msg.data)) == 0) {
                     // TODO: Return breakpoint number
-                    send_ack_msg(&host_conn, NULL, 0);
+                    send_ack_msg(p_dbg, &host_conn, NULL, 0);
                 }
                 else {
                     LOG(ERROR, "Failed to set breakpoint");
-                    send_nack_msg(&host_conn, dbg_errno);
+                    send_nack_msg(p_dbg, &host_conn, dbg_errno);
                 }
                 break;
 
             case MSG_CLEAR_BP:
-                if ((p_bpoint = find_bpoint_by_num(&g_dstate, *(uint32_t *) msg.data)) != NULL) {
-                    clear_breakpoint(&g_dstate, p_bpoint);
-                    send_ack_msg(&host_conn, NULL, 0);
+                if ((p_bpoint = find_bpoint_by_num(p_dbg, *(uint32_t *) msg.data)) != NULL) {
+                    clear_breakpoint(p_dbg, p_bpoint);
+                    send_ack_msg(p_dbg, &host_conn, NULL, 0);
                 }
                 else {
                     LOG(ERROR, "Breakpoint #%d not found", *((uint32_t *) msg.data));
-                    send_nack_msg(&host_conn, ERROR_UNKNOWN_BREAKPOINT);
+                    send_nack_msg(p_dbg, &host_conn, ERROR_UNKNOWN_BREAKPOINT);
                 }
                 break;
 
 
             case MSG_RUN:
-                send_ack_msg(&host_conn, NULL, 0);
-                run_target(&g_dstate);
-                get_target_info(&g_dstate, &target_info, NULL);
-                send_target_stopped_msg(&host_conn, &target_info);
+                send_ack_msg(p_dbg, &host_conn, NULL, 0);
+                run_target(p_dbg);
+                get_target_info(p_dbg, &target_info, NULL);
+                send_target_stopped_msg(p_dbg, &host_conn, &target_info);
                 break;
 
             case MSG_CONT:
-                send_ack_msg(&host_conn, NULL, 0);
-                set_continue_mode(&g_dstate, p_task_ctx);
+                send_ack_msg(p_dbg, &host_conn, NULL, 0);
+                set_continue_mode(p_dbg, p_task_ctx);
                 return;
 
             case MSG_STEP:
-                send_ack_msg(&host_conn, NULL, 0);
-                set_single_step_mode(&g_dstate, p_task_ctx);
+                send_ack_msg(p_dbg, &host_conn, NULL, 0);
+                set_single_step_mode(p_dbg, p_task_ctx);
                 return;
 
             case MSG_KILL:
-                send_ack_msg(&host_conn, NULL, 0);
-                kill_target(&g_dstate);
-                get_target_info(&g_dstate, &target_info, NULL);
-                send_target_stopped_msg(&host_conn, &target_info);
+                send_ack_msg(p_dbg, &host_conn, NULL, 0);
+                kill_target(p_dbg);
+                get_target_info(p_dbg, &target_info, NULL);
+                send_target_stopped_msg(p_dbg, &host_conn, &target_info);
                 break;
 
             case MSG_QUIT:
-                send_ack_msg(&host_conn, NULL, 0);
-                quit_debugger(&g_dstate, RETURN_OK);  // will not return
+                send_ack_msg(p_dbg, &host_conn, NULL, 0);
+                quit_debugger(p_dbg, RETURN_OK);  // will not return
 
             default:
                 LOG(CRIT, "Internal error: unknown command %d", msg.type);
-                quit_debugger(&g_dstate, RETURN_FAIL);  // will not return
+                quit_debugger(p_dbg, RETURN_FAIL);  // will not return
         }
     }
 }
@@ -183,13 +183,13 @@ static void init_host_conn(HostConnection *p_conn, uint16_t initial_seq_num)
 }
 
 
-static void send_ack_msg(HostConnection *p_conn, uint8_t *p_data, uint8_t data_len)
+static void send_ack_msg(Debugger *p_dbg, HostConnection *p_conn, uint8_t *p_data, uint8_t data_len)
 {
     ProtoMessage msg;
 
     if (data_len > MAX_MSG_DATA_LEN) {
-        LOG(CRIT, "Internal error: send_ack_msg() has been called with more than MAX_MSG_DATA_LEN data");
-        quit_debugger(&g_dstate, RETURN_FAIL);
+        LOG(CRIT, "Internal error: send_ack_msg(p_dbg, ) has been called with more than MAX_MSG_DATA_LEN data");
+        quit_debugger(p_dbg, RETURN_FAIL);
     }
     msg.seqnum = p_conn->next_seq_num;
     msg.type   = MSG_ACK;
@@ -197,13 +197,13 @@ static void send_ack_msg(HostConnection *p_conn, uint8_t *p_data, uint8_t data_l
     memcpy(&msg.data, p_data, data_len);
     if (send_message(&msg) == DOSFALSE) {
         LOG(ERROR, "Failed to send message to host");
-        quit_debugger(&g_dstate, RETURN_ERROR);
+        quit_debugger(p_dbg, RETURN_ERROR);
     }
     p_conn->next_seq_num++;
 }
 
 
-static void send_nack_msg(HostConnection *p_conn, uint8_t error_code)
+static void send_nack_msg(Debugger *p_dbg, HostConnection *p_conn, uint8_t error_code)
 {
     ProtoMessage msg;
     msg.seqnum  = p_conn->next_seq_num;
@@ -212,19 +212,19 @@ static void send_nack_msg(HostConnection *p_conn, uint8_t error_code)
     msg.data[0] = error_code;
     if (send_message(&msg) == DOSFALSE) {
         LOG(ERROR, "Failed to send message to host");
-        quit_debugger(&g_dstate, RETURN_ERROR);
+        quit_debugger(p_dbg, RETURN_ERROR);
     }
     p_conn->next_seq_num++;
 }
 
 
-static void send_target_stopped_msg(HostConnection *p_conn, TargetInfo *p_target_info)
+static void send_target_stopped_msg(Debugger *p_dbg, HostConnection *p_conn, TargetInfo *p_target_info)
 {
     ProtoMessage msg;
 
     if (sizeof(TargetInfo) > MAX_MSG_DATA_LEN) {
-        LOG(CRIT, "Internal error: send_target_stopped_msg() has been called with TargetInfo larger than MAX_MSG_DATA_LEN");
-        quit_debugger(&g_dstate, RETURN_FAIL);
+        LOG(CRIT, "Internal error: send_target_stopped_msg(p_dbg, ) has been called with TargetInfo larger than MAX_MSG_DATA_LEN");
+        quit_debugger(p_dbg, RETURN_FAIL);
     }
     LOG(DEBUG, "Sending MSG_TARGET_STOPPED message to host");
     msg.seqnum = p_conn->next_seq_num;
@@ -233,13 +233,13 @@ static void send_target_stopped_msg(HostConnection *p_conn, TargetInfo *p_target
     memcpy(&msg.data, p_target_info, sizeof(TargetInfo));
     if (send_message(&msg) == DOSFALSE) {
         LOG(ERROR, "Failed to send message to host");
-        quit_debugger(&g_dstate, RETURN_ERROR);
+        quit_debugger(p_dbg, RETURN_ERROR);
     }
 
     // TODO: add timeout
     if (recv_message(&msg) == DOSFALSE) {
         LOG(ERROR, "Failed to receive message from host");
-        quit_debugger(&g_dstate, RETURN_ERROR);
+        quit_debugger(p_dbg, RETURN_ERROR);
     }
     if (msg.type == MSG_ACK) {
         if (msg.seqnum == p_conn->next_seq_num) {
@@ -253,19 +253,19 @@ static void send_target_stopped_msg(HostConnection *p_conn, TargetInfo *p_target
                 p_conn->next_seq_num,
                 msg.seqnum
             );
-            quit_debugger(&g_dstate, RETURN_ERROR);
+            quit_debugger(p_dbg, RETURN_ERROR);
         }
     }
     else {
         LOG(ERROR, "Received unexpected message of type %d from host instead of the expected ACK", msg.type);
-        quit_debugger(&g_dstate, RETURN_ERROR);
+        quit_debugger(p_dbg, RETURN_ERROR);
     }
 }
 
 
-static int is_correct_target_state_for_command(uint8_t msg_type)
+static int is_correct_target_state_for_command(Debugger *p_dbg, uint8_t msg_type)
 {
-    if (!(get_target_state(&g_dstate) & TS_RUNNING) && (
+    if (!(get_target_state(p_dbg) & TS_RUNNING) && (
         (msg_type == MSG_CONT) ||
         (msg_type == MSG_STEP) ||
         (msg_type == MSG_KILL)
@@ -273,7 +273,7 @@ static int is_correct_target_state_for_command(uint8_t msg_type)
         LOG(ERROR, "Incorrect state for command %d: target is not yet running", msg_type);
         return 0;
     }
-    if ((get_target_state(&g_dstate) & TS_RUNNING) && (
+    if ((get_target_state(p_dbg) & TS_RUNNING) && (
         (msg_type == MSG_INIT) ||
         (msg_type == MSG_RUN) ||
         (msg_type == MSG_QUIT)

@@ -39,7 +39,7 @@
 //
 // type definitions
 //
-typedef struct {
+typedef struct SHostConnection {
     int state;
     uint16_t next_seq_num;
 } HostConnection;
@@ -48,6 +48,6 @@ typedef struct {
 //
 // exported functions
 //
-void process_remote_commands(TaskContext *p_taks_ctx);
+void process_remote_commands(Debugger *p_dbg, TaskContext *p_taks_ctx);
 
 #endif // CWDEBUG_SERVER_H

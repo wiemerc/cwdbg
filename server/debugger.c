@@ -21,9 +21,6 @@
 #include "util.h"
 
 
-Debugger g_dstate;
-
-
 static void init_target_startup_msg(TargetStartupMsg *p_msg, struct MsgPort *p_reply_port);
 static void init_target_stopped_msg(TargetStoppedMsg *p_msg, struct MsgPort *p_reply_port);
 static void wrap_target();
@@ -134,16 +131,16 @@ void run_target(Debugger *p_dbg)
             p_dbg->target_state |= p_stopped_msg->stop_reason;
             if (p_stopped_msg->stop_reason == TS_STOPPED_BY_BREAKPOINT) {
                 handle_breakpoint(p_dbg, p_stopped_msg->p_task_ctx);
-                p_dbg->p_process_commands_func(p_stopped_msg->p_task_ctx);
+                p_dbg->p_process_commands_func(p_dbg, p_stopped_msg->p_task_ctx);
             }
             else if (p_stopped_msg->stop_reason == TS_STOPPED_BY_SINGLE_STEP) {
                 handle_single_step(p_dbg, p_stopped_msg->p_task_ctx);
                 if (p_dbg->target_state & TS_SINGLE_STEPPING)
-                    p_dbg->p_process_commands_func(p_stopped_msg->p_task_ctx);
+                    p_dbg->p_process_commands_func(p_dbg, p_stopped_msg->p_task_ctx);
             }
             else if (p_stopped_msg->stop_reason == TS_STOPPED_BY_EXCEPTION) {
                 handle_exception(p_dbg, p_stopped_msg->p_task_ctx);
-                p_dbg->p_process_commands_func(p_stopped_msg->p_task_ctx);
+                p_dbg->p_process_commands_func(p_dbg, p_stopped_msg->p_task_ctx);
             }
             else {
                 LOG(CRIT, "Internal error: unknown stop reason %d", p_stopped_msg->stop_reason);

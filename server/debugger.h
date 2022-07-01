@@ -54,7 +54,7 @@
 /*
  * type definitions
  */
-typedef struct {
+typedef struct STaskContext {
     void     *p_reg_sp;
     uint32_t exc_num;
     uint16_t reg_sr;
@@ -63,7 +63,7 @@ typedef struct {
     uint32_t reg_a[7];                  // without A7 = SP
 } TaskContext;
 
-typedef struct {
+typedef struct SBreakPoint {
     struct Node  node;
     uint32_t     num;
     void         *p_address;            // address in code segment
@@ -71,7 +71,7 @@ typedef struct {
     uint32_t     count;                 // number of times it has been hit
 } BreakPoint;
 
-typedef struct {
+typedef struct STargetInfo {
     TaskContext  task_context;          // task context of target
     int          target_state;          // current target state
     int          exit_code;             // exit code if target has exited
@@ -81,7 +81,8 @@ typedef struct {
     uint32_t     top_stack_dwords[NUM_TOP_STACK_DWORDS];
 } TargetInfo;
 
-typedef struct {
+typedef struct SDebugger Debugger;
+struct SDebugger {
     struct MsgPort *p_debugger_port;      // message port of debugger
     struct MsgPort *p_target_port;        // message port of target
     struct Task    *p_target_task;        // task of target
@@ -92,15 +93,15 @@ typedef struct {
     struct List    bpoints;               // list of breakpoints
     BreakPoint     *p_current_bpoint;     // current breakpoint that needs to be restored
     // function that handles either CLI or remote commands, called by the handle_* functions
-    void           (*p_process_commands_func)(TaskContext *);
-} Debugger;
+    void           (*p_process_commands_func)(Debugger *, TaskContext *);
+};
 
-typedef struct {
+typedef struct STargetStartupMsg {
     struct Message  exec_msg;
     BPTR            p_seglist;
 } TargetStartupMsg;
 
-typedef struct {
+typedef struct STargetStoppedMsg {
     struct Message  exec_msg;
     int             stop_reason;
     int             exit_code;
@@ -132,11 +133,5 @@ void get_target_info(Debugger *p_dbg, TargetInfo *p_target_info, TaskContext *p_
 void *get_initial_pc_of_target(Debugger *p_dbg);
 void kill_target(Debugger *p_dbg);
 void handle_stopped_target(int stop_reason, TaskContext *p_task_ctx);
-
-
-/*
- * external references
- */
-extern Debugger g_dstate;    /* global debugger state */
 
 #endif /* CWDEBUG_DEBUGGER_H */

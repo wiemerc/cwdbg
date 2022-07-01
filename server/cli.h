@@ -16,6 +16,6 @@
 /*
  * exported functions
  */
-void process_cli_commands(TaskContext *p_task_ctx);
+void process_cli_commands(Debugger *p_dbg, TaskContext *p_task_ctx);
 
 #endif /* CWDEBUG_CLI_H */
