@@ -244,10 +244,6 @@ static int32_t send_slip_frame(const Buffer *pb_frame)
     io_request->IOSer.io_Command = CMD_WRITE;
     io_request->IOSer.io_Length  = pb_frame->size;
     io_request->IOSer.io_Data    = (void *) pb_frame->p_addr;
-    // We need to set the reply port in the IORequest to the message port of the current process because serial IO
-    // can be done by either the target process or the debugger process although the serial device is opened by
-    // the debugger process.
-    io_request->IOSer.io_Message.mn_ReplyPort = &((struct Process *) FindTask(NULL))->pr_MsgPort;
     g_serio_errno = error = DoIO((struct IORequest *) io_request);
     if (error == 0)
         return DOSTRUE;
@@ -264,7 +260,6 @@ static int32_t recv_slip_frame(Buffer *pb_frame)
     io_request->IOSer.io_Command = CMD_READ;
     io_request->IOSer.io_Data    = (void *) pb_frame->p_addr;
     io_request->IOSer.io_Length  = pb_frame->size;
-    io_request->IOSer.io_Message.mn_ReplyPort = &((struct Process *) FindTask(NULL))->pr_MsgPort;
     g_serio_errno = error = DoIO((struct IORequest *) io_request);
     if (error == 0) {
         pb_frame->size = io_request->IOSer.io_Actual;
