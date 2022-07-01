@@ -28,7 +28,6 @@ static int32_t put_data_into_slip_frame(const Buffer *pb_data, Buffer *pb_frame)
 static int32_t get_data_from_slip_frame(Buffer *pb_data, const Buffer *pb_frame);
 static int32_t send_slip_frame(const Buffer *pb_frame);
 static int32_t recv_slip_frame(Buffer *pb_frame);
-static void dump_buffer(const Buffer *pb_buffer);
 
 
 //
@@ -270,42 +269,9 @@ static int32_t recv_slip_frame(Buffer *pb_frame)
     if (error == 0) {
         pb_frame->size = io_request->IOSer.io_Actual;
         LOG(DEBUG, "dump of received SLIP frame (%ld bytes):", pb_frame->size);
-        dump_buffer(pb_frame);
+        dump_memory(pb_frame->p_addr, pb_frame->size);
         return DOSTRUE;
     }
     else
         return DOSFALSE;
-}
-
-
-//
-// create a hexdump of a buffer
-//
-// TODO: move hexdump routine to util.c and use it here and in cli.c
-static void dump_buffer(const Buffer *pb_buffer)
-{
-    uint32_t pos = 0, i, nchars;
-    char line[256], *p;
-
-    while (pos < pb_buffer->size) {
-        printf("%04x: ", pos);
-        for (i = pos, p = line, nchars = 0; (i < pos + 16) && (i < pb_buffer->size); ++i, ++p, ++nchars) {
-            printf("%02x ", pb_buffer->p_addr[i]);
-            if (pb_buffer->p_addr[i] >= 0x20 && pb_buffer->p_addr[i] <= 0x7e) {
-                sprintf(p, "%c", pb_buffer->p_addr[i]);
-            }
-            else {
-                sprintf(p, ".");
-            }
-        }
-        if (nchars < 16) {
-            for (i = 1; i <= (3 * (16 - nchars)); ++i, ++p, ++nchars) {
-                sprintf(p, " ");
-            }
-        }
-        *p = '\0';
-
-        printf("\t%s\n", line);
-        pos += 16;
-    }
 }

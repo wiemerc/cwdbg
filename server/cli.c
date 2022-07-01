@@ -128,7 +128,7 @@ void process_cli_commands(Debugger *p_dbg, TaskContext *p_task_ctx)
                     LOG(ERROR, "Invalid format for address / size");
                     break;
                 }
-                print_memory(p_maddr, msize);
+                dump_memory(p_maddr, msize);
                 break;
 
             case 'x':   // disassemble memory
@@ -221,34 +221,5 @@ static void print_stack(const TaskContext *p_ctx, void *p_initial_sp)
     printf("initial SP = 0x%08x, current SP = 0x%08x\n", (uint32_t) p_initial_sp, (uint32_t) p_ctx->p_reg_sp);
     for (i = 1, sp = (uint32_t) p_ctx->p_reg_sp; (i <= 10) && (sp <= (uint32_t) p_initial_sp); ++i, sp += 4) {
         printf("0x%08x:\t0x%08x\n", (uint32_t) sp, *((uint32_t *) sp));
-    }
-}
-
-
-static void print_memory(const uint8_t *p_addr, uint32_t size)
-{
-    uint32_t pos = 0, i, nchars;
-    char line[256], *p;
-
-    while (pos < size) {
-        printf("%04x: ", pos);
-        for (i = pos, p = line, nchars = 0; (i < pos + 16) && (i < size); ++i, ++p, ++nchars) {
-            printf("%02x ", p_addr[i]);
-            if (p_addr[i] >= 0x20 && p_addr[i] <= 0x7e) {
-                sprintf(p, "%c", p_addr[i]);
-            }
-            else {
-                sprintf(p, ".");
-            }
-        }
-        if (nchars < 16) {
-            for (i = 1; i <= (3 * (16 - nchars)); ++i, ++p, ++nchars) {
-                sprintf(p, " ");
-            }
-        }
-        *p = '\0';
-
-        printf("\t%s\n", line);
-        pos += 16;
     }
 }

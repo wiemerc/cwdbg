@@ -31,9 +31,10 @@ extern UBYTE g_loglevel;
 
 
 /*
- * prototypes
+ * exported functions
  */
 void logmsg(const char *p_fname, int lineno, const char *p_func, UBYTE level, const char *p_fmtstr, ...);
+void dump_memory(const uint8_t *p_addr, uint32_t size);
 
 
 /*
