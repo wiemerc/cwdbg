@@ -37,6 +37,7 @@ static void handle_exception(Debugger *p_dbg, TaskContext *p_task_ctx);
 
 int init_debugger(Debugger *p_dbg)
 {
+    p_dbg->p_rdargs = NULL;
     if ((p_dbg->p_debugger_port = CreatePort("CWDEBUG_DBG", 0)) == NULL) {
         LOG(ERROR, "Could not create message port for debugger");
         return DOSFALSE;
@@ -192,6 +193,8 @@ void quit_debugger(Debugger *p_dbg, int exit_code)
         DeletePort(p_dbg->p_target_port);
     if (p_dbg->p_debugger_port)
         DeletePort(p_dbg->p_debugger_port);
+    if (p_dbg->p_rdargs)
+        FreeArgs(p_dbg->p_rdargs);
     serio_exit();
     exit(exit_code);
 }

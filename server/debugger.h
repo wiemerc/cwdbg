@@ -83,6 +83,7 @@ typedef struct STargetInfo {
 
 typedef struct SDebugger Debugger;
 struct SDebugger {
+    struct RDArgs  *p_rdargs;             // struct for CLI args, just needed so we can call FreeArgs() in quit_debugger()
     struct MsgPort *p_debugger_port;      // message port of debugger
     struct MsgPort *p_target_port;        // message port of target
     struct Task    *p_target_task;        // task of target

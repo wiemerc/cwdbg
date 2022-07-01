@@ -29,15 +29,18 @@
 int main()
 {
     Debugger dbg;
-    // TODO: Make p_rdargs an attribute of dbg and call FreeArgs() in quit_debugger()
-    struct RDArgs *p_rdargs;
     long args[3] = {0l, 0l, 0l}, f_debug, f_server;
     char *p_target;
 
-    g_loglevel = INFO;
-    if ((p_rdargs = ReadArgs("-d=--debug/S,-s=--server/S,target/A", args, NULL)) == NULL) {
-        LOG(ERROR, "wrong usage - usage: cwdebug [-d/--debug] [-s/--server] <target>");
+    if (init_debugger(&dbg) == DOSFALSE) {
+        LOG(ERROR, "Could not initialize debugger object");
         return RETURN_FAIL;
+    }
+
+    g_loglevel = INFO;
+    if ((dbg.p_rdargs = ReadArgs("-d=--debug/S,-s=--server/S,target/A", args, NULL)) == NULL) {
+        LOG(ERROR, "wrong usage - usage: cwdebug [-d/--debug] [-s/--server] <target>");
+        quit_debugger(&dbg, RETURN_FAIL);
     }
     f_debug  = args[0];
     f_server = args[1];
@@ -45,26 +48,16 @@ int main()
     if (f_debug == DOSTRUE)
         g_loglevel = DEBUG;
 
-    if (init_debugger(&dbg) == DOSFALSE) {
-        LOG(ERROR, "Could not initialize debugger");
-        FreeArgs(p_rdargs);
-        return RETURN_FAIL;
-    }
-    LOG(INFO, "Initialized debugger");
-
-    // TODO: Use quit_debugger() to exit from here onwards
     if (load_target(&dbg, p_target) == DOSFALSE) {
         LOG(ERROR, "Could not load target")
-        FreeArgs(p_rdargs);
-        return RETURN_FAIL;
+        quit_debugger(&dbg, RETURN_FAIL);
     }
     LOG(INFO, "Loaded target");
 
     if (f_server == DOSTRUE) {
         if (serio_init() == DOSFALSE) {
             LOG(ERROR, "Could not initialize serial IO");
-            FreeArgs(p_rdargs);
-            return RETURN_FAIL;
+            quit_debugger(&dbg, RETURN_FAIL);
         }
         else {
             LOG(INFO, "Initialized serial IO");
@@ -76,9 +69,7 @@ int main()
         m68k_build_opcode_table();
         LOG(INFO, "Initialized disassembler routines");
         dbg.p_process_commands_func = process_cli_commands;
-        // TODO: Pass dbg
         process_cli_commands(&dbg, NULL);
     }
-    FreeArgs(p_rdargs);
-    return RETURN_OK;
+    quit_debugger(&dbg, RETURN_OK);
 }
