@@ -29,7 +29,6 @@
 #define SLIP_ESC                0xdb
 #define SLIP_ESCAPED_ESC        0xdd
 
-#define IOExtTime timerequest   /* just to make the code look a bit nicer... */
 #define SERIO_TIMEOUT 10        /* timeout for reads and writes in seconds */
 
 

@@ -21,8 +21,7 @@
 
 
 uint32_t g_serio_errno = 0;
-static struct IOExtSer *sreq;
-static struct IOExtTime *treq;
+static struct IOExtSer *io_request;
 
 
 static int32_t put_data_into_slip_frame(const Buffer *pb_data, Buffer *pb_frame);
@@ -36,69 +35,43 @@ static void dump_buffer(const Buffer *pb_buffer);
 // exported routines
 //
 
-// TODO: get rid of timer device
 int32_t serio_init()
 {
     struct MsgPort *port = &(((struct Process *) FindTask(NULL))->pr_MsgPort);
-    if ((sreq = (struct IOExtSer *) CreateExtIO(port, sizeof(struct IOExtSer))) != NULL) {
-        if ((treq = (struct IOExtTime *) CreateExtIO(port, sizeof(struct IOExtTime)))) {
-            if (OpenDevice("serial.device", 0l, (struct IORequest *) sreq, 0l) == 0) {
-                /* configure device to terminate read requests on SLIP end-of-frame-markers and disable flow control */
-                /* 
-                 * TODO: configure device for maximum speed:
-                sreq->io_SerFlags     |= SERF_XDISABLED | SERF_RAD_BOOGIE;
-                sreq->io_Baud          = 292000l;
-                 */
-                sreq->io_SerFlags     |= SERF_XDISABLED;
-                sreq->IOSer.io_Command = SDCMD_SETPARAMS;
-                memset(&sreq->io_TermArray, SLIP_END, 8);
-                if (DoIO((struct IORequest *) sreq) == 0) {
-                    if (OpenDevice("timer.device", UNIT_VBLANK, (struct IORequest *) treq, 0l) == 0) {
-                        return DOSTRUE;
-                    }
-                    else {
-                        LOG(CRIT, "could not open timer device");
-                        CloseDevice((struct IORequest *) sreq);
-                        DeleteExtIO((struct IORequest *) treq);
-                        DeleteExtIO((struct IORequest *) sreq);
-                        return DOSFALSE;
-                    }
-                }
-                else {
-                    LOG(CRIT, "could not configure serial device");
-                    CloseDevice((struct IORequest *) sreq);
-                    DeleteExtIO((struct IORequest *) treq);
-                    DeleteExtIO((struct IORequest *) sreq);
-                    return DOSFALSE;
-                }
-            }
-            else {
-                LOG(CRIT, "could not open serial device");
-                DeleteExtIO((struct IORequest *) treq);
-                DeleteExtIO((struct IORequest *) sreq);
-                return DOSFALSE;
-            }
-        }
-        else {
-            LOG(CRIT, "could not create request for timer device");
-            DeleteExtIO((struct IORequest *) sreq);
-            return DOSFALSE;
-        }
-    }
-    else {
-        LOG(CRIT, "could not create request for serial device");
+    if ((io_request = (struct IOExtSer *) CreateExtIO(port, sizeof(struct IOExtSer))) == NULL) {
+        LOG(CRIT, "Could not create IO request for serial device");
         return DOSFALSE;
     }
+    if (OpenDevice("serial.device", 0l, (struct IORequest *) io_request, 0l) != 0) {
+        LOG(CRIT, "Could not open serial device");
+        DeleteExtIO((struct IORequest *) io_request);
+        return DOSFALSE;
+    }
+    /* configure device to terminate read requests on SLIP end-of-frame-markers and disable flow control */
+    /* 
+        * TODO: configure device for maximum speed:
+    io_request->io_SerFlags     |= SERF_XDISABLED | SERF_RAD_BOOGIE;
+    io_request->io_Baud          = 292000l;
+        */
+    io_request->io_SerFlags     |= SERF_XDISABLED;
+    io_request->IOSer.io_Command = SDCMD_SETPARAMS;
+    memset(&io_request->io_TermArray, SLIP_END, 8);
+    if (DoIO((struct IORequest *) io_request) != 0) {
+        LOG(CRIT, "Could not configure serial device");
+        CloseDevice((struct IORequest *) io_request);
+        DeleteExtIO((struct IORequest *) io_request);
+        return DOSFALSE;
+    }
+    return DOSTRUE;
 }
 
 
 void serio_exit()
 {
-    if (treq && sreq) {
-        CloseDevice((struct IORequest *) treq);
-        CloseDevice((struct IORequest *) sreq);
-        DeleteExtIO((struct IORequest *) treq);
-        DeleteExtIO((struct IORequest *) sreq);
+    // We need to check if serial IO has actually been initialized because quit_debugger() calls us unconditionally.
+    if (io_request) {
+        CloseDevice((struct IORequest *) io_request);
+        DeleteExtIO((struct IORequest *) io_request);
     }
 }
 
@@ -268,15 +241,15 @@ static int32_t send_slip_frame(const Buffer *pb_frame)
 {
     int8_t error;
 
-    sreq->io_SerFlags     &= ~SERF_EOFMODE;      /* clear EOF mode */
-    sreq->IOSer.io_Command = CMD_WRITE;
-    sreq->IOSer.io_Length  = pb_frame->size;
-    sreq->IOSer.io_Data    = (void *) pb_frame->p_addr;
+    io_request->io_SerFlags     &= ~SERF_EOFMODE;      /* clear EOF mode */
+    io_request->IOSer.io_Command = CMD_WRITE;
+    io_request->IOSer.io_Length  = pb_frame->size;
+    io_request->IOSer.io_Data    = (void *) pb_frame->p_addr;
     // We need to set the reply port in the IORequest to the message port of the current process because serial IO
     // can be done by either the target process or the debugger process although the serial device is opened by
     // the debugger process.
-    sreq->IOSer.io_Message.mn_ReplyPort = &((struct Process *) FindTask(NULL))->pr_MsgPort;
-    g_serio_errno = error = DoIO((struct IORequest *) sreq);
+    io_request->IOSer.io_Message.mn_ReplyPort = &((struct Process *) FindTask(NULL))->pr_MsgPort;
+    g_serio_errno = error = DoIO((struct IORequest *) io_request);
     if (error == 0)
         return DOSTRUE;
     else
@@ -288,14 +261,14 @@ static int32_t recv_slip_frame(Buffer *pb_frame)
 {
     int8_t error;
 
-    sreq->io_SerFlags     |= SERF_EOFMODE;       /* set EOF mode */
-    sreq->IOSer.io_Command = CMD_READ;
-    sreq->IOSer.io_Data    = (void *) pb_frame->p_addr;
-    sreq->IOSer.io_Length  = pb_frame->size;
-    sreq->IOSer.io_Message.mn_ReplyPort = &((struct Process *) FindTask(NULL))->pr_MsgPort;
-    g_serio_errno = error = DoIO((struct IORequest *) sreq);
+    io_request->io_SerFlags     |= SERF_EOFMODE;       /* set EOF mode */
+    io_request->IOSer.io_Command = CMD_READ;
+    io_request->IOSer.io_Data    = (void *) pb_frame->p_addr;
+    io_request->IOSer.io_Length  = pb_frame->size;
+    io_request->IOSer.io_Message.mn_ReplyPort = &((struct Process *) FindTask(NULL))->pr_MsgPort;
+    g_serio_errno = error = DoIO((struct IORequest *) io_request);
     if (error == 0) {
-        pb_frame->size = sreq->IOSer.io_Actual;
+        pb_frame->size = io_request->IOSer.io_Actual;
         LOG(DEBUG, "dump of received SLIP frame (%ld bytes):", pb_frame->size);
         dump_buffer(pb_frame);
         return DOSTRUE;
