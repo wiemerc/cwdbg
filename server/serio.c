@@ -20,133 +20,63 @@
 #include "stdint.h"
 
 
-uint32_t g_serio_errno = 0;
-static struct IOExtSer *io_request;
-
-
-static int32_t put_data_into_slip_frame(const Buffer *pb_data, Buffer *pb_frame);
-static int32_t get_data_from_slip_frame(Buffer *pb_data, const Buffer *pb_frame);
-static int32_t send_slip_frame(const Buffer *pb_frame);
-static int32_t recv_slip_frame(Buffer *pb_frame);
+#define SLIP_END                0xc0
+#define SLIP_ESCAPED_END        0xdc
+#define SLIP_ESC                0xdb
+#define SLIP_ESCAPED_ESC        0xdd
 
 
 //
 // exported routines
 //
 
-int32_t serio_init()
+SerialConnection *create_serial_conn()
 {
+    SerialConnection *p_conn;
     struct MsgPort *port = &(((struct Process *) FindTask(NULL))->pr_MsgPort);
-    if ((io_request = (struct IOExtSer *) CreateExtIO(port, sizeof(struct IOExtSer))) == NULL) {
-        LOG(CRIT, "Could not create IO request for serial device");
-        return DOSFALSE;
+
+    if ((p_conn = AllocVec(sizeof(SerialConnection), MEMF_CLEAR)) == NULL) {
+        LOG(CRIT, "Could not allocate memory for serial connection object");
+        return NULL;
     }
-    if (OpenDevice("serial.device", 0l, (struct IORequest *) io_request, 0l) != 0) {
+    if ((p_conn->p_io_request = (struct IOExtSer *) CreateExtIO(port, sizeof(struct IOExtSer))) == NULL) {
+        LOG(CRIT, "Could not create IO request for serial device");
+        return NULL;
+    }
+    if (OpenDevice("serial.device", 0l, (struct IORequest *) p_conn->p_io_request, 0l) != 0) {
         LOG(CRIT, "Could not open serial device");
-        DeleteExtIO((struct IORequest *) io_request);
-        return DOSFALSE;
+        DeleteExtIO((struct IORequest *) p_conn->p_io_request);
+        return NULL;
     }
     /* configure device to terminate read requests on SLIP end-of-frame-markers and disable flow control */
     /* 
         * TODO: configure device for maximum speed:
-    io_request->io_SerFlags     |= SERF_XDISABLED | SERF_RAD_BOOGIE;
-    io_request->io_Baud          = 292000l;
+    p_conn->p_io_request->io_SerFlags     |= SERF_XDISABLED | SERF_RAD_BOOGIE;
+    p_conn->p_io_request->io_Baud          = 292000l;
         */
-    io_request->io_SerFlags     |= SERF_XDISABLED;
-    io_request->IOSer.io_Command = SDCMD_SETPARAMS;
-    memset(&io_request->io_TermArray, SLIP_END, 8);
-    if (DoIO((struct IORequest *) io_request) != 0) {
+    p_conn->p_io_request->io_SerFlags     |= SERF_XDISABLED;
+    p_conn->p_io_request->IOSer.io_Command = SDCMD_SETPARAMS;
+    memset(&p_conn->p_io_request->io_TermArray, SLIP_END, 8);
+    if (DoIO((struct IORequest *) p_conn->p_io_request) != 0) {
         LOG(CRIT, "Could not configure serial device");
-        CloseDevice((struct IORequest *) io_request);
-        DeleteExtIO((struct IORequest *) io_request);
-        return DOSFALSE;
+        CloseDevice((struct IORequest *) p_conn->p_io_request);
+        DeleteExtIO((struct IORequest *) p_conn->p_io_request);
+        return NULL;
     }
-    return DOSTRUE;
+    return p_conn;
 }
 
 
-void serio_exit()
+void destroy_serial_conn(SerialConnection *p_conn)
 {
-    // We need to check if serial IO has actually been initialized because quit_debugger() calls us unconditionally.
-    if (io_request) {
-        CloseDevice((struct IORequest *) io_request);
-        DeleteExtIO((struct IORequest *) io_request);
-    }
+    LOG(DEBUG, "Closing serial device");
+    CloseDevice((struct IORequest *) p_conn->p_io_request);
+    DeleteExtIO((struct IORequest *) p_conn->p_io_request);
+    FreeVec(p_conn);
 }
 
 
-int32_t send_message(ProtoMessage *p_msg)
-{
-    uint8_t frame[MAX_FRAME_SIZE];
-    Buffer b_msg, b_frame;
-
-    // TODO: set checksum
-    b_msg.p_addr = (uint8_t *) p_msg;
-    b_msg.size   = sizeof(ProtoMessage);
-    b_frame.p_addr = frame;
-    b_frame.size   = MAX_FRAME_SIZE;
-    if (put_data_into_slip_frame(&b_msg, &b_frame) == DOSFALSE) {
-        LOG(ERROR, "could not put data into SLIP frame: %ld", g_serio_errno);
-        return DOSFALSE;
-    }
-    if (send_slip_frame(&b_frame) == DOSFALSE) {
-        LOG(ERROR, "failed to send SLIP frame: %ld", g_serio_errno);
-        return DOSFALSE;
-    }
-    return DOSTRUE;
-}
-
-
-int32_t recv_message(ProtoMessage *p_msg)
-{
-    uint8_t frame[MAX_FRAME_SIZE];
-    Buffer b_msg, b_frame;
-
-    b_msg.p_addr = (uint8_t *) p_msg;
-    b_msg.size   = sizeof(ProtoMessage);
-    b_frame.p_addr = frame;
-    b_frame.size   = MAX_FRAME_SIZE;
-    if (recv_slip_frame(&b_frame) == DOSFALSE) {
-        LOG(ERROR, "failed to receive SLIP frame: %ld", g_serio_errno);
-        return DOSFALSE;
-    }
-    if (get_data_from_slip_frame(&b_msg, &b_frame) == DOSFALSE) {
-        LOG(ERROR, "could not get data from SLIP frame: %ld", g_serio_errno);
-        return DOSFALSE;
-    }
-    // TODO: check checksum
-    return DOSTRUE;
-}
-
-
-//
-// local routines
-//
-
-/*
- * calculate IP / ICMP checksum (taken from the code for in_cksum() floating on the net)
- */
-static USHORT calc_checksum(const UBYTE * bytes, ULONG len)
-{
-    ULONG sum, i;
-    USHORT * p;
-
-    sum = 0;
-    p = (USHORT *) bytes;
-
-    for (i = len; i > 1; i -= 2)                /* sum all 16-bit words */
-        sum += *p++;
-
-    if (i == 1)                                 /* add an odd byte if necessary */
-        sum += (USHORT) *((UBYTE *) p);
-
-    sum = (sum >> 16) + (sum & 0x0000ffff);     /* fold in upper 16 bits */
-    sum += (sum >> 16);                         /* add carry bits */
-    return ~((USHORT) sum);                     /* return 1-complement truncated to 16 bits */
-}
-
-
-static int32_t put_data_into_slip_frame(const Buffer *pb_data, Buffer *pb_frame)
+int put_data_into_slip_frame(SerialConnection *p_conn, const Buffer *pb_data, Buffer *pb_frame)
 {
     const uint8_t *src = pb_data->p_addr;
     uint8_t *dst       = pb_frame->p_addr;
@@ -177,8 +107,8 @@ static int32_t put_data_into_slip_frame(const Buffer *pb_data, Buffer *pb_frame)
         }
     }
     if (nbytes_read < pb_data->size) {
-        LOG(ERROR, "could not copy all bytes to the destination");
-        g_serio_errno = ERROR_BUFFER_OVERFLOW;
+        LOG(ERROR, "Could not copy all bytes to the destination");
+        p_conn->errno = ERROR_BUFFER_OVERFLOW;
         return DOSFALSE;
     }
 
@@ -188,16 +118,16 @@ static int32_t put_data_into_slip_frame(const Buffer *pb_data, Buffer *pb_frame)
         pb_frame->size = ++nbytes_written;
     }
     else {
-        LOG(ERROR, "could not add SLIP end-of-frame marker");
-        g_serio_errno = ERROR_BUFFER_OVERFLOW;
+        LOG(ERROR, "Could not add SLIP end-of-frame marker");
+        p_conn->errno = ERROR_BUFFER_OVERFLOW;
         return NULL;
     }
-    g_serio_errno = 0;
+    p_conn->errno = 0;
     return DOSTRUE;
 }
 
 
-static int32_t get_data_from_slip_frame(Buffer *pb_data, const Buffer *pb_frame)
+int get_data_from_slip_frame(SerialConnection *p_conn, Buffer *pb_data, const Buffer *pb_frame)
 {
     const uint8_t *src = pb_frame->p_addr;
     uint8_t *dst       = pb_data->p_addr;
@@ -213,8 +143,8 @@ static int32_t get_data_from_slip_frame(Buffer *pb_data, const Buffer *pb_frame)
             else if (*src == SLIP_ESCAPED_ESC)
                 *dst = SLIP_ESC;
             else {
-                LOG(ERROR, "invalid escape sequence found in SLIP frame: 0x%02lx", (uint32_t) *src);
-                g_serio_errno = ERROR_BAD_NUMBER;
+                LOG(ERROR, "Invalid escape sequence found in SLIP frame: 0x%02lx", (uint) *src);
+                p_conn->errno = ERROR_BAD_NUMBER;
                 break;
             }
         }
@@ -227,46 +157,69 @@ static int32_t get_data_from_slip_frame(Buffer *pb_data, const Buffer *pb_frame)
     }
     pb_data->size = nbytes_written;
     if (nbytes_read < pb_frame->size) {
-        LOG(ERROR, "could not copy all bytes to the destination");
-        g_serio_errno = ERROR_BUFFER_OVERFLOW;
+        LOG(ERROR, "Could not copy all bytes to the destination");
+        p_conn->errno = ERROR_BUFFER_OVERFLOW;
         return DOSFALSE;
     }
-    g_serio_errno = 0;
+    p_conn->errno = 0;
     return DOSTRUE;
 }
 
 
-static int32_t send_slip_frame(const Buffer *pb_frame)
+int send_slip_frame(SerialConnection *p_conn, const Buffer *pb_frame)
 {
-    int8_t error;
-
-    io_request->io_SerFlags     &= ~SERF_EOFMODE;      /* clear EOF mode */
-    io_request->IOSer.io_Command = CMD_WRITE;
-    io_request->IOSer.io_Length  = pb_frame->size;
-    io_request->IOSer.io_Data    = (void *) pb_frame->p_addr;
-    g_serio_errno = error = DoIO((struct IORequest *) io_request);
-    if (error == 0)
+    p_conn->p_io_request->io_SerFlags     &= ~SERF_EOFMODE;      /* clear EOF mode */
+    p_conn->p_io_request->IOSer.io_Command = CMD_WRITE;
+    p_conn->p_io_request->IOSer.io_Length  = pb_frame->size;
+    p_conn->p_io_request->IOSer.io_Data    = (void *) pb_frame->p_addr;
+    p_conn->errno = DoIO((struct IORequest *) p_conn->p_io_request);
+    if (p_conn->errno == 0)
         return DOSTRUE;
     else
         return DOSFALSE;
 }
 
 
-static int32_t recv_slip_frame(Buffer *pb_frame)
+int recv_slip_frame(SerialConnection *p_conn, Buffer *pb_frame)
 {
-    int8_t error;
-
-    io_request->io_SerFlags     |= SERF_EOFMODE;       /* set EOF mode */
-    io_request->IOSer.io_Command = CMD_READ;
-    io_request->IOSer.io_Data    = (void *) pb_frame->p_addr;
-    io_request->IOSer.io_Length  = pb_frame->size;
-    g_serio_errno = error = DoIO((struct IORequest *) io_request);
-    if (error == 0) {
-        pb_frame->size = io_request->IOSer.io_Actual;
-        LOG(DEBUG, "dump of received SLIP frame (%ld bytes):", pb_frame->size);
+    p_conn->p_io_request->io_SerFlags     |= SERF_EOFMODE;       /* set EOF mode */
+    p_conn->p_io_request->IOSer.io_Command = CMD_READ;
+    p_conn->p_io_request->IOSer.io_Data    = (void *) pb_frame->p_addr;
+    p_conn->p_io_request->IOSer.io_Length  = pb_frame->size;
+    p_conn->errno = DoIO((struct IORequest *) p_conn->p_io_request);
+    if (p_conn->errno == 0) {
+        pb_frame->size = p_conn->p_io_request->IOSer.io_Actual;
+        LOG(DEBUG, "Dump of received SLIP frame (%ld bytes):", pb_frame->size);
         dump_memory(pb_frame->p_addr, pb_frame->size);
         return DOSTRUE;
     }
     else
         return DOSFALSE;
+}
+
+
+//
+// local routines
+//
+
+//
+// calculate IP / ICMP checksum (taken from the code for in_cksum() floating on the net)
+//
+static uint16_t calc_checksum(const uint8_t * bytes, uint32_t len)
+{
+    uint32_t sum, i;
+    uint16_t * p;
+
+    sum = 0;
+    p = (uint16_t *) bytes;
+
+    for (i = len; i > 1; i -= 2)                /* sum all 16-bit words */
+        sum += *p++;
+
+    if (i == 1)                                 /* add an odd byte if necessary */
+        sum += (uint16_t) *((uint8_t *) p);
+
+    sum = (sum >> 16) + (sum & 0x0000ffff);     /* fold in upper 16 bits */
+    sum += (sum >> 16);                         /* add carry bits */
+    return ~((uint16_t) sum);                     /* return 1-complement truncated to 16 bits */
 }
