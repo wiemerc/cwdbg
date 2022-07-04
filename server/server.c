@@ -14,15 +14,56 @@
 #include "serio.h"
 #include "server.h"
 #include "stdint.h"
+#include "target.h"
 #include "util.h"
 
 
-static void init_host_conn(HostConnection *p_conn, uint16_t initial_seq_num);
-static void send_ack_msg(Debugger *p_dbg, HostConnection *p_conn, uint8_t *p_data, uint8_t data_len);
-static void send_nack_msg(Debugger *p_dbg, HostConnection *p_conn, uint8_t error_code);
-static void send_target_stopped_msg(Debugger *p_dbg, HostConnection *p_conn, TargetInfo *p_target_info);
+//
+// debugger protocol messages
+//
+#define MSG_INIT            0x00
+#define MSG_ACK             0x01
+#define MSG_NACK            0x02
+#define MSG_RUN             0x03
+#define MSG_QUIT            0x04
+#define MSG_CONT            0x05
+#define MSG_STEP            0x06
+#define MSG_KILL            0x07
+#define MSG_PEEK_MEM        0x08
+#define MSG_POKE_MEM        0x09
+#define MSG_SET_BP          0x0a
+#define MSG_CLEAR_BP        0x0b
+#define MSG_TARGET_STOPPED  0x0c
 
-static int is_correct_target_state_for_command(Debugger *p_dbg, uint8_t msg_type);
+//
+// connection states - for future use
+//
+#define CONN_STATE_INITIAL   0
+#define CONN_STATE_CONNECTED 1
+
+
+struct HostConnection {
+    SerialConnection *p_serial_conn;
+    int              state;
+    uint16_t         next_seq_num;
+};
+
+struct ProtoMessage {
+    uint16_t seqnum;
+    uint16_t checksum;
+    uint8_t  type;
+    uint8_t  length;
+    uint8_t  data[MAX_MSG_DATA_LEN];
+};
+
+
+static int send_message(HostConnection *p_conn, ProtoMessage *p_msg);
+static int recv_message(HostConnection *p_conn, ProtoMessage *p_msg);
+static void send_ack_msg(HostConnection *p_conn, uint8_t *p_data, uint8_t data_len);
+static void send_nack_msg(HostConnection *p_conn, uint8_t error_code);
+static void send_target_stopped_msg(HostConnection *p_conn, TargetInfo *p_target_info);
+
+static int is_correct_target_state_for_command(uint8_t msg_type);
 
 
 //
@@ -35,6 +76,7 @@ static int is_correct_target_state_for_command(Debugger *p_dbg, uint8_t msg_type
 //  ---------------------------------------------------
 // The checksum is calculated in the same way as with IP / UDP headers.
 
+// TODO: Update flow with messages between target and debugger process
 // Programm flow when target is started by host:
 // @startuml
 // User -> Host: command 'run'
@@ -59,31 +101,29 @@ static int is_correct_target_state_for_command(Debugger *p_dbg, uint8_t msg_type
 // Host -> User: display target infos and prompt
 // @enduml
 //
-// TODO: Create response objects and send them back to host
-//
-void process_remote_commands(Debugger *p_dbg, TaskContext *p_task_ctx)
+void process_remote_commands()
 {
-    static HostConnection host_conn;
     ProtoMessage msg;
     TargetInfo   target_info;
-    uint8_t      dbg_errno;
+    TaskContext  *p_task_ctx = get_task_context(gp_dbg->p_target);
     BreakPoint   *p_bpoint;
+    uint8_t      dbg_errno;
 
-    // If we've been called by one of the handle_* routines, we get a task context and the target is still
-    // running. In this case the host is waiting for us and we send a MSG_TARGET_STOPPED message to indicate
-    // that the target has stopped and provide the target information to the host.
+    // If we've been called by run_target(), we get a task context and the target is still running. In this case
+    // the host is waiting for us and we send a MSG_TARGET_STOPPED message to indicate that the target has stopped
+    // and provide the target information to the host.
     if (p_task_ctx) {
-        get_target_info(p_dbg, &target_info, p_task_ctx);
-        send_target_stopped_msg(p_dbg, &host_conn, &target_info);
+        get_target_info(gp_dbg->p_target, &target_info, p_task_ctx);
+        send_target_stopped_msg(gp_dbg->p_host_conn, &target_info);
     }
 
     // TODO: Catch Ctrl-C
     while(1) {
         LOG(INFO, "Waiting for command from host...");
         // TODO: add timeout
-        if (recv_message(&msg) == DOSFALSE) {
+        if (recv_message(gp_dbg->p_host_conn, &msg) == DOSFALSE) {
             LOG(ERROR, "Failed to receive message from host");
-            quit_debugger(p_dbg, RETURN_ERROR);
+            quit_debugger(gp_dbg, RETURN_ERROR);
         }
         // TODO: Log message type as string
         LOG(
@@ -93,82 +133,107 @@ void process_remote_commands(Debugger *p_dbg, TaskContext *p_task_ctx)
             msg.type,
             msg.length
         );
-        if (msg.seqnum != host_conn.next_seq_num) {
+        if (msg.seqnum != gp_dbg->p_host_conn->next_seq_num) {
             LOG(
                 ERROR,
                 "Received message with wrong sequence number, expected %d, got %d",
-                host_conn.next_seq_num,
+                gp_dbg->p_host_conn->next_seq_num,
                 msg.seqnum
             );
-            quit_debugger(p_dbg, RETURN_ERROR);
+            quit_debugger(gp_dbg, RETURN_ERROR);
         }
-        if (!is_correct_target_state_for_command(p_dbg, msg.type)) {
-            quit_debugger(p_dbg, RETURN_ERROR);
+        if (!is_correct_target_state_for_command(msg.type)) {
+            quit_debugger(gp_dbg, RETURN_ERROR);
         }
 
         switch (msg.type) {
             case MSG_INIT:
                 LOG(DEBUG, "Initializing connection");
-                init_host_conn(&host_conn, msg.seqnum);
-                send_ack_msg(p_dbg, &host_conn, NULL, 0);
+                gp_dbg->p_host_conn->state = CONN_STATE_CONNECTED;
+                gp_dbg->p_host_conn->next_seq_num = msg.seqnum;
+                send_ack_msg(gp_dbg->p_host_conn, NULL, 0);
                 break;
 
             case MSG_SET_BP:
-                if ((dbg_errno = set_breakpoint(p_dbg, *(uint32_t *) msg.data)) == 0) {
+                if ((dbg_errno = set_breakpoint(gp_dbg->p_target, *(uint32_t *) msg.data)) == 0) {
                     // TODO: Return breakpoint number
-                    send_ack_msg(p_dbg, &host_conn, NULL, 0);
+                    send_ack_msg(gp_dbg->p_host_conn, NULL, 0);
                 }
                 else {
                     LOG(ERROR, "Failed to set breakpoint");
-                    send_nack_msg(p_dbg, &host_conn, dbg_errno);
+                    send_nack_msg(gp_dbg->p_host_conn, dbg_errno);
                 }
                 break;
 
             case MSG_CLEAR_BP:
-                if ((p_bpoint = find_bpoint_by_num(p_dbg, *(uint32_t *) msg.data)) != NULL) {
-                    clear_breakpoint(p_dbg, p_bpoint);
-                    send_ack_msg(p_dbg, &host_conn, NULL, 0);
+                if ((p_bpoint = find_bpoint_by_num(gp_dbg->p_target, *(uint32_t *) msg.data)) != NULL) {
+                    clear_breakpoint(gp_dbg->p_target, p_bpoint);
+                    send_ack_msg(gp_dbg->p_host_conn, NULL, 0);
                 }
                 else {
                     LOG(ERROR, "Breakpoint #%d not found", *((uint32_t *) msg.data));
-                    send_nack_msg(p_dbg, &host_conn, ERROR_UNKNOWN_BREAKPOINT);
+                    send_nack_msg(gp_dbg->p_host_conn, ERROR_UNKNOWN_BREAKPOINT);
                 }
                 break;
 
 
             case MSG_RUN:
-                send_ack_msg(p_dbg, &host_conn, NULL, 0);
-                run_target(p_dbg);
-                get_target_info(p_dbg, &target_info, NULL);
-                send_target_stopped_msg(p_dbg, &host_conn, &target_info);
+                send_ack_msg(gp_dbg->p_host_conn, NULL, 0);
+                run_target(gp_dbg->p_target);
+                get_target_info(gp_dbg->p_target, &target_info, NULL);
+                send_target_stopped_msg(gp_dbg->p_host_conn, &target_info);
                 break;
 
             case MSG_CONT:
-                send_ack_msg(p_dbg, &host_conn, NULL, 0);
-                set_continue_mode(p_dbg, p_task_ctx);
+                send_ack_msg(gp_dbg->p_host_conn, NULL, 0);
+                set_continue_mode(gp_dbg->p_target, p_task_ctx);
                 return;
 
             case MSG_STEP:
-                send_ack_msg(p_dbg, &host_conn, NULL, 0);
-                set_single_step_mode(p_dbg, p_task_ctx);
+                send_ack_msg(gp_dbg->p_host_conn, NULL, 0);
+                set_single_step_mode(gp_dbg->p_target, p_task_ctx);
                 return;
 
             case MSG_KILL:
-                send_ack_msg(p_dbg, &host_conn, NULL, 0);
-                kill_target(p_dbg);
-                get_target_info(p_dbg, &target_info, NULL);
-                send_target_stopped_msg(p_dbg, &host_conn, &target_info);
+                send_ack_msg(gp_dbg->p_host_conn, NULL, 0);
+                kill_target(gp_dbg->p_target);
+                get_target_info(gp_dbg->p_target, &target_info, NULL);
+                send_target_stopped_msg(gp_dbg->p_host_conn, &target_info);
                 break;
 
             case MSG_QUIT:
-                send_ack_msg(p_dbg, &host_conn, NULL, 0);
-                quit_debugger(p_dbg, RETURN_OK);  // will not return
+                send_ack_msg(gp_dbg->p_host_conn, NULL, 0);
+                quit_debugger(gp_dbg, RETURN_OK);
 
             default:
                 LOG(CRIT, "Internal error: unknown command %d", msg.type);
-                quit_debugger(p_dbg, RETURN_FAIL);  // will not return
+                quit_debugger(gp_dbg, RETURN_FAIL);
         }
     }
+}
+
+
+HostConnection *create_host_conn()
+{
+    HostConnection *p_conn;
+
+    if ((p_conn = AllocVec(sizeof(HostConnection), MEMF_CLEAR)) == NULL) {
+        LOG(CRIT, "Failed to allocate memory for host connection object");
+        return NULL;
+    }
+    if ((p_conn->p_serial_conn = create_serial_conn()) == NULL) {
+        LOG(CRIT, "Failed to initialize serial connection");
+        return NULL;
+    }
+    p_conn->state = CONN_STATE_INITIAL;
+    return p_conn;
+}
+
+
+void destroy_host_conn(HostConnection *p_conn)
+{
+    destroy_serial_conn(p_conn->p_serial_conn);
+    FreeVec(p_conn);
 }
 
 
@@ -176,70 +241,107 @@ void process_remote_commands(Debugger *p_dbg, TaskContext *p_task_ctx)
 // local routines
 //
 
-static void init_host_conn(HostConnection *p_conn, uint16_t initial_seq_num)
+static int send_message(HostConnection *p_conn, ProtoMessage *p_msg)
 {
-    p_conn->state = CONN_STATE_INITIAL;
-    p_conn->next_seq_num = initial_seq_num;
+    uint8_t frame[MAX_FRAME_SIZE];
+    Buffer b_msg, b_frame;
+
+    // TODO: set checksum
+    b_msg.p_addr = (uint8_t *) p_msg;
+    b_msg.size   = sizeof(ProtoMessage);
+    b_frame.p_addr = frame;
+    b_frame.size   = MAX_FRAME_SIZE;
+    if (put_data_into_slip_frame(p_conn->p_serial_conn, &b_msg, &b_frame) == DOSFALSE) {
+        LOG(ERROR, "Could not put data into SLIP frame: %ld", p_conn->p_serial_conn->errno);
+        return DOSFALSE;
+    }
+    if (send_slip_frame(p_conn->p_serial_conn, &b_frame) == DOSFALSE) {
+        LOG(ERROR, "Failed to send SLIP frame: %ld", p_conn->p_serial_conn->errno);
+        return DOSFALSE;
+    }
+    return DOSTRUE;
 }
 
 
-static void send_ack_msg(Debugger *p_dbg, HostConnection *p_conn, uint8_t *p_data, uint8_t data_len)
+static int recv_message(HostConnection *p_conn, ProtoMessage *p_msg)
+{
+    uint8_t frame[MAX_FRAME_SIZE];
+    Buffer b_msg, b_frame;
+
+    b_msg.p_addr = (uint8_t *) p_msg;
+    b_msg.size   = sizeof(ProtoMessage);
+    b_frame.p_addr = frame;
+    b_frame.size   = MAX_FRAME_SIZE;
+    if (recv_slip_frame(p_conn->p_serial_conn, &b_frame) == DOSFALSE) {
+        LOG(ERROR, "Failed to receive SLIP frame: %ld", p_conn->p_serial_conn->errno);
+        return DOSFALSE;
+    }
+    if (get_data_from_slip_frame(p_conn->p_serial_conn, &b_msg, &b_frame) == DOSFALSE) {
+        LOG(ERROR, "Could not get data from SLIP frame: %ld", p_conn->p_serial_conn->errno);
+        return DOSFALSE;
+    }
+    // TODO: check checksum
+    return DOSTRUE;
+}
+
+
+static void send_ack_msg(HostConnection *p_conn, uint8_t *p_data, uint8_t data_len)
 {
     ProtoMessage msg;
 
     if (data_len > MAX_MSG_DATA_LEN) {
-        LOG(CRIT, "Internal error: send_ack_msg(p_dbg, ) has been called with more than MAX_MSG_DATA_LEN data");
-        quit_debugger(p_dbg, RETURN_FAIL);
+        LOG(CRIT, "Internal error: send_ack_msg(gp_dbg, ) has been called with more than MAX_MSG_DATA_LEN data");
+        quit_debugger(gp_dbg, RETURN_FAIL);
     }
     msg.seqnum = p_conn->next_seq_num;
     msg.type   = MSG_ACK;
     msg.length = data_len;
     memcpy(&msg.data, p_data, data_len);
-    if (send_message(&msg) == DOSFALSE) {
+    if (send_message(p_conn, &msg) == DOSFALSE) {
         LOG(ERROR, "Failed to send message to host");
-        quit_debugger(p_dbg, RETURN_ERROR);
+        quit_debugger(gp_dbg, RETURN_ERROR);
     }
     p_conn->next_seq_num++;
 }
 
 
-static void send_nack_msg(Debugger *p_dbg, HostConnection *p_conn, uint8_t error_code)
+static void send_nack_msg(HostConnection *p_conn, uint8_t error_code)
 {
     ProtoMessage msg;
     msg.seqnum  = p_conn->next_seq_num;
     msg.type    = MSG_NACK;
     msg.length  = 1;
     msg.data[0] = error_code;
-    if (send_message(&msg) == DOSFALSE) {
+    if (send_message(p_conn, &msg) == DOSFALSE) {
         LOG(ERROR, "Failed to send message to host");
-        quit_debugger(p_dbg, RETURN_ERROR);
+        quit_debugger(gp_dbg, RETURN_ERROR);
     }
     p_conn->next_seq_num++;
 }
 
 
-static void send_target_stopped_msg(Debugger *p_dbg, HostConnection *p_conn, TargetInfo *p_target_info)
+static void send_target_stopped_msg(HostConnection *p_conn, TargetInfo *p_target_info)
 {
     ProtoMessage msg;
 
     if (sizeof(TargetInfo) > MAX_MSG_DATA_LEN) {
-        LOG(CRIT, "Internal error: send_target_stopped_msg(p_dbg, ) has been called with TargetInfo larger than MAX_MSG_DATA_LEN");
-        quit_debugger(p_dbg, RETURN_FAIL);
+        LOG(CRIT, "Internal error: send_target_stopped_msg(gp_dbg, ) has been called with TargetInfo larger than MAX_MSG_DATA_LEN");
+        quit_debugger(gp_dbg, RETURN_FAIL);
     }
     LOG(DEBUG, "Sending MSG_TARGET_STOPPED message to host");
     msg.seqnum = p_conn->next_seq_num;
     msg.type   = MSG_TARGET_STOPPED;
     msg.length = sizeof(TargetInfo);
     memcpy(&msg.data, p_target_info, sizeof(TargetInfo));
-    if (send_message(&msg) == DOSFALSE) {
+    if (send_message(p_conn, &msg) == DOSFALSE) {
         LOG(ERROR, "Failed to send message to host");
-        quit_debugger(p_dbg, RETURN_ERROR);
+        quit_debugger(gp_dbg, RETURN_ERROR);
     }
 
     // TODO: add timeout
-    if (recv_message(&msg) == DOSFALSE) {
+    if (recv_message(p_conn, &msg) == DOSFALSE) {
         LOG(ERROR, "Failed to receive message from host");
-        quit_debugger(p_dbg, RETURN_ERROR);
+        quit_debugger(gp_dbg, RETURN_ERROR);
     }
     if (msg.type == MSG_ACK) {
         if (msg.seqnum == p_conn->next_seq_num) {
@@ -253,19 +355,19 @@ static void send_target_stopped_msg(Debugger *p_dbg, HostConnection *p_conn, Tar
                 p_conn->next_seq_num,
                 msg.seqnum
             );
-            quit_debugger(p_dbg, RETURN_ERROR);
+            quit_debugger(gp_dbg, RETURN_ERROR);
         }
     }
     else {
         LOG(ERROR, "Received unexpected message of type %d from host instead of the expected ACK", msg.type);
-        quit_debugger(p_dbg, RETURN_ERROR);
+        quit_debugger(gp_dbg, RETURN_ERROR);
     }
 }
 
 
-static int is_correct_target_state_for_command(Debugger *p_dbg, uint8_t msg_type)
+static int is_correct_target_state_for_command(uint8_t msg_type)
 {
-    if (!(get_target_state(p_dbg) & TS_RUNNING) && (
+    if (!(get_target_state(gp_dbg->p_target) & TS_RUNNING) && (
         (msg_type == MSG_CONT) ||
         (msg_type == MSG_STEP) ||
         (msg_type == MSG_KILL)
@@ -273,7 +375,7 @@ static int is_correct_target_state_for_command(Debugger *p_dbg, uint8_t msg_type
         LOG(ERROR, "Incorrect state for command %d: target is not yet running", msg_type);
         return 0;
     }
-    if ((get_target_state(p_dbg) & TS_RUNNING) && (
+    if ((get_target_state(gp_dbg->p_target) & TS_RUNNING) && (
         (msg_type == MSG_INIT) ||
         (msg_type == MSG_RUN) ||
         (msg_type == MSG_QUIT)
@@ -283,4 +385,3 @@ static int is_correct_target_state_for_command(Debugger *p_dbg, uint8_t msg_type
     }
     return 1;
 }
-
