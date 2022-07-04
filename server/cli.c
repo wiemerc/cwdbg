@@ -16,21 +16,21 @@
 #include "debugger.h"
 #include "m68k.h"
 #include "stdint.h"
+#include "target.h"
 #include "util.h"
 
 
 static uint8_t parse_args(char *p_cmd, char **pp_args);
-static int is_correct_target_state_for_command(Debugger *p_dbg, char cmd);
+static int is_correct_target_state_for_command(char cmd);
 static void print_instr(const TaskContext *p_ctx);
 static void print_registers(const TaskContext *p_ctx);
 static void print_stack(const TaskContext *ctx, void *p_initial_sp);
-static void print_memory(const uint8_t *p_addr, uint32_t size);
 
 
 //
 // exported routines
 //
-void process_cli_commands(Debugger *p_dbg, TaskContext *p_task_ctx)
+void process_cli_commands()
 {
     char                cmd[64];                // command buffer
     char                *p_args[5];             // argument list
@@ -40,8 +40,9 @@ void process_cli_commands(Debugger *p_dbg, TaskContext *p_task_ctx)
     uint32_t            msize;                  // size of memory block
     uint32_t            bp_num;                 // number of breakpoint
     BreakPoint          *p_bpoint;              // pointer to breakpoint
+    TaskContext         *p_task_ctx = get_task_context(gp_dbg->p_target);
 
-    if (get_target_state(p_dbg) & TS_RUNNING)
+    if (get_target_state(gp_dbg->p_target) & TS_RUNNING)
         print_instr(p_task_ctx);
     while(1) {
         // read command from standard input (and ignore errors and commands >= 64 characters)
@@ -50,12 +51,12 @@ void process_cli_commands(Debugger *p_dbg, TaskContext *p_task_ctx)
         cmd[Read(Input(), cmd, 64)] = 0;
         nargs = parse_args(cmd, p_args);
 
-        if (!is_correct_target_state_for_command(p_dbg, p_args[0][0]))
+        if (!is_correct_target_state_for_command(p_args[0][0]))
             continue;
 
         switch (p_args[0][0]) {
             case 'r':   // run target
-                run_target(p_dbg);
+                run_target(gp_dbg->p_target);
                 break;
 
             case 'b':   // set breakpoint
@@ -67,7 +68,7 @@ void process_cli_commands(Debugger *p_dbg, TaskContext *p_task_ctx)
                     LOG(ERROR, "Invalid format of breakpoint offset");
                     break;
                 }
-                set_breakpoint(p_dbg, offset);
+                set_breakpoint(gp_dbg->p_target, offset);
                 break;
 
             case 'd':   // delete breakpoint
@@ -79,27 +80,27 @@ void process_cli_commands(Debugger *p_dbg, TaskContext *p_task_ctx)
                     LOG(ERROR, "Invalid format of breakpoint number");
                     break;
                 }
-                if ((p_bpoint = find_bpoint_by_num(p_dbg, bp_num)) == 0) {
+                if ((p_bpoint = find_bpoint_by_num(gp_dbg->p_target, bp_num)) == 0) {
                     LOG(ERROR, "Breakpoint #%d not found", bp_num);
                     break;
                 }
-                clear_breakpoint(p_dbg, p_bpoint);
+                clear_breakpoint(gp_dbg->p_target, p_bpoint);
                 break;
 
             case 'k':   // kill (abort) target
-                kill_target(p_dbg);
+                kill_target(gp_dbg->p_target);
                 break;
 
             case 'q':   // quit debugger
-                quit_debugger(p_dbg, RETURN_OK);  // will not return
+                quit_debugger(gp_dbg, RETURN_OK);  // will not return
 
             case 'c':   // continue target
-                set_continue_mode(p_dbg, p_task_ctx);
+                set_continue_mode(gp_dbg->p_target, p_task_ctx);
                 return;
 
             case 's':   // single step target
             case '\n':
-                set_single_step_mode(p_dbg, p_task_ctx);
+                set_single_step_mode(gp_dbg->p_target, p_task_ctx);
                 return;
 
             case 'i':   // inspect ...
@@ -112,7 +113,7 @@ void process_cli_commands(Debugger *p_dbg, TaskContext *p_task_ctx)
                         print_registers(p_task_ctx);
                         break;
                     case 's':   // ... stack
-                        print_stack(p_task_ctx, get_initial_pc_of_target(p_dbg));
+                        print_stack(p_task_ctx, get_initial_sp_of_target(gp_dbg->p_target));
                         break;
                     default:
                         LOG(ERROR, "Unknown command 'i %c'", p_args[1][0]);
@@ -164,14 +165,14 @@ static uint8_t parse_args(char *p_cmd, char **pp_args)
 }
 
 
-static int is_correct_target_state_for_command(Debugger *p_dbg, char cmd)
+static int is_correct_target_state_for_command(char cmd)
 {
     // keep list of commands (the 1st argument of strchr()) in sync with process_cli_commands()
-    if (!(get_target_state(p_dbg) & TS_RUNNING) && (strchr("cs\nikx", cmd) != NULL)) {
+    if (!(get_target_state(gp_dbg->p_target) & TS_RUNNING) && (strchr("cs\nikx", cmd) != NULL)) {
         LOG(ERROR, "incorrect state for command '%c': target is not yet running", cmd);
         return 0;
     }
-    if ((get_target_state(p_dbg) & TS_RUNNING) && (strchr("rq", cmd) != NULL)) {
+    if ((get_target_state(gp_dbg->p_target) & TS_RUNNING) && (strchr("rq", cmd) != NULL)) {
         LOG(ERROR, "incorrect state for command '%c': target is already / still running", cmd);
         return 0;
     }

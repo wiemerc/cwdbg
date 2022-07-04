@@ -7,15 +7,12 @@
  */
 
 
-/*
- * included files
- */
 #include "debugger.h"
 
 
 /*
  * exported functions
  */
-void process_cli_commands(Debugger *p_dbg, TaskContext *p_task_ctx);
+void process_cli_commands();
 
 #endif /* CWDEBUG_CLI_H */
