@@ -1,9 +1,10 @@
+# TODO: Can we build a cross-compiler for the Mac? https://github.com/bebbo/amiga-gcc
 CC       := /opt/m68k-amigaos/bin/m68k-amigaos-gcc
 AS       := /opt/m68k-amigaos/bin/m68k-amigaos-as
 CFLAGS   := -Wall -MMD
 LDFLAGS  := -s -noixemul -L/opt/m68k-amigaos//m68k-amigaos/libnix/lib -L/opt/m68k-amigaos//m68k-amigaos/libnix/lib/libnix
 LDLIBS   := -lnix -lamiga -ldebug
-SRCFILES := cli.c debugger.c m68kdasm.c main.c serio.c server.c util.c
+SRCFILES := cli.c debugger.c m68kdasm.c main.c serio.c server.c target.c util.c
 
 .PHONY: all musashi clean
 
