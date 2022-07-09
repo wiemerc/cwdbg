@@ -48,6 +48,11 @@ struct HostConnection {
     uint16_t         next_seq_num;
 };
 
+// This is how a complete protocol message looks like:
+//  ---------------------------------------------------
+// | sequence number | checksum | message type | data |
+//  ---------------------------------------------------
+// The checksum is calculated in the same way as with IP / UDP headers.
 struct ProtoMessage {
     uint16_t seqnum;
     uint16_t checksum;
@@ -70,12 +75,9 @@ static int is_correct_target_state_for_command(uint8_t msg_type);
 // exported routines
 //
 
-// This is how a complete protocol message looks like:
-//  ---------------------------------------------------
-// | sequence number | checksum | message type | data |
-//  ---------------------------------------------------
-// The checksum is calculated in the same way as with IP / UDP headers.
-
+// This routine is called nested, once by main() as the central message loop of the debugger (the outer call),
+// and by run_target() every time the target stops (the inner calls).
+//
 // TODO: Update flow with messages between target and debugger process
 // Programm flow when target is started by host:
 // @startuml

@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 from loguru import logger
 
-from debugger import TargetInfo, TargetStates, dbg_state
+from debugger import ErrorCodes, TargetInfo, TargetStates, dbg_state
 from server import (
     ServerCommandError,
     SrvClearBreakpoint,
@@ -75,6 +75,8 @@ class CliCommand:
             return f"Target exited with code {target_info.exit_code}", None
         elif target_info.target_state == TargetStates.TS_KILLED:
             return f"Target has been killed", None
+        elif target_info.target_state == TargetStates.TS_ERROR:
+            return f"Error {ErrorCodes(target_info.error_code).name} occured while running target", None
         else:
             return None, target_info
 

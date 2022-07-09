@@ -35,6 +35,7 @@ class TargetInfo(BigEndianStructure):
         ('task_context', TaskContext),
         ('target_state', c_uint32),
         ('exit_code', c_uint32),
+        ('error_code', c_uint32),
         ('next_instr_bytes', c_uint8 * NUM_NEXT_INSTRUCTIONS * MAX_INSTR_BYTES),
         ('top_stack_dwords', c_uint32 * NUM_TOP_STACK_DWORDS)
     )
@@ -49,6 +50,7 @@ class TargetStates(IntEnum):
     TS_STOPPED_BY_BREAKPOINT  = 16
     TS_STOPPED_BY_SINGLE_STEP = 32
     TS_STOPPED_BY_EXCEPTION   = 64
+    TS_ERROR                  = 65536
 
 
 # keep in sync with values in debugger.h
@@ -58,6 +60,10 @@ class ErrorCodes(IntEnum):
     ERROR_INVALID_ADDRESS        = 2
     ERROR_UNKNOWN_BREAKPOINT     = 3
     ERROR_LOAD_TARGET_FAILED     = 4
+    ERROR_CREATE_PROC_FAILED     = 5
+    ERROR_UNKNOWN_STOP_REASON    = 6
+    ERROR_NO_TRAP                = 7
+    ERROR_RUN_COMMAND_FAILED     = 8
 
 
 @dataclass

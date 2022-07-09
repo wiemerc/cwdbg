@@ -18,7 +18,11 @@ typedef enum {
     ERROR_NOT_ENOUGH_MEMORY      = 1,
     ERROR_INVALID_ADDRESS        = 2,
     ERROR_UNKNOWN_BREAKPOINT     = 3,
-    ERROR_LOAD_TARGET_FAILED     = 4
+    ERROR_LOAD_TARGET_FAILED     = 4,
+    ERROR_CREATE_PROC_FAILED     = 5,
+    ERROR_UNKNOWN_STOP_REASON    = 6,
+    ERROR_NO_TRAP                = 7,
+    ERROR_RUN_COMMAND_FAILED     = 8
 } DbgError;
 
 #define NUM_NEXT_INSTRUCTIONS 8
@@ -63,8 +67,9 @@ typedef struct BreakPoint {
 
 typedef struct TargetInfo {
     TaskContext  task_context;
-    int          state;
-    int          exit_code;
+    uint32_t     state;
+    uint32_t     exit_code;
+    uint32_t     error_code;
     // instruction bytes for the next n instructions, one instruction can be 8(?) bytes long at the most
     uint8_t      next_instr_bytes[NUM_NEXT_INSTRUCTIONS * MAX_INSTR_BYTES];
     // top n dwords on the stack
@@ -85,11 +90,11 @@ DbgError set_breakpoint(Target *p_target, uint32_t offset);
 void clear_breakpoint(Target *p_target, BreakPoint *p_bpoint);
 BreakPoint *find_bpoint_by_addr(Target *p_target, void *p_baddr);
 BreakPoint *find_bpoint_by_num(Target *p_target, uint32_t bp_num);
-int get_target_state(Target *p_target);
+uint32_t get_target_state(Target *p_target);
 void get_target_info(Target *p_target, TargetInfo *p_target_info, TaskContext *p_task_ctx);
 void *get_initial_sp_of_target(Target *p_target);
 TaskContext *get_task_context(Target *p_target);
 void kill_target(Target *p_target);
-void handle_stopped_target(int stop_reason, TaskContext *p_task_ctx);
+void handle_stopped_target(uint32_t stop_reason, TaskContext *p_task_ctx);
 
 #endif  // CWDEBUG_TARGET_H

@@ -30,11 +30,12 @@
 struct Target {
     struct MsgPort *p_port;
     BPTR           p_seglist;
-    int            (*p_entry_point)();
+    uint32_t       (*p_entry_point)();
     struct Task    *p_task;
     TaskContext    *p_task_context;
-    int            state;
-    int            exit_code;
+    uint32_t       state;
+    uint32_t       exit_code;
+    uint32_t       error_code;
     struct List    bpoints;
     BreakPoint     *p_current_bpoint;
 };
@@ -46,8 +47,9 @@ typedef struct TargetStartupMsg {
 
 typedef struct TargetStoppedMsg {
     struct Message  exec_msg;
-    int             stop_reason;
-    int             exit_code;
+    uint32_t        stop_reason;
+    uint32_t        exit_code;
+    uint32_t        error_code;
     TaskContext     *p_task_ctx;
 } TargetStoppedMsg;
 
@@ -114,7 +116,7 @@ DbgError load_target(Target *p_target, const char *p_program_path)
         LOG(ERROR, "Could not load target: %ld", IoErr());
         return ERROR_LOAD_TARGET_FAILED;
     }
-    p_target->p_entry_point = (int (*)()) BCPL_TO_C_PTR(p_target->p_seglist + 1);
+    p_target->p_entry_point = (uint32_t (*)()) BCPL_TO_C_PTR(p_target->p_seglist + 1);
     return ERROR_OK;
 }
 
@@ -152,9 +154,13 @@ void run_target(Target *p_target)
         // Should we hand-craft our own CLI struct in wrap_target()?
         NP_Cli, TRUE
     )) == NULL) {
-        LOG(CRIT, "Could not start target as process");
-        // TODO: Set target state to TS_ERROR and just return
-        quit_debugger(gp_dbg, RETURN_FAIL);
+        LOG(CRIT, "Could not create process for target");
+        // We can't return the error code directly because in the normal case this function only returns when the
+        // target exits. But the server needs to immediately acknowledge the MSG_RUN command. So we pack the state
+        // TS_ERROR and the error code into the MSG_TARGET_STOPPED message which is sent when this function returns.
+        p_target->state = TS_ERROR;
+        p_target->error_code = ERROR_CREATE_PROC_FAILED;
+        return;
     }
     p_target->p_port->mp_SigTask = p_target->p_task;
 
@@ -169,17 +175,25 @@ void run_target(Target *p_target)
         p_stopped_msg = (TargetStoppedMsg *) GetMsg(gp_dbg->p_debugger_port);
         LOG(DEBUG, "Received message from target process, stop reason = %d", p_stopped_msg->stop_reason);
         p_target->p_task_context = p_stopped_msg->p_task_ctx;
+
+        // messages from wrap_target()
         if (p_stopped_msg->stop_reason == TS_EXITED) {
-            // message from wrap_target()
             p_target->state = p_stopped_msg->stop_reason;
             p_target->exit_code = p_stopped_msg->exit_code;
             LOG(INFO, "Target terminated with exit code %d", p_stopped_msg->exit_code);
             ReplyMsg((struct Message *) p_stopped_msg);
             return;
         }
-        // TODO: Handle TS_ERROR
+        else if (p_stopped_msg->stop_reason == TS_ERROR) {
+            p_target->state = p_stopped_msg->stop_reason;
+            p_target->error_code = p_stopped_msg->error_code;
+            LOG(CRIT, "Running target failed with error code %d", p_stopped_msg->error_code);
+            ReplyMsg((struct Message *) p_stopped_msg);
+            return;
+        }
+
+        // messages from handle_stopped_target()
         else {
-            // message from handle_stopped_target()
             p_target->state |= p_stopped_msg->stop_reason;
             if (p_stopped_msg->stop_reason == TS_STOPPED_BY_BREAKPOINT) {
                 handle_breakpoint(p_target, p_stopped_msg->p_task_ctx);
@@ -196,8 +210,9 @@ void run_target(Target *p_target)
             }
             else {
                 LOG(CRIT, "Internal error: unknown stop reason %d", p_stopped_msg->stop_reason);
-                // TODO: Set target state to TS_ERROR and just return
-                quit_debugger(gp_dbg, RETURN_FAIL);
+                p_target->state = TS_ERROR;
+                p_target->error_code = ERROR_UNKNOWN_STOP_REASON;
+                return;
             }
             p_target->state &= ~p_stopped_msg->stop_reason;
             ReplyMsg((struct Message *) p_stopped_msg);
@@ -303,17 +318,19 @@ BreakPoint *find_bpoint_by_num(Target *p_target, uint32_t bp_num)
 
 
 // TODO: Use get_target_info() instead
-int get_target_state(Target *p_target)
+uint32_t get_target_state(Target *p_target)
 {
     return p_target->state;
 }
 
 
+// TODO: Remove arg p_task_ctx
 void get_target_info(Target *p_target, TargetInfo *p_target_info, TaskContext *p_task_ctx)
 {
     // TODO: Include inital PC and SP
-    p_target_info->state     = p_target->state;
-    p_target_info->exit_code = p_target->exit_code;
+    p_target_info->state      = p_target->state;
+    p_target_info->exit_code  = p_target->exit_code;
+    p_target_info->error_code = p_target->error_code;
     if (p_task_ctx) {
         // target is still running, add task context, next n instructions and top n dwords on the stack
         memcpy(&p_target_info->task_context, p_task_ctx, sizeof(TaskContext));
@@ -354,7 +371,7 @@ void kill_target(Target *p_target)
 // This routine is the entry point into the debugger called by the exception handler in the context of the target process.
 // It sends sends a message to the debugger process informing it that the target has stopped. This message is received
 // by run_target() which then calls one of the handle_* routines below (in the context of the debugger process).
-void handle_stopped_target(int stop_reason, TaskContext *p_task_ctx)
+void handle_stopped_target(uint32_t stop_reason, TaskContext *p_task_ctx)
 {
     TargetStoppedMsg msg;
     struct MsgPort *p_port = FindPort("CWDEBUG_TARGET");
@@ -383,24 +400,26 @@ static void wrap_target()
     TargetStoppedMsg stopped_msg;
     struct MsgPort *p_port = FindPort("CWDEBUG_TARGET");
     struct MsgPort *p_debugger_port = FindPort("CWDEBUG_DBG");
+    int result;
 
     LOG(DEBUG, "Waiting for startup message...");
     WaitPort(p_port);
     p_startup_msg = (TargetStartupMsg *) GetMsg(p_port);
 
     init_target_stopped_msg(&stopped_msg, p_port);
-    stopped_msg.p_task_ctx = NULL;
 
     // allocate traps and install exception handler
     FindTask(NULL)->tc_TrapCode = exc_handler;
     if (AllocTrap(TRAP_NUM_BP) == -1) {
         LOG(CRIT, "Internal error: could not allocate trap for breakpoints");
         stopped_msg.stop_reason = TS_ERROR;
+        stopped_msg.error_code = ERROR_NO_TRAP;
         goto send_msg;
     }
     if (AllocTrap(TRAP_NUM_RESTORE) == -1) {
         LOG(CRIT, "Internal error: could not allocate trap for restoring the task context");
         stopped_msg.stop_reason = TS_ERROR;
+        stopped_msg.error_code = ERROR_NO_TRAP;
         goto send_msg;
     }
 
@@ -413,9 +432,16 @@ static void wrap_target()
     // We need to use RunCommand() instead of just calling the entry point if we specify NP_Cli in CreateNewProcTags(),
     // otherwise we get a crash.
     // TODO: Check if target has been killed, and if yes set stop_reason to TS_KILLED
-    stopped_msg.exit_code   = RunCommand(p_startup_msg->p_seglist, TARGET_STACK_SIZE, "", 0);
-    stopped_msg.stop_reason = TS_EXITED;
-    stopped_msg.p_task_ctx  = NULL;
+    if ((result = RunCommand(p_startup_msg->p_seglist, TARGET_STACK_SIZE, "", 0)) == -1) {
+        LOG(CRIT, "Running target with RunCommand() failed");
+        stopped_msg.stop_reason = TS_ERROR;
+        stopped_msg.error_code = ERROR_RUN_COMMAND_FAILED;
+        goto send_msg;
+    }
+    else {
+        stopped_msg.stop_reason = TS_EXITED;
+        stopped_msg.exit_code = (uint32_t) result;
+    }
 
     // Send message to debugger to inform it that target has finished or an error occurred
     send_msg:
@@ -429,6 +455,7 @@ static void wrap_target()
 
 static void init_target_startup_msg(TargetStartupMsg *p_msg, struct MsgPort *p_reply_port)
 {
+    memset(p_msg, 0, sizeof(TargetStartupMsg));
     p_msg->exec_msg.mn_Length = sizeof(TargetStartupMsg);
     p_msg->exec_msg.mn_ReplyPort = p_reply_port;
 }
@@ -436,6 +463,7 @@ static void init_target_startup_msg(TargetStartupMsg *p_msg, struct MsgPort *p_r
 
 static void init_target_stopped_msg(TargetStoppedMsg *p_msg, struct MsgPort *p_reply_port)
 {
+    memset(p_msg, 0, sizeof(TargetStoppedMsg));
     p_msg->exec_msg.mn_Length = sizeof(TargetStoppedMsg);
     p_msg->exec_msg.mn_ReplyPort = p_reply_port;
 }
