@@ -24,6 +24,7 @@ Debugger *gp_dbg;
 // - convert all C to C++ comments
 // - start all log messages with an uppercase letter
 // - consistent log levels for errors
+// - run clang-format / clang-tidy on all files
 
 int main()
 {
@@ -49,7 +50,7 @@ int main()
         exit(RETURN_FAIL);
     }
 
-    if (load_target(gp_dbg->p_target, p_target_fname) == DOSFALSE) {
+    if (load_target(gp_dbg->p_target, p_target_fname) != ERROR_OK) {
         LOG(ERROR, "Could not load target")
         FreeArgs(p_rdargs);
         quit_debugger(gp_dbg, RETURN_FAIL);

@@ -92,7 +92,7 @@ void process_cli_commands()
                 break;
 
             case 'q':   // quit debugger
-                quit_debugger(gp_dbg, RETURN_OK);  // will not return
+                quit_debugger(gp_dbg, RETURN_OK);
 
             case 'c':   // continue target
                 set_continue_mode(gp_dbg->p_target, p_task_ctx);

@@ -38,12 +38,15 @@ Debugger *create_debugger(int f_server_mode)
     }
     if ((p_dbg->p_debugger_port = CreatePort("CWDEBUG_DBG", 0)) == NULL) {
         LOG(ERROR, "Could not create message port for debugger");
+        FreeVec(p_dbg);
         return NULL;
     }
     LOG(DEBUG, "Created message port for debugger");
     if (f_server_mode) {
         if ((p_dbg->p_host_conn = create_host_conn()) == NULL) {
             LOG(ERROR, "Could not create host connection object");
+            DeletePort(p_dbg->p_debugger_port);
+            FreeVec(p_dbg);
             return NULL;
         }
         LOG(DEBUG, "Created host connection object");
@@ -55,6 +58,10 @@ Debugger *create_debugger(int f_server_mode)
         p_dbg->p_process_commands_func = process_cli_commands;
     }
     if ((p_dbg->p_target = create_target()) == NULL) {
+        if (f_server_mode)
+            destroy_host_conn(p_dbg->p_host_conn);
+        DeletePort(p_dbg->p_debugger_port);
+        FreeVec(p_dbg);
         LOG(ERROR, "Could not create target object");
         return NULL;
     }

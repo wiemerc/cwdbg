@@ -66,8 +66,7 @@ static void handle_exception(Target *p_target, TaskContext *p_task_ctx);
 //
 // exported functions
 //
-// TODO: Have the routines return an error code instead of calling quit_debugger() so that
-//       process_remote_commands() can inform the host
+// TODO: Always use DbgError as return value and return values via out parameters
 
 Target *create_target()
 {
@@ -79,6 +78,7 @@ Target *create_target()
     }
     if ((p_target->p_port = CreatePort("CWDEBUG_TARGET", 0)) == NULL) {
         LOG(ERROR, "Could not create message port for target");
+        FreeVec(p_target);
         return NULL;
     }
     p_target->state = TS_IDLE;
@@ -108,14 +108,14 @@ void destroy_target(Target *p_target)
 }
 
 
-int load_target(Target *p_target, const char *p_program_path)
+DbgError load_target(Target *p_target, const char *p_program_path)
 {
     if ((p_target->p_seglist = LoadSeg(p_program_path)) == NULL) {
         LOG(ERROR, "Could not load target: %ld", IoErr());
-        return DOSFALSE;
+        return ERROR_LOAD_TARGET_FAILED;
     }
     p_target->p_entry_point = (int (*)()) BCPL_TO_C_PTR(p_target->p_seglist + 1);
-    return DOSTRUE;
+    return ERROR_OK;
 }
 
 
@@ -153,6 +153,7 @@ void run_target(Target *p_target)
         NP_Cli, TRUE
     )) == NULL) {
         LOG(CRIT, "Could not start target as process");
+        // TODO: Set target state to TS_ERROR and just return
         quit_debugger(gp_dbg, RETURN_FAIL);
     }
     p_target->p_port->mp_SigTask = p_target->p_task;
@@ -195,6 +196,7 @@ void run_target(Target *p_target)
             }
             else {
                 LOG(CRIT, "Internal error: unknown stop reason %d", p_stopped_msg->stop_reason);
+                // TODO: Set target state to TS_ERROR and just return
                 quit_debugger(gp_dbg, RETURN_FAIL);
             }
             p_target->state &= ~p_stopped_msg->stop_reason;
@@ -228,7 +230,7 @@ void set_single_step_mode(Target *p_target, TaskContext *p_task_ctx)
 }
 
 
-uint8_t set_breakpoint(Target *p_target, uint32_t offset)
+DbgError set_breakpoint(Target *p_target, uint32_t offset)
 {
     BreakPoint *p_bpoint;
     void       *p_baddr;
@@ -247,7 +249,7 @@ uint8_t set_breakpoint(Target *p_target, uint32_t offset)
     AddTail(&p_target->bpoints, (struct Node *) p_bpoint);
     *((uint16_t *) p_baddr) = TRAP_OPCODE;
     LOG(DEBUG, "Breakpoint #%ld at entry + 0x%08lx set", p_bpoint->num, offset);
-    return 0;
+    return ERROR_OK;
 }
 
 
@@ -300,6 +302,7 @@ BreakPoint *find_bpoint_by_num(Target *p_target, uint32_t bp_num)
 }
 
 
+// TODO: Use get_target_info() instead
 int get_target_state(Target *p_target)
 {
     return p_target->state;
@@ -308,6 +311,7 @@ int get_target_state(Target *p_target)
 
 void get_target_info(Target *p_target, TargetInfo *p_target_info, TaskContext *p_task_ctx)
 {
+    // TODO: Include inital PC and SP
     p_target_info->state     = p_target->state;
     p_target_info->exit_code = p_target->exit_code;
     if (p_task_ctx) {
@@ -324,12 +328,14 @@ void get_target_info(Target *p_target, TargetInfo *p_target_info, TaskContext *p
 }
 
 
+// TODO: Use get_target_info() instead
 void *get_initial_sp_of_target(Target *p_target)
 {
     return p_target->p_task->tc_SPUpper - 2;
 }
 
 
+// TODO: Use get_target_info() instead
 TaskContext *get_task_context(Target *p_target)
 {
     return p_target->p_task_context;
@@ -406,6 +412,7 @@ static void wrap_target()
     );
     // We need to use RunCommand() instead of just calling the entry point if we specify NP_Cli in CreateNewProcTags(),
     // otherwise we get a crash.
+    // TODO: Check if target has been killed, and if yes set stop_reason to TS_KILLED
     stopped_msg.exit_code   = RunCommand(p_startup_msg->p_seglist, TARGET_STACK_SIZE, "", 0);
     stopped_msg.stop_reason = TS_EXITED;
     stopped_msg.p_task_ctx  = NULL;
@@ -456,11 +463,10 @@ static void handle_breakpoint(Target *p_target, TaskContext *p_task_ctx)
     }
     else {
         LOG(
-            CRIT,
-            "Internal error: target has hit unknown breakpoint at entry + 0x%08lx",
+            WARN,
+            "Target has hit unknown breakpoint at entry + 0x%08lx",
             ((uint32_t) p_baddr - (uint32_t) p_target->p_entry_point)
         );
-//        quit_debugger(gp_dbg, RETURN_FAIL);
     }
 }
 

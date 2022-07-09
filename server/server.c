@@ -135,15 +135,16 @@ void process_remote_commands()
         );
         if (msg.seqnum != gp_dbg->p_host_conn->next_seq_num) {
             LOG(
-                ERROR,
-                "Received message with wrong sequence number, expected %d, got %d",
+                CRIT,
+                "Internal error: Received message with wrong sequence number, expected %d, got %d",
                 gp_dbg->p_host_conn->next_seq_num,
                 msg.seqnum
             );
-            quit_debugger(gp_dbg, RETURN_ERROR);
+            quit_debugger(gp_dbg, RETURN_FAIL);
         }
         if (!is_correct_target_state_for_command(msg.type)) {
-            quit_debugger(gp_dbg, RETURN_ERROR);
+            LOG(CRIT, "Internal error: Target is in wrong state for command %d", msg.type);
+            quit_debugger(gp_dbg, RETURN_FAIL);
         }
 
         switch (msg.type) {
@@ -175,7 +176,6 @@ void process_remote_commands()
                     send_nack_msg(gp_dbg->p_host_conn, ERROR_UNKNOWN_BREAKPOINT);
                 }
                 break;
-
 
             case MSG_RUN:
                 send_ack_msg(gp_dbg->p_host_conn, NULL, 0);
@@ -290,7 +290,7 @@ static void send_ack_msg(HostConnection *p_conn, uint8_t *p_data, uint8_t data_l
     ProtoMessage msg;
 
     if (data_len > MAX_MSG_DATA_LEN) {
-        LOG(CRIT, "Internal error: send_ack_msg(gp_dbg, ) has been called with more than MAX_MSG_DATA_LEN data");
+        LOG(CRIT, "Internal error: send_ack_msg() has been called with more than MAX_MSG_DATA_LEN data");
         quit_debugger(gp_dbg, RETURN_FAIL);
     }
     msg.seqnum = p_conn->next_seq_num;
@@ -325,7 +325,7 @@ static void send_target_stopped_msg(HostConnection *p_conn, TargetInfo *p_target
     ProtoMessage msg;
 
     if (sizeof(TargetInfo) > MAX_MSG_DATA_LEN) {
-        LOG(CRIT, "Internal error: send_target_stopped_msg(gp_dbg, ) has been called with TargetInfo larger than MAX_MSG_DATA_LEN");
+        LOG(CRIT, "Internal error: send_target_stopped_msg() has been called with TargetInfo larger than MAX_MSG_DATA_LEN");
         quit_debugger(gp_dbg, RETURN_FAIL);
     }
     LOG(DEBUG, "Sending MSG_TARGET_STOPPED message to host");
@@ -350,17 +350,17 @@ static void send_target_stopped_msg(HostConnection *p_conn, TargetInfo *p_target
         }
         else {
             LOG(
-                ERROR,
-                "Received ACK for MSG_TARGET_STOPPED message with wrong sequence number, expected %d, got %d",
+                CRIT,
+                "Internal error: Received ACK for MSG_TARGET_STOPPED message with wrong sequence number, expected %d, got %d",
                 p_conn->next_seq_num,
                 msg.seqnum
             );
-            quit_debugger(gp_dbg, RETURN_ERROR);
+            quit_debugger(gp_dbg, RETURN_FAIL);
         }
     }
     else {
-        LOG(ERROR, "Received unexpected message of type %d from host instead of the expected ACK", msg.type);
-        quit_debugger(gp_dbg, RETURN_ERROR);
+        LOG(CRIT, "Internal error: Received unexpected message of type %d from host instead of the expected ACK", msg.type);
+        quit_debugger(gp_dbg, RETURN_FAIL);
     }
 }
 

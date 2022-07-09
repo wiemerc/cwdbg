@@ -13,9 +13,13 @@
 //
 // error codes
 //
-#define ERROR_NOT_ENOUGH_MEMORY  1
-#define ERROR_INVALID_ADDRESS    2
-#define ERROR_UNKNOWN_BREAKPOINT 3
+typedef enum {
+    ERROR_OK                     = 0,
+    ERROR_NOT_ENOUGH_MEMORY      = 1,
+    ERROR_INVALID_ADDRESS        = 2,
+    ERROR_UNKNOWN_BREAKPOINT     = 3,
+    ERROR_LOAD_TARGET_FAILED     = 4
+} DbgError;
 
 #define NUM_NEXT_INSTRUCTIONS 8
 #define NUM_TOP_STACK_DWORDS  8
@@ -73,11 +77,11 @@ typedef struct TargetInfo {
 //
 Target *create_target();
 void destroy_target(Target *p_target);
-int load_target(Target *p_target, const char *p_program_path);
+DbgError load_target(Target *p_target, const char *p_program_path);
 void run_target(Target *p_target);
 void set_continue_mode(Target *p_target, TaskContext *p_task_ctx);
 void set_single_step_mode(Target *p_target, TaskContext *p_task_ctx);
-uint8_t set_breakpoint(Target *p_target, uint32_t offset);
+DbgError set_breakpoint(Target *p_target, uint32_t offset);
 void clear_breakpoint(Target *p_target, BreakPoint *p_bpoint);
 BreakPoint *find_bpoint_by_addr(Target *p_target, void *p_baddr);
 BreakPoint *find_bpoint_by_num(Target *p_target, uint32_t bp_num);
