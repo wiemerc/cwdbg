@@ -199,9 +199,9 @@ void process_remote_commands()
             case MSG_KILL:
                 send_ack_msg(gp_dbg->p_host_conn, NULL, 0);
                 kill_target(gp_dbg->p_target);
-                get_target_info(gp_dbg->p_target, &target_info, NULL);
-                send_target_stopped_msg(gp_dbg->p_host_conn, &target_info);
-                break;
+                // Return to run_target() so it can exit and the outer invocation can take over again (which will also
+                // send the MSG_TARGET_STOPPED message)
+                return;
 
             case MSG_QUIT:
                 send_ack_msg(gp_dbg->p_host_conn, NULL, 0);

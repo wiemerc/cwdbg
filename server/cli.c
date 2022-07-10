@@ -89,7 +89,8 @@ void process_cli_commands()
 
             case 'k':   // kill (abort) target
                 kill_target(gp_dbg->p_target);
-                break;
+                // Return to run_target() so it can exit and the outer invocation can take over again
+                return;
 
             case 'q':   // quit debugger
                 quit_debugger(gp_dbg, RETURN_OK);

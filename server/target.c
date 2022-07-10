@@ -170,8 +170,9 @@ void run_target(Target *p_target)
     startup_msg.p_seglist = p_target->p_seglist;
     PutMsg(p_target->p_port, (struct Message *) &startup_msg);
 
-    LOG(DEBUG, "Waiting for messages from target...");
-    while (WaitPort(gp_dbg->p_debugger_port)) {
+    while (TRUE) {
+        LOG(DEBUG, "Waiting for messages from target...");
+        WaitPort(gp_dbg->p_debugger_port);
         p_stopped_msg = (TargetStoppedMsg *) GetMsg(gp_dbg->p_debugger_port);
         LOG(DEBUG, "Received message from target process, stop reason = %d", p_stopped_msg->stop_reason);
         p_target->p_task_context = p_stopped_msg->p_task_ctx;
@@ -214,8 +215,14 @@ void run_target(Target *p_target)
                 p_target->error_code = ERROR_UNKNOWN_STOP_REASON;
                 return;
             }
-            p_target->state &= ~p_stopped_msg->stop_reason;
-            ReplyMsg((struct Message *) p_stopped_msg);
+
+            if (p_target->state == TS_KILLED)
+                // Target has been killed after it stopped and process no longer exists.
+                break;
+            else {
+                p_target->state &= ~p_stopped_msg->stop_reason;
+                ReplyMsg((struct Message *) p_stopped_msg);
+            }
         }
     }
 }
@@ -431,7 +438,6 @@ static void wrap_target()
     );
     // We need to use RunCommand() instead of just calling the entry point if we specify NP_Cli in CreateNewProcTags(),
     // otherwise we get a crash.
-    // TODO: Check if target has been killed, and if yes set stop_reason to TS_KILLED
     if ((result = RunCommand(p_startup_msg->p_seglist, TARGET_STACK_SIZE, "", 0)) == -1) {
         LOG(CRIT, "Running target with RunCommand() failed");
         stopped_msg.stop_reason = TS_ERROR;
