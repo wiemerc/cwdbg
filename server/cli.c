@@ -96,12 +96,12 @@ void process_cli_commands()
                 quit_debugger(gp_dbg, RETURN_OK);
 
             case 'c':   // continue target
-                set_continue_mode(gp_dbg->p_target, p_task_ctx);
+                set_continue_mode(gp_dbg->p_target);
                 return;
 
             case 's':   // single step target
             case '\n':
-                set_single_step_mode(gp_dbg->p_target, p_task_ctx);
+                set_single_step_mode(gp_dbg->p_target);
                 return;
 
             case 'i':   // inspect ...

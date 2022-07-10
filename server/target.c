@@ -51,7 +51,7 @@ typedef struct TargetStoppedMsg {
     uint32_t        stop_reason;
     uint32_t        exit_code;
     uint32_t        error_code;
-    TaskContext     *p_task_ctx;
+    TaskContext     *p_task_context;
 } TargetStoppedMsg;
 
 
@@ -61,9 +61,9 @@ extern void exc_handler();
 static void init_target_startup_msg(TargetStartupMsg *p_msg, struct MsgPort *p_reply_port);
 static void init_target_stopped_msg(TargetStoppedMsg *p_msg, struct MsgPort *p_reply_port);
 static void wrap_target();
-static void handle_breakpoint(Target *p_target, TaskContext *p_task_ctx);
-static void handle_single_step(Target *p_target, TaskContext *p_task_ctx);
-static void handle_exception(Target *p_target, TaskContext *p_task_ctx);
+static void handle_breakpoint(Target *p_target);
+static void handle_single_step(Target *p_target);
+static void handle_exception(Target *p_target);
 
 
 //
@@ -174,7 +174,7 @@ void run_target(Target *p_target)
         WaitPort(gp_dbg->p_debugger_port);
         p_stopped_msg = (TargetStoppedMsg *) GetMsg(gp_dbg->p_debugger_port);
         LOG(DEBUG, "Received message from target process, stop reason = %d", p_stopped_msg->stop_reason);
-        p_target->p_task_context = p_stopped_msg->p_task_ctx;
+        p_target->p_task_context = p_stopped_msg->p_task_context;
 
         // messages from wrap_target()
         if (p_stopped_msg->stop_reason == TS_EXITED) {
@@ -196,16 +196,16 @@ void run_target(Target *p_target)
         else {
             p_target->state |= p_stopped_msg->stop_reason;
             if (p_stopped_msg->stop_reason == TS_STOPPED_BY_BREAKPOINT) {
-                handle_breakpoint(p_target, p_stopped_msg->p_task_ctx);
+                handle_breakpoint(p_target);
                 process_commands(gp_dbg);
             }
             else if (p_stopped_msg->stop_reason == TS_STOPPED_BY_SINGLE_STEP) {
-                handle_single_step(p_target, p_stopped_msg->p_task_ctx);
+                handle_single_step(p_target);
                 if (p_target->state & TS_SINGLE_STEPPING)
                     process_commands(gp_dbg);
             }
             else if (p_stopped_msg->stop_reason == TS_STOPPED_BY_EXCEPTION) {
-                handle_exception(p_target, p_stopped_msg->p_task_ctx);
+                handle_exception(p_target);
                 process_commands(gp_dbg);
             }
             else {
@@ -227,27 +227,27 @@ void run_target(Target *p_target)
 }
 
 
-void set_continue_mode(Target *p_target, TaskContext *p_task_ctx)
+void set_continue_mode(Target *p_target)
 {
     // If we continue from a breakpoint which hasn't been deleted (so p_target->p_current_bpoint still points to it),
     // it has to be restored first, so we single-step the original instruction at the breakpoint and remember to
     // restore the breakpoint afterwards (see handle_single_step() below).
     p_target->state &= ~TS_SINGLE_STEPPING;
     if ((p_target->state & TS_STOPPED_BY_BREAKPOINT) && p_target->p_current_bpoint) {
-        p_task_ctx->reg_sr &= 0xbfff;    // clear T0
-        p_task_ctx->reg_sr |= 0x8700;    // set T1 and interrupt mask
+        p_target->p_task_context->reg_sr &= 0xbfff;    // clear T0
+        p_target->p_task_context->reg_sr |= 0x8700;    // set T1 and interrupt mask
     }
 }
 
 
-void set_single_step_mode(Target *p_target, TaskContext *p_task_ctx)
+void set_single_step_mode(Target *p_target)
 {
     p_target->state |= TS_SINGLE_STEPPING;
     // In trace mode, *all* interrupts must be disabled (except for the NMI), otherwise OS code could be executed while
     // the trace bit is still set, which would cause the OS exception handler (an alert) to be executed instead of ours
     // => value 0x8700 is ORed with the SR.
-    p_task_ctx->reg_sr &= 0xbfff;    // clear T0
-    p_task_ctx->reg_sr |= 0x8700;    // set T1 and interrupt mask
+    p_target->p_task_context->reg_sr &= 0xbfff;    // clear T0
+    p_target->p_task_context->reg_sr |= 0x8700;    // set T1 and interrupt mask
 }
 
 
@@ -329,21 +329,20 @@ uint32_t get_target_state(Target *p_target)
 }
 
 
-// TODO: Remove arg p_task_ctx
-void get_target_info(Target *p_target, TargetInfo *p_target_info, TaskContext *p_task_ctx)
+void get_target_info(Target *p_target, TargetInfo *p_target_info)
 {
     // TODO: Include inital PC and SP
     p_target_info->state      = p_target->state;
     p_target_info->exit_code  = p_target->exit_code;
     p_target_info->error_code = p_target->error_code;
-    if (p_task_ctx) {
+    if (p_target->state & TS_RUNNING) {
         // target is still running, add task context, next n instructions and top n dwords on the stack
-        memcpy(&p_target_info->task_context, p_task_ctx, sizeof(TaskContext));
-        if ((uint32_t) p_task_ctx->p_reg_pc <= (0xffffffff - NUM_NEXT_INSTRUCTIONS * MAX_INSTR_BYTES)) {
-            memcpy(&p_target_info->next_instr_bytes, p_task_ctx->p_reg_pc, NUM_NEXT_INSTRUCTIONS * MAX_INSTR_BYTES);
+        memcpy(&p_target_info->task_context, p_target->p_task_context, sizeof(TaskContext));
+        if ((uint32_t) p_target->p_task_context->p_reg_pc <= (0xffffffff - NUM_NEXT_INSTRUCTIONS * MAX_INSTR_BYTES)) {
+            memcpy(&p_target_info->next_instr_bytes, p_target->p_task_context->p_reg_pc, NUM_NEXT_INSTRUCTIONS * MAX_INSTR_BYTES);
         }
-        if ((uint32_t) p_task_ctx->p_reg_sp <= (0xffffffff - NUM_TOP_STACK_DWORDS * 4)) {
-            memcpy(&p_target_info->top_stack_dwords, p_task_ctx->p_reg_sp, NUM_TOP_STACK_DWORDS * 4);
+        if ((uint32_t) p_target->p_task_context->p_reg_sp <= (0xffffffff - NUM_TOP_STACK_DWORDS * 4)) {
+            memcpy(&p_target_info->top_stack_dwords, p_target->p_task_context->p_reg_sp, NUM_TOP_STACK_DWORDS * 4);
         }
         // TODO: Include breakpoint structure if target has hit breakpoint
     }
@@ -376,7 +375,7 @@ void kill_target(Target *p_target)
 // This routine is the entry point into the debugger called by the exception handler in the context of the target process.
 // It sends sends a message to the debugger process informing it that the target has stopped. This message is received
 // by run_target() which then calls one of the handle_* routines below (in the context of the debugger process).
-void handle_stopped_target(uint32_t stop_reason, TaskContext *p_task_ctx)
+void handle_stopped_target(uint32_t stop_reason, TaskContext *p_task_context)
 {
     TargetStoppedMsg msg;
     struct MsgPort *p_port = FindPort("CWDEBUG_TARGET");
@@ -385,7 +384,7 @@ void handle_stopped_target(uint32_t stop_reason, TaskContext *p_task_ctx)
     LOG(DEBUG, "handle_stopped_target() has been called, stop reason = %d", stop_reason);
     init_target_stopped_msg(&msg, p_port);
     msg.stop_reason = stop_reason;
-    msg.p_task_ctx = p_task_ctx;
+    msg.p_task_context = p_task_context;
     LOG(DEBUG, "Sending message to debugger process");
     PutMsg(p_debugger_port, (struct Message *) &msg);
     WaitPort(p_port);
@@ -473,16 +472,16 @@ static void init_target_stopped_msg(TargetStoppedMsg *p_msg, struct MsgPort *p_r
 }
 
 
-static void handle_breakpoint(Target *p_target, TaskContext *p_task_ctx)
+static void handle_breakpoint(Target *p_target)
 {
     BreakPoint *p_bpoint;
     void       *p_baddr;
 
-    p_baddr = p_task_ctx->p_reg_pc - 2;
+    p_baddr = p_target->p_task_context->p_reg_pc - 2;
     if ((p_bpoint = find_bpoint_by_addr(p_target, p_baddr)) != NULL) {
         p_target->p_current_bpoint = p_bpoint;
         // rewind PC by 2 bytes and replace trap instruction with original instruction
-        p_task_ctx->p_reg_pc = p_baddr;
+        p_target->p_task_context->p_reg_pc = p_baddr;
         *((uint16_t *) p_baddr) = p_bpoint->opcode;
         ++p_bpoint->hit_count;
         LOG(
@@ -503,7 +502,7 @@ static void handle_breakpoint(Target *p_target, TaskContext *p_task_ctx)
 }
 
 
-static void handle_single_step(Target *p_target, TaskContext *p_task_ctx)
+static void handle_single_step(Target *p_target)
 {
     if (p_target->p_current_bpoint) {
         // breakpoint needs to be restored
@@ -522,13 +521,13 @@ static void handle_single_step(Target *p_target, TaskContext *p_task_ctx)
 }
 
 
-static void handle_exception(Target *p_target, TaskContext *p_task_ctx)
+static void handle_exception(Target *p_target)
 {
     // unhandled exception occurred
     LOG(
         INFO,
         "Unhandled exception #%ld occurred at entry + 0x%08lx",
-        p_task_ctx->exc_num,
-        ((uint32_t) p_task_ctx->p_reg_pc - (uint32_t) p_target->p_entry_point)
+        p_target->p_task_context->exc_num,
+        ((uint32_t) p_target->p_task_context->p_reg_pc - (uint32_t) p_target->p_entry_point)
     );
 }

@@ -107,15 +107,13 @@ void process_remote_commands()
 {
     ProtoMessage msg;
     TargetInfo   target_info;
-    TaskContext  *p_task_ctx = get_task_context(gp_dbg->p_target);
     BreakPoint   *p_bpoint;
     uint8_t      dbg_errno;
 
-    // If we've been called by run_target(), we get a task context and the target is still running. In this case
-    // the host is waiting for us and we send a MSG_TARGET_STOPPED message to indicate that the target has stopped
-    // and provide the target information to the host.
-    if (p_task_ctx) {
-        get_target_info(gp_dbg->p_target, &target_info, p_task_ctx);
+    // If we've been called by run_target() the target is still running. In this case the host is waiting for us and we
+    // send a MSG_TARGET_STOPPED message to indicate that the target has stopped and provide the target information to the host.
+    get_target_info(gp_dbg->p_target, &target_info);
+    if (target_info.state & TS_RUNNING) {
         send_target_stopped_msg(gp_dbg->p_host_conn, &target_info);
     }
 
@@ -182,18 +180,18 @@ void process_remote_commands()
             case MSG_RUN:
                 send_ack_msg(gp_dbg->p_host_conn, NULL, 0);
                 run_target(gp_dbg->p_target);
-                get_target_info(gp_dbg->p_target, &target_info, NULL);
+                get_target_info(gp_dbg->p_target, &target_info);
                 send_target_stopped_msg(gp_dbg->p_host_conn, &target_info);
                 break;
 
             case MSG_CONT:
                 send_ack_msg(gp_dbg->p_host_conn, NULL, 0);
-                set_continue_mode(gp_dbg->p_target, p_task_ctx);
+                set_continue_mode(gp_dbg->p_target);
                 return;
 
             case MSG_STEP:
                 send_ack_msg(gp_dbg->p_host_conn, NULL, 0);
-                set_single_step_mode(gp_dbg->p_target, p_task_ctx);
+                set_single_step_mode(gp_dbg->p_target);
                 return;
 
             case MSG_KILL:
