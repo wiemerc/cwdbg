@@ -66,6 +66,8 @@ typedef struct BreakPoint {
 } BreakPoint;
 
 typedef struct TargetInfo {
+    void         *p_initial_pc;
+    void         *p_initial_sp;
     TaskContext  task_context;
     uint32_t     state;
     uint32_t     exit_code;

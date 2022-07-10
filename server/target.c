@@ -331,7 +331,8 @@ uint32_t get_target_state(Target *p_target)
 
 void get_target_info(Target *p_target, TargetInfo *p_target_info)
 {
-    // TODO: Include inital PC and SP
+    p_target_info->p_initial_pc = p_target->p_entry_point;
+    p_target_info->p_initial_sp = p_target->p_task->tc_SPUpper - 2;
     p_target_info->state      = p_target->state;
     p_target_info->exit_code  = p_target->exit_code;
     p_target_info->error_code = p_target->error_code;

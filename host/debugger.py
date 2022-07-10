@@ -32,6 +32,8 @@ class TaskContext(BigEndianStructure):
 class TargetInfo(BigEndianStructure):
     _pack_ = 2
     _fields_ = (
+        ('initial_pc', c_uint32),
+        ('initial_sp', c_uint32),
         ('task_context', TaskContext),
         ('target_state', c_uint32),
         ('exit_code', c_uint32),
