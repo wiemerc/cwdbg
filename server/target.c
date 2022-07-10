@@ -37,6 +37,7 @@ struct Target {
     uint32_t       exit_code;
     uint32_t       error_code;
     struct List    bpoints;
+    uint32_t       next_bpoint_num;
     BreakPoint     *p_current_bpoint;
 };
 
@@ -85,10 +86,8 @@ Target *create_target()
     }
     p_target->state = TS_IDLE;
     p_target->exit_code = -1;
-
-    // initialize list of breakpoints, lh_Type is used as number of breakpoints
     NewList(&p_target->bpoints);
-    p_target->bpoints.lh_Type = 0;
+    p_target->next_bpoint_num = 1;
 
     return p_target;
 }
@@ -258,13 +257,12 @@ DbgError set_breakpoint(Target *p_target, uint32_t offset)
     void       *p_baddr;
 
     // TODO: Check if offset is valid
-    // TODO: Use attribute of target / debugger class instead of lh_Type for the next breakpoint number once we've made the code object-oriented
     if ((p_bpoint = AllocVec(sizeof(BreakPoint), 0)) == NULL) {
         LOG(ERROR, "Could not allocate memory for breakpoint");
         return ERROR_NOT_ENOUGH_MEMORY;
     }
     p_baddr = (void *) ((uint32_t) p_target->p_entry_point) + offset;
-    p_bpoint->num       = ++p_target->bpoints.lh_Type;
+    p_bpoint->num       = p_target->next_bpoint_num++;
     p_bpoint->p_address = p_baddr;
     p_bpoint->opcode    = *((uint16_t *) p_baddr);
     p_bpoint->hit_count     = 0;
