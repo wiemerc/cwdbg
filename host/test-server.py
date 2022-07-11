@@ -11,6 +11,7 @@ from debugger import ErrorCodes, TargetStates
 from server import (
     SrvClearBreakpoint,
     SrvContinue,
+    SrvKill,
     SrvQuit,
     SrvRun,
     SrvSetBreakpoint,
@@ -64,6 +65,14 @@ def test_continue_from_bpoint(server_conn: ServerConnection):
     assert cmd.target_info is not None
     assert cmd.target_info.target_state == TargetStates.TS_EXITED
     assert cmd.target_info.exit_code == 0
+
+
+def test_kill(server_conn: ServerConnection):
+    SrvSetBreakpoint(bpoint_offset=0x24).execute(server_conn)
+    SrvRun().execute(server_conn)
+    cmd = SrvKill().execute(server_conn)
+    assert cmd.target_info is not None
+    assert cmd.target_info.target_state == TargetStates.TS_KILLED
 
 
 def test_disconnect(server_conn: ServerConnection):
