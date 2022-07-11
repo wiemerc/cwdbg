@@ -21,7 +21,7 @@
 
 
 static uint8_t parse_args(char *p_cmd, char **pp_args);
-static int is_correct_target_state_for_command(char cmd);
+static int is_correct_target_state_for_command(uint32_t state, char cmd);
 static void print_instr(const TaskContext *p_ctx);
 static void print_registers(const TaskContext *p_ctx);
 static void print_stack(const TaskContext *ctx, void *p_initial_sp);
@@ -38,12 +38,14 @@ void process_cli_commands()
     uint32_t            offset;                 // offset from entry point
     void                *p_maddr;               // address of memory block to print
     uint32_t            msize;                  // size of memory block
-    uint32_t            bp_num;                 // number of breakpoint
-    Breakpoint          *p_bpoint;              // pointer to breakpoint
-    TaskContext         *p_task_ctx = get_task_context(gp_dbg->p_target);
+    uint32_t            bp_num;
+    Breakpoint          *p_bpoint;
+    TargetInfo          target_info;
 
-    if (get_target_state(gp_dbg->p_target) & TS_RUNNING)
-        print_instr(p_task_ctx);
+    LOG(DEBUG, "process_cli_commands() has been called");
+    get_target_info(gp_dbg->p_target, &target_info);
+    if (target_info.state & TS_RUNNING)
+        print_instr(&target_info.task_context);
     while(1) {
         // read command from standard input (and ignore errors and commands >= 64 characters)
         Write(Output(), "> ", 2);
@@ -51,7 +53,7 @@ void process_cli_commands()
         cmd[Read(Input(), cmd, 64)] = 0;
         nargs = parse_args(cmd, p_args);
 
-        if (!is_correct_target_state_for_command(p_args[0][0]))
+        if (!is_correct_target_state_for_command(target_info.state, p_args[0][0]))
             continue;
 
         switch (p_args[0][0]) {
@@ -111,10 +113,10 @@ void process_cli_commands()
                 }
                 switch (p_args[1][0]) {
                     case 'r':   // ... registers
-                        print_registers(p_task_ctx);
+                        print_registers(&target_info.task_context);
                         break;
                     case 's':   // ... stack
-                        print_stack(p_task_ctx, get_initial_sp_of_target(gp_dbg->p_target));
+                        print_stack(&target_info.task_context, target_info.p_initial_sp);
                         break;
                     default:
                         LOG(ERROR, "Unknown command 'i %c'", p_args[1][0]);
@@ -166,14 +168,14 @@ static uint8_t parse_args(char *p_cmd, char **pp_args)
 }
 
 
-static int is_correct_target_state_for_command(char cmd)
+static int is_correct_target_state_for_command(uint32_t state, char cmd)
 {
     // keep list of commands (the 1st argument of strchr()) in sync with process_cli_commands()
-    if (!(get_target_state(gp_dbg->p_target) & TS_RUNNING) && (strchr("cs\nikx", cmd) != NULL)) {
+    if (!(state & TS_RUNNING) && (strchr("cs\nikx", cmd) != NULL)) {
         LOG(ERROR, "incorrect state for command '%c': target is not yet running", cmd);
         return 0;
     }
-    if ((get_target_state(gp_dbg->p_target) & TS_RUNNING) && (strchr("rq", cmd) != NULL)) {
+    if ((state & TS_RUNNING) && (strchr("rq", cmd) != NULL)) {
         LOG(ERROR, "incorrect state for command '%c': target is already / still running", cmd);
         return 0;
     }

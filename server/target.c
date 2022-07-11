@@ -69,7 +69,6 @@ static void handle_exception(Target *p_target);
 //
 // exported functions
 //
-// TODO: Always use DbgError as return value and return values via out parameters
 
 Target *create_target()
 {
@@ -322,13 +321,6 @@ Breakpoint *find_bpoint_by_num(Target *p_target, uint32_t bp_num)
 }
 
 
-// TODO: Use get_target_info() instead
-uint32_t get_target_state(Target *p_target)
-{
-    return p_target->state;
-}
-
-
 void get_target_info(Target *p_target, TargetInfo *p_target_info)
 {
     p_target_info->p_initial_pc = p_target->p_entry_point;
@@ -352,20 +344,6 @@ void get_target_info(Target *p_target, TargetInfo *p_target_info)
             p_target_info->bpoint.hit_count = p_target->p_current_bpoint->hit_count;
         }
     }
-}
-
-
-// TODO: Use get_target_info() instead
-void *get_initial_sp_of_target(Target *p_target)
-{
-    return p_target->p_task->tc_SPUpper - 2;
-}
-
-
-// TODO: Use get_target_info() instead
-TaskContext *get_task_context(Target *p_target)
-{
-    return p_target->p_task_context;
 }
 
 

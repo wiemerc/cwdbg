@@ -68,7 +68,7 @@ static void send_ack_msg(HostConnection *p_conn, uint8_t *p_data, uint8_t data_l
 static void send_nack_msg(HostConnection *p_conn, uint8_t error_code);
 static void send_target_stopped_msg(HostConnection *p_conn, TargetInfo *p_target_info);
 
-static int is_correct_target_state_for_command(uint8_t msg_type);
+static int is_correct_target_state_for_command(uint32_t state, uint8_t msg_type);
 
 
 //
@@ -112,6 +112,7 @@ void process_remote_commands()
 
     // If we've been called by run_target() the target is still running. In this case the host is waiting for us and we
     // send a MSG_TARGET_STOPPED message to indicate that the target has stopped and provide the target information to the host.
+    LOG(DEBUG, "process_remote_commands() has been called");
     get_target_info(gp_dbg->p_target, &target_info);
     if (target_info.state & TS_RUNNING) {
         send_target_stopped_msg(gp_dbg->p_host_conn, &target_info);
@@ -142,7 +143,7 @@ void process_remote_commands()
             );
             quit_debugger(gp_dbg, RETURN_FAIL);
         }
-        if (!is_correct_target_state_for_command(msg.type)) {
+        if (!is_correct_target_state_for_command(target_info.state, msg.type)) {
             LOG(CRIT, "Internal error: Target is in wrong state for command %d", msg.type);
             quit_debugger(gp_dbg, RETURN_FAIL);
         }
@@ -365,9 +366,9 @@ static void send_target_stopped_msg(HostConnection *p_conn, TargetInfo *p_target
 }
 
 
-static int is_correct_target_state_for_command(uint8_t msg_type)
+static int is_correct_target_state_for_command(uint32_t state, uint8_t msg_type)
 {
-    if (!(get_target_state(gp_dbg->p_target) & TS_RUNNING) && (
+    if (!(state & TS_RUNNING) && (
         (msg_type == MSG_CONT) ||
         (msg_type == MSG_STEP) ||
         (msg_type == MSG_KILL)
@@ -375,7 +376,7 @@ static int is_correct_target_state_for_command(uint8_t msg_type)
         LOG(ERROR, "Incorrect state for command %d: target is not yet running", msg_type);
         return 0;
     }
-    if ((get_target_state(gp_dbg->p_target) & TS_RUNNING) && (
+    if ((state & TS_RUNNING) && (
         (msg_type == MSG_INIT) ||
         (msg_type == MSG_RUN) ||
         (msg_type == MSG_QUIT)
