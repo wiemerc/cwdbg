@@ -43,19 +43,18 @@ class CommandInput(Edit):
 
     def keypress(self, size, key):
         if key == 'enter':
-            cmd_line = self.get_edit_text()
-            if cmd_line:
-                try:
-                    result, target_info = dbg_state.cli.process_command(cmd_line)
-                except QuitDebuggerException:
-                    logger.debug("Exiting debugger...")
-                    raise ExitMainLoop()
-                if target_info:
-                    # TODO: Should we clear all views if we don't have a target_info?
-                    self._main_screen.update_views(target_info)
+            cmd_line = self.get_edit_text().strip()
+            try:
+                result, target_info = dbg_state.cli.process_command(cmd_line)
+            except QuitDebuggerException:
+                logger.debug("Exiting debugger...")
+                raise ExitMainLoop()
+            if target_info:
+                # TODO: Should we clear all views if we don't have a target_info?
+                self._main_screen.update_views(target_info)
 
             self._history.append(f"> {cmd_line}")
-            if cmd_line and result:
+            if result:
                 self._history.append(result)
             if len(self._history) > INPUT_WIDGET_HEIGHT:
                 del self._history[0:len(self._history) - INPUT_WIDGET_HEIGHT]

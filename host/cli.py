@@ -286,6 +286,8 @@ class Cli:
                     args = self._stored_args
             except ArgumentParserError:
                 return "Invalid command / argument\n" + self._parser.format_help(), None
+            except AttributeError:
+                return "Can't repeat command, no previous command available", None
 
             if args.command in ('help', 'h'):
                 return self._parser.format_help(), None
