@@ -32,13 +32,13 @@ static void print_stack(const TaskContext *ctx, void *p_initial_sp);
 //
 void process_cli_commands()
 {
-    char                cmd[64];                // command buffer
-    char                *p_args[5];             // argument list
-    uint8_t             nargs;                  // number of arguments
-    uint32_t            offset;                 // offset from entry point
-    void                *p_maddr;               // address of memory block to print
-    uint32_t            msize;                  // size of memory block
-    uint32_t            bp_num;
+    char                cmd_buffer[64];
+    char                *p_args[5];
+    uint8_t             nargs;
+    uint32_t            bpoint_offset;
+    void                *p_mem_addr;
+    uint32_t            mem_size;
+    uint32_t            bpoint_num;
     Breakpoint          *p_bpoint;
     TargetInfo          target_info;
 
@@ -50,8 +50,8 @@ void process_cli_commands()
         // read command from standard input (and ignore errors and commands >= 64 characters)
         Write(Output(), "> ", 2);
         WaitForChar(Input(), 0xffffffff);
-        cmd[Read(Input(), cmd, 64)] = 0;
-        nargs = parse_args(cmd, p_args);
+        cmd_buffer[Read(Input(), cmd_buffer, 64)] = 0;
+        nargs = parse_args(cmd_buffer, p_args);
 
         if (!is_correct_target_state_for_command(target_info.state, p_args[0][0]))
             continue;
@@ -66,11 +66,11 @@ void process_cli_commands()
                     LOG(ERROR, "Command 'b' requires an address");
                     break;
                 }
-                if (sscanf(p_args[1], "%x", &offset) == 0) {
+                if (sscanf(p_args[1], "%x", &bpoint_offset) == 0) {
                     LOG(ERROR, "Invalid format of breakpoint offset");
                     break;
                 }
-                set_breakpoint(gp_dbg->p_target, offset);
+                set_breakpoint(gp_dbg->p_target, bpoint_offset);
                 break;
 
             case 'd':   // delete breakpoint
@@ -78,12 +78,12 @@ void process_cli_commands()
                     LOG(ERROR, "Command 'd' requires a breakpoint number");
                     break;
                 }
-                if (sscanf(p_args[1], "%d", &bp_num) == 0) {
+                if (sscanf(p_args[1], "%d", &bpoint_num) == 0) {
                     LOG(ERROR, "Invalid format of breakpoint number");
                     break;
                 }
-                if ((p_bpoint = find_bpoint_by_num(gp_dbg->p_target, bp_num)) == 0) {
-                    LOG(ERROR, "Breakpoint #%d not found", bp_num);
+                if ((p_bpoint = find_bpoint_by_num(gp_dbg->p_target, bpoint_num)) == 0) {
+                    LOG(ERROR, "Breakpoint #%d not found", bpoint_num);
                     break;
                 }
                 clear_breakpoint(gp_dbg->p_target, p_bpoint);
@@ -128,11 +128,11 @@ void process_cli_commands()
                     LOG(ERROR, "Command 'p' requires address and size");
                     break;
                 }
-                if ((sscanf(p_args[1], "%p", &p_maddr) == 0) || (sscanf(p_args[2], "%d", &msize) == 0)) {
+                if ((sscanf(p_args[1], "%p", &p_mem_addr) == 0) || (sscanf(p_args[2], "%d", &mem_size) == 0)) {
                     LOG(ERROR, "Invalid format for address / size");
                     break;
                 }
-                dump_memory(p_maddr, msize);
+                dump_memory(p_mem_addr, mem_size);
                 break;
 
             case 'x':   // disassemble memory
