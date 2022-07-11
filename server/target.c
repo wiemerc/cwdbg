@@ -38,7 +38,7 @@ struct Target {
     uint32_t       error_code;
     struct List    bpoints;
     uint32_t       next_bpoint_num;
-    BreakPoint     *p_current_bpoint;
+    Breakpoint     *p_current_bpoint;
 };
 
 typedef struct TargetStartupMsg {
@@ -95,13 +95,13 @@ Target *create_target()
 
 void destroy_target(Target *p_target)
 {
-    BreakPoint *p_bpoint;
+    Breakpoint *p_bpoint;
 
     if (p_target->state & TS_RUNNING)
         DeleteTask(p_target->p_task);
     if (p_target->p_seglist);
         UnLoadSeg(p_target->p_seglist);
-    while ((p_bpoint = (BreakPoint *) RemHead(&p_target->bpoints)))
+    while ((p_bpoint = (Breakpoint *) RemHead(&p_target->bpoints)))
         FreeVec(p_bpoint);
     if (p_target->p_port)
         DeletePort(p_target->p_port);
@@ -122,16 +122,16 @@ DbgError load_target(Target *p_target, const char *p_program_path)
 
 void run_target(Target *p_target)
 {
-    BreakPoint *p_bpoint;
+    Breakpoint *p_bpoint;
     TargetStartupMsg startup_msg;
     TargetStoppedMsg *p_stopped_msg;
 
     // reset breakpoint counters for each run
     if (!IsListEmpty(&p_target->bpoints)) {
         for (
-            p_bpoint = (BreakPoint *) p_target->bpoints.lh_Head;
-            p_bpoint != (BreakPoint *) p_target->bpoints.lh_Tail;
-            p_bpoint = (BreakPoint *) p_bpoint->node.ln_Succ
+            p_bpoint = (Breakpoint *) p_target->bpoints.lh_Head;
+            p_bpoint != (Breakpoint *) p_target->bpoints.lh_Tail;
+            p_bpoint = (Breakpoint *) p_bpoint->node.ln_Succ
         )
             p_bpoint->hit_count = 0;
     }
@@ -253,11 +253,11 @@ void set_single_step_mode(Target *p_target)
 
 DbgError set_breakpoint(Target *p_target, uint32_t offset)
 {
-    BreakPoint *p_bpoint;
+    Breakpoint *p_bpoint;
     void       *p_baddr;
 
     // TODO: Check if offset is valid
-    if ((p_bpoint = AllocVec(sizeof(BreakPoint), 0)) == NULL) {
+    if ((p_bpoint = AllocVec(sizeof(Breakpoint), 0)) == NULL) {
         LOG(ERROR, "Could not allocate memory for breakpoint");
         return ERROR_NOT_ENOUGH_MEMORY;
     }
@@ -274,7 +274,7 @@ DbgError set_breakpoint(Target *p_target, uint32_t offset)
 
 
 // TODO: Use breakpoint number to identify breakpoint
-void clear_breakpoint(Target *p_target, BreakPoint *p_bpoint)
+void clear_breakpoint(Target *p_target, Breakpoint *p_bpoint)
 {
     *((uint16_t *) p_bpoint->p_address) = p_bpoint->opcode;
     Remove((struct Node *) p_bpoint);
@@ -290,15 +290,15 @@ void clear_breakpoint(Target *p_target, BreakPoint *p_bpoint)
 }
 
 
-BreakPoint *find_bpoint_by_addr(Target *p_target, void *p_bp_addr)
+Breakpoint *find_bpoint_by_addr(Target *p_target, void *p_bp_addr)
 {
-    BreakPoint *p_bpoint;
+    Breakpoint *p_bpoint;
 
     if (IsListEmpty(&p_target->bpoints))
         return NULL;
-    for (p_bpoint = (BreakPoint *) p_target->bpoints.lh_Head;
-         p_bpoint != (BreakPoint *) p_target->bpoints.lh_Tail;
-         p_bpoint = (BreakPoint *) p_bpoint->node.ln_Succ) {
+    for (p_bpoint = (Breakpoint *) p_target->bpoints.lh_Head;
+         p_bpoint != (Breakpoint *) p_target->bpoints.lh_Tail;
+         p_bpoint = (Breakpoint *) p_bpoint->node.ln_Succ) {
         if (p_bpoint->p_address == p_bp_addr)
             return p_bpoint;
     }
@@ -306,15 +306,15 @@ BreakPoint *find_bpoint_by_addr(Target *p_target, void *p_bp_addr)
 }
 
 
-BreakPoint *find_bpoint_by_num(Target *p_target, uint32_t bp_num)
+Breakpoint *find_bpoint_by_num(Target *p_target, uint32_t bp_num)
 {
-    BreakPoint *p_bpoint;
+    Breakpoint *p_bpoint;
 
     if (IsListEmpty(&p_target->bpoints))
         return NULL;
-    for (p_bpoint = (BreakPoint *) p_target->bpoints.lh_Head;
-         p_bpoint != (BreakPoint *) p_target->bpoints.lh_Tail;
-         p_bpoint = (BreakPoint *) p_bpoint->node.ln_Succ) {
+    for (p_bpoint = (Breakpoint *) p_target->bpoints.lh_Head;
+         p_bpoint != (Breakpoint *) p_target->bpoints.lh_Tail;
+         p_bpoint = (Breakpoint *) p_bpoint->node.ln_Succ) {
         if (p_bpoint->num == bp_num)
             return p_bpoint;
     }
@@ -480,7 +480,7 @@ static void init_target_stopped_msg(TargetStoppedMsg *p_msg, struct MsgPort *p_r
 
 static void handle_breakpoint(Target *p_target)
 {
-    BreakPoint *p_bpoint;
+    Breakpoint *p_bpoint;
     void       *p_baddr;
 
     p_baddr = p_target->p_task_context->p_reg_pc - 2;

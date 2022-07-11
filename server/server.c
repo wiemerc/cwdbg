@@ -107,7 +107,7 @@ void process_remote_commands()
 {
     ProtoMessage msg;
     TargetInfo   target_info;
-    BreakPoint   *p_bpoint;
+    Breakpoint   *p_bpoint;
     uint8_t      dbg_errno;
 
     // If we've been called by run_target() the target is still running. In this case the host is waiting for us and we

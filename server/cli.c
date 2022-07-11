@@ -39,7 +39,7 @@ void process_cli_commands()
     void                *p_maddr;               // address of memory block to print
     uint32_t            msize;                  // size of memory block
     uint32_t            bp_num;                 // number of breakpoint
-    BreakPoint          *p_bpoint;              // pointer to breakpoint
+    Breakpoint          *p_bpoint;              // pointer to breakpoint
     TaskContext         *p_task_ctx = get_task_context(gp_dbg->p_target);
 
     if (get_target_state(gp_dbg->p_target) & TS_RUNNING)

@@ -57,13 +57,13 @@ typedef struct TaskContext {
     uint32_t reg_a[7];                  // without A7 = SP
 } TaskContext;
 
-typedef struct BreakPoint {
+typedef struct Breakpoint {
     struct Node  node;
     uint32_t     num;
     void         *p_address;            // address in code segment
     uint16_t     opcode;                // original opcode at this address
     uint32_t     hit_count;             // number of times it has been hit
-} BreakPoint;
+} Breakpoint;
 
 // The *Info type are used to provide information to the host without exposing the internal data structures
 // used by the server.
@@ -99,9 +99,9 @@ void run_target(Target *p_target);
 void set_continue_mode(Target *p_target);
 void set_single_step_mode(Target *p_target);
 DbgError set_breakpoint(Target *p_target, uint32_t offset);
-void clear_breakpoint(Target *p_target, BreakPoint *p_bpoint);
-BreakPoint *find_bpoint_by_addr(Target *p_target, void *p_baddr);
-BreakPoint *find_bpoint_by_num(Target *p_target, uint32_t bp_num);
+void clear_breakpoint(Target *p_target, Breakpoint *p_bpoint);
+Breakpoint *find_bpoint_by_addr(Target *p_target, void *p_baddr);
+Breakpoint *find_bpoint_by_num(Target *p_target, uint32_t bp_num);
 uint32_t get_target_state(Target *p_target);
 void get_target_info(Target *p_target, TargetInfo *p_target_info);
 void *get_initial_sp_of_target(Target *p_target);
