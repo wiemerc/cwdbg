@@ -65,17 +65,27 @@ typedef struct BreakPoint {
     uint32_t     hit_count;             // number of times it has been hit
 } BreakPoint;
 
+// The *Info type are used to provide information to the host without exposing the internal data structures
+// used by the server.
+typedef struct BreakpointInfo {
+    uint32_t     num;
+    void         *p_address;
+    uint16_t     opcode;
+    uint32_t     hit_count;
+} BreakpointInfo;
+
 typedef struct TargetInfo {
-    void         *p_initial_pc;
-    void         *p_initial_sp;
-    TaskContext  task_context;
-    uint32_t     state;
-    uint32_t     exit_code;
-    uint32_t     error_code;
+    void            *p_initial_pc;
+    void            *p_initial_sp;
+    TaskContext     task_context;
+    uint32_t        state;
+    uint32_t        exit_code;
+    uint32_t        error_code;
     // instruction bytes for the next n instructions, one instruction can be 8(?) bytes long at the most
-    uint8_t      next_instr_bytes[NUM_NEXT_INSTRUCTIONS * MAX_INSTR_BYTES];
+    uint8_t         next_instr_bytes[NUM_NEXT_INSTRUCTIONS * MAX_INSTR_BYTES];
     // top n dwords on the stack
-    uint32_t     top_stack_dwords[NUM_TOP_STACK_DWORDS];
+    uint32_t        top_stack_dwords[NUM_TOP_STACK_DWORDS];
+    BreakpointInfo  bpoint;
 } TargetInfo;
 
 

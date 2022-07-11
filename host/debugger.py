@@ -29,6 +29,16 @@ class TaskContext(BigEndianStructure):
     )
 
 
+class Breakpoint(BigEndianStructure):
+    _pack_ = 2
+    _fields_ = (
+        ('num', c_uint32),
+        ('address', c_uint32),
+        ('opcode', c_uint16),
+        ('hit_count', c_uint32)
+    )
+
+
 class TargetInfo(BigEndianStructure):
     _pack_ = 2
     _fields_ = (
@@ -39,7 +49,8 @@ class TargetInfo(BigEndianStructure):
         ('exit_code', c_uint32),
         ('error_code', c_uint32),
         ('next_instr_bytes', c_uint8 * NUM_NEXT_INSTRUCTIONS * MAX_INSTR_BYTES),
-        ('top_stack_dwords', c_uint32 * NUM_TOP_STACK_DWORDS)
+        ('top_stack_dwords', c_uint32 * NUM_TOP_STACK_DWORDS),
+        ('bpoint', Breakpoint)
     )
 
 

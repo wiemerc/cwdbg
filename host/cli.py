@@ -68,7 +68,11 @@ class CliCommand:
 
     def _get_target_status_for_ui(self, target_info: TargetInfo) -> tuple[str | None, TargetInfo | None]:
         if target_info.target_state & TargetStates.TS_STOPPED_BY_BREAKPOINT:
-            return f"Target has hit breakpoint at address {hex(target_info.task_context.reg_pc)}", target_info
+            return (
+                f"Target has hit breakpoint #{target_info.bpoint.num} at entry + "
+                f"{hex(target_info.bpoint.address - target_info.initial_pc)}, hit count = {target_info.bpoint.hit_count}",
+                target_info
+            )
         elif target_info.target_state & TargetStates.TS_STOPPED_BY_EXCEPTION:
             return f"Target has been stopped by exception #{target_info.task_context.exc_num}", target_info
         elif target_info.target_state == TargetStates.TS_EXITED:
