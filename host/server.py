@@ -21,7 +21,8 @@ from debugger import ErrorCodes, TargetInfo, TargetStates
 #
 MAX_FRAME_SIZE = 4096       # maximum number of bytes we try to read at once
 
-FMT_UINT32 = '>I'
+M68K_UINT16 = '>H'
+M68K_UINT32 = '>I'
 
 # SLIP special characters
 SLIP_END           = b'\xc0'
@@ -190,7 +191,7 @@ class ServerCommand:
 
 class SrvClearBreakpoint(ServerCommand):
     def __init__(self, bpoint_num: int):
-        super().__init__(MsgTypes.MSG_CLEAR_BP, struct.pack(FMT_UINT32, bpoint_num))
+        super().__init__(MsgTypes.MSG_CLEAR_BP, data=struct.pack(M68K_UINT32, bpoint_num))
 
 
 class SrvContinue(ServerCommand):
@@ -219,8 +220,8 @@ class SrvRun(ServerCommand):
 
 
 class SrvSetBreakpoint(ServerCommand):
-    def __init__(self, bpoint_offset: int):
-        super().__init__(MsgTypes.MSG_SET_BP, struct.pack(FMT_UINT32, bpoint_offset))
+    def __init__(self, bpoint_offset: int, is_one_shot: bool = False):
+        super().__init__(MsgTypes.MSG_SET_BP, data=struct.pack(M68K_UINT32, bpoint_offset) + struct.pack(M68K_UINT16, is_one_shot))
 
 
 class SrvSingleStep(ServerCommand):

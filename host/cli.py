@@ -67,7 +67,7 @@ class CliCommand:
         return True, None
 
     def _get_target_status_for_ui(self, target_info: TargetInfo) -> tuple[str | None, TargetInfo | None]:
-        if target_info.target_state & TargetStates.TS_STOPPED_BY_BREAKPOINT:
+        if target_info.target_state & TargetStates.TS_STOPPED_BY_BPOINT:
             return (
                 f"Target has hit breakpoint #{target_info.bpoint.num} at entry + "
                 f"{hex(target_info.bpoint.address - target_info.initial_pc)}, hit count = {target_info.bpoint.hit_count}",
@@ -115,13 +115,13 @@ class CliContinue(CliCommand):
     def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
         try:
             cmd = SrvContinue().execute(dbg_state.server_conn)
-            dbg_state.target_state = cmd.target_info.target_state
+            dbg_state.target_info = cmd.target_info
             return self._get_target_status_for_ui(cmd.target_info)
         except ServerCommandError as e:
             return f"Continuing target failed: {e}", None
 
     def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
-        if not (dbg_state.target_state & TargetStates.TS_RUNNING):
+        if not dbg_state.target_info or not (dbg_state.target_info.target_state & TargetStates.TS_RUNNING):
             return False, "Incorrect state for command 'continue': target is not yet running"
         else:
             return True, None
@@ -134,14 +134,46 @@ class CliKill(CliCommand):
     def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
         try:
             cmd = SrvKill().execute(dbg_state.server_conn)
-            dbg_state.target_state = cmd.target_info.target_state
+            dbg_state.target_info = cmd.target_info
             return self._get_target_status_for_ui(cmd.target_info)
         except ServerCommandError as e:
             return f"Killing target failed: {e}", None
 
     def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
-        if not (dbg_state.target_state & TargetStates.TS_RUNNING):
+        if not dbg_state.target_info or not (dbg_state.target_info.target_state & TargetStates.TS_RUNNING):
             return False, "Incorrect state for command 'kill': target is not yet running"
+        else:
+            return True, None
+
+
+class CliNextInstr(CliCommand):
+    def __init__(self):
+        super().__init__('next', ('n',), 'Execute target until next instruction (step over sub-routines)')
+
+    def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+        try:
+            # Check if next instruction is a JSR. If yes, set one-shot breakpoint at the instruction following the JSR
+            # and continue. If no, just single-step.
+            if dbg_state.target_info.next_instr_is_jsr():
+                offset = (
+                    dbg_state.target_info.task_context.reg_pc
+                    - dbg_state.target_info.initial_pc
+                    + dbg_state.target_info.get_bytes_used_by_jsr()
+                )
+                SrvSetBreakpoint(bpoint_offset=offset, is_one_shot=True).execute(dbg_state.server_conn)
+                cmd = SrvContinue().execute(dbg_state.server_conn)
+                dbg_state.target_info = cmd.target_info
+                return self._get_target_status_for_ui(cmd.target_info)
+            else:
+                cmd = SrvSingleStep().execute(dbg_state.server_conn)
+                dbg_state.target_info = cmd.target_info
+                return self._get_target_status_for_ui(cmd.target_info)
+        except ServerCommandError as e:
+            return f"Executing target until next instruction failed: {e}", None
+
+    def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
+        if not dbg_state.target_info or not (dbg_state.target_info.target_state & TargetStates.TS_RUNNING):
+            return False, "Incorrect state for command 'step': target is not yet running"
         else:
             return True, None
 
@@ -155,7 +187,7 @@ class CliQuit(CliCommand):
         raise QuitDebuggerException()
 
     def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
-        if dbg_state.target_state & TargetStates.TS_RUNNING:
+        if dbg_state.target_info and dbg_state.target_info.target_state & TargetStates.TS_RUNNING:
             return False, "Incorrect state for command 'quit': target is still running"
         else:
             return True, None
@@ -168,13 +200,13 @@ class CliRun(CliCommand):
     def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
         try:
             cmd = SrvRun().execute(dbg_state.server_conn)
-            dbg_state.target_state = cmd.target_info.target_state
+            dbg_state.target_info = cmd.target_info
             return self._get_target_status_for_ui(cmd.target_info)
         except ServerCommandError as e:
             return f"Running target failed: {e}", None
 
     def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
-        if dbg_state.target_state & TargetStates.TS_RUNNING:
+        if dbg_state.target_info and dbg_state.target_info.target_state & TargetStates.TS_RUNNING:
             return False, "Incorrect state for command 'run': target is already running"
         else:
             return True, None
@@ -227,13 +259,13 @@ class CliSingleStep(CliCommand):
     def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
         try:
             cmd = SrvSingleStep().execute(dbg_state.server_conn)
-            dbg_state.target_state = cmd.target_info.target_state
+            dbg_state.target_info = cmd.target_info
             return self._get_target_status_for_ui(cmd.target_info)
         except ServerCommandError as e:
             return f"Single-stepping target failed: {e}", None
 
     def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
-        if not (dbg_state.target_state & TargetStates.TS_RUNNING):
+        if not dbg_state.target_info or not (dbg_state.target_info.target_state & TargetStates.TS_RUNNING):
             return False, "Incorrect state for command 'step': target is not yet running"
         else:
             return True, None
@@ -243,11 +275,11 @@ class CliSingleStep(CliCommand):
 # TODO: Implement connect / disconnect commands
 # TODO: Implement command to inspect / disassemble memory (like 'x' in GDB)
 # TODO: Implement 'backtrace' command
-# TODO: Implement 'next' command
 CLI_COMMANDS = [
     CliClearBreakpoint(),
     CliContinue(),
     CliKill(),
+    CliNextInstr(),
     CliQuit(),
     CliRun(),
     CliSetBreakpoint(),
