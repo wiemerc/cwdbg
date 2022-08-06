@@ -17,8 +17,8 @@
 
 /* keep in sync with debugger.h */
 .set TS_STOPPED_BY_BREAKPOINT,   16
-.set TS_STOPPED_BY_SINGLE_STEP,  32
-.set TS_STOPPED_BY_EXCEPTION,    64
+.set TS_STOPPED_BY_SINGLE_STEP,  64
+.set TS_STOPPED_BY_EXCEPTION,    128
 
 /* see TaskContext structure in debugger.h */
 .set tc_reg_sp,  0
@@ -67,6 +67,7 @@ _exc_handler:
     move.l      #TS_STOPPED_BY_BREAKPOINT, stop_reason
 
     /* branch depending on the exception number */
+    /* TODO: If we hit a breakpoint while single-stepping, we get a crash because we don't disable the trace mode before returning to user mode */
     cmp.l       #EXC_NUM_TRAP_BP, (sp)
     beq.s       exc_main
     cmp.l       #EXC_NUM_TRAP_RESTORE, (sp)

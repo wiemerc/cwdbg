@@ -33,15 +33,16 @@ typedef enum {
 // target states
 // Multiple values are possible (e. g. TS_RUNNING and TS_SINGLE_STEPPING), so we use individual bits.
 //
-#define TS_IDLE                     0l
-#define TS_RUNNING                  (1l << 0)
-#define TS_SINGLE_STEPPING          (1l << 1)
-#define TS_EXITED                   (1l << 2)
-#define TS_KILLED                   (1l << 3)
-#define TS_STOPPED_BY_BREAKPOINT    (1l << 4)
-#define TS_STOPPED_BY_SINGLE_STEP   (1l << 5)
-#define TS_STOPPED_BY_EXCEPTION     (1l << 6)
-#define TS_ERROR                    (1l << 16)
+#define TS_IDLE                         0l
+#define TS_RUNNING                      (1l << 0)
+#define TS_SINGLE_STEPPING              (1l << 1)
+#define TS_EXITED                       (1l << 2)
+#define TS_KILLED                       (1l << 3)
+#define TS_STOPPED_BY_BPOINT            (1l << 4)
+#define TS_STOPPED_BY_ONE_SHOT_BPOINT   (1l << 5)
+#define TS_STOPPED_BY_SINGLE_STEP       (1l << 6)
+#define TS_STOPPED_BY_EXCEPTION         (1l << 7)
+#define TS_ERROR                        (1l << 16)
 
 
 //
@@ -62,6 +63,7 @@ typedef struct Breakpoint {
     uint32_t     num;
     void         *p_address;            // address in code segment
     uint16_t     opcode;                // original opcode at this address
+    uint16_t     f_is_one_shot;         // one-shot breakpoint (used to step over subroutines)?
     uint32_t     hit_count;             // number of times it has been hit
 } Breakpoint;
 
@@ -98,7 +100,7 @@ DbgError load_target(Target *p_target, const char *p_program_path);
 void run_target(Target *p_target);
 void set_continue_mode(Target *p_target);
 void set_single_step_mode(Target *p_target);
-DbgError set_breakpoint(Target *p_target, uint32_t offset);
+DbgError set_breakpoint(Target *p_target, uint32_t offset, uint16_t f_is_one_shot);
 void clear_breakpoint(Target *p_target, Breakpoint *p_bpoint);
 Breakpoint *find_bpoint_by_addr(Target *p_target, void *p_baddr);
 Breakpoint *find_bpoint_by_num(Target *p_target, uint32_t bp_num);

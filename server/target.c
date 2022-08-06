@@ -38,7 +38,7 @@ struct Target {
     uint32_t       error_code;
     struct List    bpoints;
     uint32_t       next_bpoint_num;
-    Breakpoint     *p_current_bpoint;
+    Breakpoint     *p_active_bpoint;
 };
 
 typedef struct TargetStartupMsg {
@@ -149,6 +149,7 @@ void run_target(Target *p_target)
         // TODO: The startup code used by GCC checks if pr_CLI is NULL and, if so, waits for the Workbench startup
         // message and therefore hangs. So we have to specify NP_Cli = TRUE, but this causes the CLI process, in which
         // the debugger was launched, to terminate upon exit (sometimes closing the console windows with it).
+        // Respectivley, in some cases, CreateNewProcTags() just seems to hang...
         // Should we hand-craft our own CLI struct in wrap_target()?
         NP_Cli, TRUE
     )) == NULL) {
@@ -162,7 +163,6 @@ void run_target(Target *p_target)
     }
     p_target->p_port->mp_SigTask = p_target->p_task;
 
-    // TODO: Use get_debugger_port(gp_dbg) or FindPort instead of accessing p_debugger_port directly
     LOG(DEBUG, "Sending startup message to target");
     init_target_startup_msg(&startup_msg, gp_dbg->p_debugger_port);
     startup_msg.p_seglist = p_target->p_seglist;
@@ -194,7 +194,7 @@ void run_target(Target *p_target)
         // messages from handle_stopped_target()
         else {
             p_target->state |= p_stopped_msg->stop_reason;
-            if (p_stopped_msg->stop_reason == TS_STOPPED_BY_BREAKPOINT) {
+            if (p_stopped_msg->stop_reason == TS_STOPPED_BY_BPOINT) {
                 handle_breakpoint(p_target);
                 process_commands(gp_dbg);
             }
@@ -228,11 +228,11 @@ void run_target(Target *p_target)
 
 void set_continue_mode(Target *p_target)
 {
-    // If we continue from a breakpoint which hasn't been deleted (so p_target->p_current_bpoint still points to it),
+    // If we continue from a regular breakpoint which hasn't been deleted (so p_target->p_active_bpoint still points to it),
     // it has to be restored first, so we single-step the original instruction at the breakpoint and remember to
     // restore the breakpoint afterwards (see handle_single_step() below).
     p_target->state &= ~TS_SINGLE_STEPPING;
-    if ((p_target->state & TS_STOPPED_BY_BREAKPOINT) && p_target->p_current_bpoint) {
+    if ((p_target->state & TS_STOPPED_BY_BPOINT) && p_target->p_active_bpoint) {
         p_target->p_task_context->reg_sr &= 0xbfff;    // clear T0
         p_target->p_task_context->reg_sr |= 0x8700;    // set T1 and interrupt mask
     }
@@ -250,7 +250,7 @@ void set_single_step_mode(Target *p_target)
 }
 
 
-DbgError set_breakpoint(Target *p_target, uint32_t offset)
+DbgError set_breakpoint(Target *p_target, uint32_t offset, uint16_t f_is_one_shot)
 {
     Breakpoint *p_bpoint;
     void       *p_baddr;
@@ -261,9 +261,10 @@ DbgError set_breakpoint(Target *p_target, uint32_t offset)
         return ERROR_NOT_ENOUGH_MEMORY;
     }
     p_baddr = (void *) ((uint32_t) p_target->p_entry_point) + offset;
-    p_bpoint->num       = p_target->next_bpoint_num++;
-    p_bpoint->p_address = p_baddr;
-    p_bpoint->opcode    = *((uint16_t *) p_baddr);
+    p_bpoint->num           = p_target->next_bpoint_num++;
+    p_bpoint->p_address     = p_baddr;
+    p_bpoint->opcode        = *((uint16_t *) p_baddr);
+    p_bpoint->f_is_one_shot = f_is_one_shot;
     p_bpoint->hit_count     = 0;
     AddTail(&p_target->bpoints, (struct Node *) p_bpoint);
     *((uint16_t *) p_baddr) = TRAP_OPCODE;
@@ -277,8 +278,8 @@ void clear_breakpoint(Target *p_target, Breakpoint *p_bpoint)
 {
     *((uint16_t *) p_bpoint->p_address) = p_bpoint->opcode;
     Remove((struct Node *) p_bpoint);
-    if (p_target->p_current_bpoint == p_bpoint)
-        p_target->p_current_bpoint = NULL;
+    if (p_target->p_active_bpoint == p_bpoint)
+        p_target->p_active_bpoint = NULL;
     LOG(
         DEBUG,
         "Breakpoint #%ld at entry + 0x%08lx cleared",
@@ -325,9 +326,9 @@ void get_target_info(Target *p_target, TargetInfo *p_target_info)
 {
     p_target_info->p_initial_pc = p_target->p_entry_point;
     p_target_info->p_initial_sp = p_target->p_task->tc_SPUpper - 2;
-    p_target_info->state      = p_target->state;
-    p_target_info->exit_code  = p_target->exit_code;
-    p_target_info->error_code = p_target->error_code;
+    p_target_info->state        = p_target->state;
+    p_target_info->exit_code    = p_target->exit_code;
+    p_target_info->error_code   = p_target->error_code;
     if (p_target->state & TS_RUNNING) {
         // target is still running, add task context, next n instructions and top n dwords on the stack
         memcpy(&p_target_info->task_context, p_target->p_task_context, sizeof(TaskContext));
@@ -337,11 +338,17 @@ void get_target_info(Target *p_target, TargetInfo *p_target_info)
         if ((uint32_t) p_target->p_task_context->p_reg_sp <= (0xffffffff - NUM_TOP_STACK_DWORDS * 4)) {
             memcpy(&p_target_info->top_stack_dwords, p_target->p_task_context->p_reg_sp, NUM_TOP_STACK_DWORDS * 4);
         }
-        if (p_target->state & TS_STOPPED_BY_BREAKPOINT) {
-            p_target_info->bpoint.num       = p_target->p_current_bpoint->num;
-            p_target_info->bpoint.p_address = p_target->p_current_bpoint->p_address;
-            p_target_info->bpoint.opcode    = p_target->p_current_bpoint->opcode;
-            p_target_info->bpoint.hit_count = p_target->p_current_bpoint->hit_count;
+        if (p_target->state & TS_STOPPED_BY_BPOINT) {
+            if (p_target->p_active_bpoint) {
+                p_target_info->bpoint.num       = p_target->p_active_bpoint->num;
+                p_target_info->bpoint.p_address = p_target->p_active_bpoint->p_address;
+                p_target_info->bpoint.opcode    = p_target->p_active_bpoint->opcode;
+                p_target_info->bpoint.hit_count = p_target->p_active_bpoint->hit_count;
+            }
+            else {
+                p_target_info->state &= ~TS_STOPPED_BY_BPOINT;
+                p_target_info->state |= TS_STOPPED_BY_ONE_SHOT_BPOINT;
+            }
         }
     }
 }
@@ -463,7 +470,11 @@ static void handle_breakpoint(Target *p_target)
 
     p_baddr = p_target->p_task_context->p_reg_pc - 2;
     if ((p_bpoint = find_bpoint_by_addr(p_target, p_baddr)) != NULL) {
-        p_target->p_current_bpoint = p_bpoint;
+        if (!p_bpoint->f_is_one_shot)
+            // set pointer to active breakpoint only if the hit breakpoint is a regular one
+            // to indicate that it needs to be restored (see set_continue_mode() and handle_single_step())
+            p_target->p_active_bpoint = p_bpoint;
+
         // rewind PC by 2 bytes and replace trap instruction with original instruction
         p_target->p_task_context->p_reg_pc = p_baddr;
         *((uint16_t *) p_baddr) = p_bpoint->opcode;
@@ -488,16 +499,16 @@ static void handle_breakpoint(Target *p_target)
 
 static void handle_single_step(Target *p_target)
 {
-    if (p_target->p_current_bpoint) {
+    if (p_target->p_active_bpoint) {
         // breakpoint needs to be restored
         LOG(
             DEBUG,
             "Restoring breakpoint #%ld at entry + 0x%08lx",
-            p_target->p_current_bpoint->num,
-            ((uint32_t) p_target->p_current_bpoint->p_address - (uint32_t) p_target->p_entry_point)
+            p_target->p_active_bpoint->num,
+            ((uint32_t) p_target->p_active_bpoint->p_address - (uint32_t) p_target->p_entry_point)
         );
-        *((uint16_t *) p_target->p_current_bpoint->p_address) = TRAP_OPCODE;
-        p_target->p_current_bpoint = NULL;
+        *((uint16_t *) p_target->p_active_bpoint->p_address) = TRAP_OPCODE;
+        p_target->p_active_bpoint = NULL;
     }
     if (p_target->state & TS_SINGLE_STEPPING) {
         LOG(INFO, "Target has stopped after single step");

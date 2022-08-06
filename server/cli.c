@@ -70,7 +70,7 @@ void process_cli_commands()
                     LOG(ERROR, "Invalid format of breakpoint offset");
                     break;
                 }
-                set_breakpoint(gp_dbg->p_target, bpoint_offset);
+                set_breakpoint(gp_dbg->p_target, bpoint_offset, 0);
                 break;
 
             case 'd':   // delete breakpoint

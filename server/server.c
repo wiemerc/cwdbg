@@ -148,6 +148,8 @@ void process_remote_commands()
             quit_debugger(gp_dbg, RETURN_FAIL);
         }
 
+        // TODO: Use table with ServerCommand objects and format strings for unpack()
+        //       (like in _The Practice Of Programming_)
         switch (msg.type) {
             case MSG_INIT:
                 LOG(DEBUG, "Initializing connection");
@@ -157,7 +159,8 @@ void process_remote_commands()
                 break;
 
             case MSG_SET_BP:
-                if ((dbg_errno = set_breakpoint(gp_dbg->p_target, *(uint32_t *) msg.data)) == 0) {
+                // TODO: Use unpack function to extract params
+                if ((dbg_errno = set_breakpoint(gp_dbg->p_target, *(uint32_t *) msg.data, *(uint16_t *) (msg.data + 4))) == 0) {
                     // TODO: Return breakpoint number
                     send_ack_msg(gp_dbg->p_host_conn, NULL, 0);
                 }

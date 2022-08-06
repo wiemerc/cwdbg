@@ -50,7 +50,7 @@ def test_run_to_bpoint(server_conn: ServerConnection):
     SrvSetBreakpoint(bpoint_offset=0x24).execute(server_conn)
     cmd = SrvRun().execute(server_conn)
     assert cmd.target_info is not None
-    assert cmd.target_info.target_state == TargetStates.TS_RUNNING | TargetStates.TS_STOPPED_BY_BREAKPOINT
+    assert cmd.target_info.target_state == TargetStates.TS_RUNNING | TargetStates.TS_STOPPED_BY_BPOINT
 
 
 def test_single_step(server_conn: ServerConnection):
@@ -69,10 +69,23 @@ def test_continue_from_bpoint(server_conn: ServerConnection):
 
 def test_kill(server_conn: ServerConnection):
     SrvSetBreakpoint(bpoint_offset=0x24).execute(server_conn)
-    SrvRun().execute(server_conn)
+    cmd = SrvRun().execute(server_conn)
+    assert cmd.target_info is not None
+    assert cmd.target_info.target_state == TargetStates.TS_RUNNING | TargetStates.TS_STOPPED_BY_BPOINT
     cmd = SrvKill().execute(server_conn)
     assert cmd.target_info is not None
     assert cmd.target_info.target_state == TargetStates.TS_KILLED
+    SrvClearBreakpoint(bpoint_num=3).execute(server_conn)
+
+
+def test_one_shot_bpoint(server_conn: ServerConnection):
+    SrvSetBreakpoint(bpoint_offset=0x24, is_one_shot=True).execute(server_conn)
+    cmd = SrvRun().execute(server_conn)
+    assert cmd.target_info is not None
+    assert cmd.target_info.target_state == TargetStates.TS_RUNNING | TargetStates.TS_STOPPED_BY_ONE_SHOT_BPOINT
+    cmd = SrvContinue().execute(server_conn)
+    assert cmd.target_info.target_state == TargetStates.TS_EXITED
+    assert cmd.target_info.exit_code == 0
 
 
 def test_disconnect(server_conn: ServerConnection):
