@@ -146,11 +146,12 @@ void run_target(Target *p_target)
         NP_Output, Output(),
         NP_CloseInput, FALSE,
         NP_CloseOutput, FALSE,
-        // TODO: The startup code used by GCC checks if pr_CLI is NULL and, if so, waits for the Workbench startup
-        // message and therefore hangs. So we have to specify NP_Cli = TRUE, but this causes the CLI process, in which
-        // the debugger was launched, to terminate upon exit (sometimes closing the console windows with it).
-        // Respectivley, in some cases, CreateNewProcTags() just seems to hang...
-        // Should we hand-craft our own CLI struct in wrap_target()?
+        // TODO: The libnix startup code used by GCC checks if pr_CLI is NULL and, if so, waits for the Workbench startup message and
+        // therefore hangs (see https://github.com/adtools/libnix/blob/e7bfc563a4dda18c2c0d9dd95f863a3bb6c2a356/sources/startup/ncrt0.S#L34).
+        // So we have to specify NP_Cli = TRUE and use RunCommand() to run the target. But this causes several problems:
+        // - The CLI process, in which the debugger was launched, terminates upon exit (sometimes closing the console windows with it).
+        // - In some cases, CreateNewProcTags() itself just seems to hang.
+        // - Any C program using the startup code hangs upon exit when it is run a second time.
         NP_Cli, TRUE
     )) == NULL) {
         LOG(CRIT, "Could not create process for target");
