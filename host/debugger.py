@@ -112,6 +112,7 @@ class ErrorCodes(IntEnum):
     ERROR_UNKNOWN_STOP_REASON    = 6
     ERROR_NO_TRAP                = 7
     ERROR_RUN_COMMAND_FAILED     = 8
+    ERROR_BAD_DATA               = 9
 
 
 @dataclass

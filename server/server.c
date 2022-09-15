@@ -49,9 +49,9 @@ struct HostConnection {
 };
 
 // This is how a complete protocol message looks like:
-//  ---------------------------------------------------
-// | sequence number | checksum | message type | data |
-//  ---------------------------------------------------
+//  ----------------------------------------------------------------
+// | sequence number | checksum | message type | data length | data |
+//  ----------------------------------------------------------------
 // The checksum is calculated in the same way as with IP / UDP headers.
 struct ProtoMessage {
     uint16_t seqnum;
@@ -109,6 +109,8 @@ void process_remote_commands()
     TargetInfo   target_info;
     Breakpoint   *p_bpoint;
     uint8_t      dbg_errno;
+    uint32_t     bpoint_offset, bpoint_num;
+    uint16_t     bpoint_type;
 
     // If we've been called by run_target() the target is still running. In this case the host is waiting for us and we
     // send a MSG_TARGET_STOPPED message to indicate that the target has stopped and provide the target information to the host.
@@ -159,25 +161,36 @@ void process_remote_commands()
                 break;
 
             case MSG_SET_BP:
-                // TODO: Use unpack function to extract params
-                if ((dbg_errno = set_breakpoint(gp_dbg->p_target, *(uint32_t *) msg.data, *(uint16_t *) (msg.data + 4))) == 0) {
+                if (unpack_data(msg.data, msg.length, "!I!H", &bpoint_offset, &bpoint_type) == DOSTRUE) {
+                    if ((dbg_errno = set_breakpoint(gp_dbg->p_target, bpoint_offset, bpoint_type)) == NULL) {
                     // TODO: Return breakpoint number
                     send_ack_msg(gp_dbg->p_host_conn, NULL, 0);
+                    }
+                    else {
+                        LOG(ERROR, "Failed to set breakpoint");
+                        send_nack_msg(gp_dbg->p_host_conn, dbg_errno);
+                    }
                 }
                 else {
-                    LOG(ERROR, "Failed to set breakpoint");
-                    send_nack_msg(gp_dbg->p_host_conn, dbg_errno);
+                    LOG(ERROR, "Failed to unpack data of MSG_SET_BP message");
+                    send_nack_msg(gp_dbg->p_host_conn, ERROR_BAD_DATA);
                 }
                 break;
 
             case MSG_CLEAR_BP:
-                if ((p_bpoint = find_bpoint_by_num(gp_dbg->p_target, *(uint32_t *) msg.data)) != NULL) {
-                    clear_breakpoint(gp_dbg->p_target, p_bpoint);
-                    send_ack_msg(gp_dbg->p_host_conn, NULL, 0);
+                if (unpack_data(msg.data, msg.length, "!I", &bpoint_num) == DOSTRUE) {
+                    if ((p_bpoint = find_bpoint_by_num(gp_dbg->p_target, bpoint_num)) != NULL) {
+                        clear_breakpoint(gp_dbg->p_target, p_bpoint);
+                        send_ack_msg(gp_dbg->p_host_conn, NULL, 0);
+                    }
+                    else {
+                        LOG(ERROR, "Breakpoint #%d not found", bpoint_num);
+                        send_nack_msg(gp_dbg->p_host_conn, ERROR_UNKNOWN_BREAKPOINT);
+                    }
                 }
                 else {
-                    LOG(ERROR, "Breakpoint #%d not found", *((uint32_t *) msg.data));
-                    send_nack_msg(gp_dbg->p_host_conn, ERROR_UNKNOWN_BREAKPOINT);
+                    LOG(ERROR, "Failed to unpack data of MSG_CLEAR_BP message");
+                    send_nack_msg(gp_dbg->p_host_conn, ERROR_BAD_DATA);
                 }
                 break;
 
