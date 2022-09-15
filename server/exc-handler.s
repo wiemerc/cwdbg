@@ -53,7 +53,8 @@
  * --------------------------------
  */
 _exc_handler:
-    ori.w       #0x0700, sr                                 /* disable interrupts in supervisor mode */
+    ori.w       #0x0700, sr                                 /* disable interrupts in supervisor mode, we don't want to
+                                                               get interrupted before we're done saving / restoring the context*/
 
                                                             /* log exception via serial port */
 #    movem.l     d0-d1/a0-a1, -(sp)                         /* save registers that are modified by _kprintf */
@@ -81,7 +82,7 @@ exc_restore:
     /* restore all registers and resume target */
     add.l       #10, sp                                     /* remove trap number, status register and return address from stack */
     lea         g_target_task_ctx, a0                       /* load base address of struct */
-    move.l      tc_reg_pc(a0), -(sp)                        /* push saved target PC and status register onto stack */
+    move.l      tc_reg_pc(a0), -(sp)                        /* push saved target PC and status register (possibly modified) onto stack */
     move.w      tc_reg_sr(a0), -(sp)
     add.l       #tc_reg_d, a0                               /* move pointer to D0 */
     movem.l     (a0)+, d0-d7                                /* restore data registers */
