@@ -21,10 +21,11 @@
 #include "util.h"
 
 
-#define TRAP_NUM_BP           0
+#define TRAP_NUM_BPOINT       0
 #define TRAP_NUM_RESTORE      1
 #define TRAP_OPCODE           0x4e40
 #define TARGET_STACK_SIZE     8192
+#define TARGET_DELAY_TIME     50  // in ticks, 1s = 50 ticks
 
 
 struct Target {
@@ -41,11 +42,6 @@ struct Target {
     Breakpoint     *p_active_bpoint;
 };
 
-typedef struct TargetStartupMsg {
-    struct Message  exec_msg;
-    BPTR            p_seglist;
-} TargetStartupMsg;
-
 typedef struct TargetStoppedMsg {
     struct Message  exec_msg;
     uint32_t        stop_reason;
@@ -58,9 +54,7 @@ typedef struct TargetStoppedMsg {
 extern void exc_handler();
 
 
-static void init_target_startup_msg(TargetStartupMsg *p_msg, struct MsgPort *p_reply_port);
 static void init_target_stopped_msg(TargetStoppedMsg *p_msg, struct MsgPort *p_reply_port);
-static void get_msg_safely(struct MsgPort *p_port, struct Message **pp_msg);
 static void wrap_target();
 static void handle_breakpoint(Target *p_target);
 static void handle_single_step(Target *p_target);
@@ -123,8 +117,7 @@ DbgError load_target(Target *p_target, const char *p_program_path)
 void run_target(Target *p_target)
 {
     Breakpoint *p_bpoint;
-    TargetStartupMsg startup_msg;
-    TargetStoppedMsg *p_stopped_msg;
+    TargetStoppedMsg *p_stopped_msg = NULL;
 
     // reset breakpoint counters for each run
     if (!IsListEmpty(&p_target->bpoints)) {
@@ -163,16 +156,15 @@ void run_target(Target *p_target)
         p_target->error_code = ERROR_CREATE_PROC_FAILED;
         return;
     }
+    // associate target task with the message port so that the task gets signalled when a message arrives
     p_target->p_port->mp_SigTask = p_target->p_task;
-
-    LOG(DEBUG, "Sending startup message to target");
-    init_target_startup_msg(&startup_msg, gp_dbg->p_debugger_port);
-    startup_msg.p_seglist = p_target->p_seglist;
-    PutMsg(p_target->p_port, (struct Message *) &startup_msg);
 
     while (TRUE) {
         LOG(DEBUG, "Waiting for messages from target...");
-        get_msg_safely(gp_dbg->p_debugger_port, (struct Message **) &p_stopped_msg);
+        do {
+            WaitPort(gp_dbg->p_debugger_port);
+            p_stopped_msg = (TargetStoppedMsg *) GetMsg(gp_dbg->p_debugger_port);
+        } while (p_stopped_msg == NULL);
         LOG(DEBUG, "Received message from target process, stop reason = %d", p_stopped_msg->stop_reason);
         p_target->p_task_context = p_stopped_msg->p_task_context;
 
@@ -257,6 +249,7 @@ DbgError set_breakpoint(Target *p_target, uint32_t offset, uint16_t f_is_one_sho
     void       *p_baddr;
 
     // TODO: Check if offset is valid
+    // TODO: One-shot breakpoints sometimes seem to cause a AN_MemCorrupt guru
     if ((p_bpoint = AllocVec(sizeof(Breakpoint), 0)) == NULL) {
         LOG(ERROR, "Could not allocate memory for breakpoint");
         return ERROR_NOT_ENOUGH_MEMORY;
@@ -365,25 +358,25 @@ void kill_target(Target *p_target)
 
 
 // This routine is the entry point into the debugger called by the exception handler in the context of the target process.
-// It sends sends a message to the debugger process informing it that the target has stopped. This message is received
+// It sends sends a message to the debugger process, informing it that the target has stopped. This message is received
 // by run_target() which then calls one of the handle_* routines below (in the context of the debugger process).
 // This routine is necessary because an exception handler runs in supervisor mode and therefore can't send and receive
-// messages. It has to run in the context of the target process so that WaitPort() blocks the target.
+// messages. It has to run in the context of the target process so that WaitPort() blocks the target until the user
+// requests to continue it. Note that it accesses the global variable gp_dbg, which is possible because all processes
+// share the same address space in AmigaOS (the same goes for wrap_target() below).
 void handle_stopped_target(uint32_t stop_reason, TaskContext *p_task_context)
 {
     TargetStoppedMsg msg;
-    struct MsgPort *p_port = FindPort("CWDEBUG_TARGET");
-    struct MsgPort *p_debugger_port = FindPort("CWDEBUG_DBG");
 
     LOG(DEBUG, "handle_stopped_target() has been called, stop reason = %d", stop_reason);
-    init_target_stopped_msg(&msg, p_port);
+    init_target_stopped_msg(&msg, gp_dbg->p_target->p_port);
     msg.stop_reason = stop_reason;
     msg.p_task_context = p_task_context;
     LOG(DEBUG, "Sending message to debugger process");
-    PutMsg(p_debugger_port, (struct Message *) &msg);
+    PutMsg(gp_dbg->p_debugger_port, (struct Message *) &msg);
     do {
-        WaitPort(p_port);
-    } while (GetMsg(p_port) == NULL);
+        WaitPort(gp_dbg->p_target->p_port);
+    } while (GetMsg(gp_dbg->p_target->p_port) == NULL);
     LOG(DEBUG, "Received message from debugger process - resuming target");
 }
 
@@ -395,33 +388,18 @@ void handle_stopped_target(uint32_t stop_reason, TaskContext *p_task_context)
 // This routine is the entry point for the target process (used by run_target() when creating the target process).
 static void wrap_target()
 {
-    TargetStartupMsg *p_startup_msg;
     TargetStoppedMsg stopped_msg;
-    struct MsgPort *p_port;
-    struct MsgPort *p_debugger_port;
     int result;
 
-    // TODO: For some reason one of the ports can't be found sometimes... Should we just pass a pointer to the 
-    //       debugger object in tc_UserData?
-    Forbid();
-    p_port = FindPort("CWDEBUG_TARGET");
-    p_debugger_port = FindPort("CWDEBUG_DBG");
-    Permit();
-    if (p_port == NULL) {
-        LOG(CRIT, "Internal error: could not find target port");
-        return;
-    }
-    if (p_debugger_port == NULL) {
-        LOG(CRIT, "Internal error: could not find debugger port");
-        return;
-    }
-    LOG(DEBUG, "Waiting for startup message...");
-    get_msg_safely(p_port, (struct Message **) &p_startup_msg);
-    init_target_stopped_msg(&stopped_msg, p_port);
+    // TODO: There is a race condition between CreateNewProcTags() returning in run_target() and thus setting
+    //       gp_dbg->p_target->p_task and us accessing it here, so we just wait a little. A clean solution would
+    //       be to use a semaphore.
+    Delay(TARGET_DELAY_TIME);
+    init_target_stopped_msg(&stopped_msg, gp_dbg->p_target->p_port);
 
     // allocate traps and install exception handler
-    FindTask(NULL)->tc_TrapCode = exc_handler;
-    if (AllocTrap(TRAP_NUM_BP) == -1) {
+    gp_dbg->p_target->p_task->tc_TrapCode = exc_handler;
+    if (AllocTrap(TRAP_NUM_BPOINT) == -1) {
         LOG(CRIT, "Internal error: could not allocate trap for breakpoints");
         stopped_msg.stop_reason = TS_ERROR;
         stopped_msg.error_code = ERROR_NO_TRAP;
@@ -437,12 +415,12 @@ static void wrap_target()
     LOG(
         DEBUG,
         "Running target, initial PC = 0x%08lx, initial SP = 0x%08lx",
-        (uint32_t) BCPL_TO_C_PTR(p_startup_msg->p_seglist + 1),
-        (uint32_t) FindTask(NULL)->tc_SPUpper - 2
+        gp_dbg->p_target->p_entry_point,
+        (uint32_t) gp_dbg->p_target->p_task->tc_SPUpper - 2
     );
     // We need to use RunCommand() instead of just calling the entry point if we specify NP_Cli in CreateNewProcTags(),
-    // otherwise we get a crash.
-    if ((result = RunCommand(p_startup_msg->p_seglist, TARGET_STACK_SIZE, "\n", 1)) == -1) {
+    // otherwise we get a crash. The argument string (3rd argument) has to be terminated by a newline character.
+    if ((result = RunCommand(gp_dbg->p_target->p_seglist, TARGET_STACK_SIZE, "\n", 1)) == -1) {
         LOG(CRIT, "Running target with RunCommand() failed");
         stopped_msg.stop_reason = TS_ERROR;
         stopped_msg.error_code = ERROR_RUN_COMMAND_FAILED;
@@ -456,19 +434,11 @@ static void wrap_target()
     // Send message to debugger to inform it that target has finished or an error occurred
     send_msg:
         LOG(DEBUG, "Sending message to debugger process");
-        PutMsg(p_debugger_port, (struct Message *) &stopped_msg);
+        PutMsg(gp_dbg->p_debugger_port, (struct Message *) &stopped_msg);
         do {
-            WaitPort(p_port);
-        } while (GetMsg(p_port) == NULL);
+            WaitPort(gp_dbg->p_target->p_port);
+        } while (GetMsg(gp_dbg->p_target->p_port) == NULL);
         LOG(DEBUG, "Received message from debugger process - exiting target");
-}
-
-
-static void init_target_startup_msg(TargetStartupMsg *p_msg, struct MsgPort *p_reply_port)
-{
-    memset(p_msg, 0, sizeof(TargetStartupMsg));
-    p_msg->exec_msg.mn_Length = sizeof(TargetStartupMsg);
-    p_msg->exec_msg.mn_ReplyPort = p_reply_port;
 }
 
 
@@ -477,16 +447,6 @@ static void init_target_stopped_msg(TargetStoppedMsg *p_msg, struct MsgPort *p_r
     memset(p_msg, 0, sizeof(TargetStoppedMsg));
     p_msg->exec_msg.mn_Length = sizeof(TargetStoppedMsg);
     p_msg->exec_msg.mn_ReplyPort = p_reply_port;
-}
-
-
-static void get_msg_safely(struct MsgPort *p_port, struct Message **pp_msg)
-{
-    *pp_msg = NULL;
-    do {
-        WaitPort(p_port);
-        *pp_msg = GetMsg(p_port);
-    } while (*pp_msg == NULL);
 }
 
 
