@@ -42,8 +42,8 @@ class MsgTypes(IntEnum):
     MSG_KILL           = 7
     MSG_PEEK_MEM       = 8
     MSG_POKE_MEM       = 9
-    MSG_SET_BP         = 10
-    MSG_CLEAR_BP       = 11
+    MSG_SET_BPOINT     = 10
+    MSG_CLEAR_BPOINT   = 11
     MSG_TARGET_STOPPED = 12
 
 
@@ -191,7 +191,7 @@ class ServerCommand:
 
 class SrvClearBreakpoint(ServerCommand):
     def __init__(self, bpoint_num: int):
-        super().__init__(MsgTypes.MSG_CLEAR_BP, data=struct.pack(M68K_UINT32, bpoint_num))
+        super().__init__(MsgTypes.MSG_CLEAR_BPOINT, data=struct.pack(M68K_UINT32, bpoint_num))
 
 
 class SrvContinue(ServerCommand):
@@ -221,7 +221,7 @@ class SrvRun(ServerCommand):
 
 class SrvSetBreakpoint(ServerCommand):
     def __init__(self, bpoint_offset: int, is_one_shot: bool = False):
-        super().__init__(MsgTypes.MSG_SET_BP, data=struct.pack(M68K_UINT32, bpoint_offset) + struct.pack(M68K_UINT16, is_one_shot))
+        super().__init__(MsgTypes.MSG_SET_BPOINT, data=struct.pack(M68K_UINT32, bpoint_offset) + struct.pack(M68K_UINT16, is_one_shot))
 
 
 class SrvSingleStep(ServerCommand):

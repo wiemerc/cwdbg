@@ -31,8 +31,8 @@
 #define MSG_KILL            0x07
 #define MSG_PEEK_MEM        0x08
 #define MSG_POKE_MEM        0x09
-#define MSG_SET_BP          0x0a
-#define MSG_CLEAR_BP        0x0b
+#define MSG_SET_BPOINT      0x0a
+#define MSG_CLEAR_BPOINT    0x0b
 #define MSG_TARGET_STOPPED  0x0c
 
 //
@@ -69,6 +69,24 @@ static void send_nack_msg(HostConnection *p_conn, uint8_t error_code);
 static void send_target_stopped_msg(HostConnection *p_conn, TargetInfo *p_target_info);
 
 static int is_correct_target_state_for_command(uint32_t state, uint8_t msg_type);
+
+
+// keep aligned with definitions above
+static char *msg_type_names[] = {
+    "MSG_INIT",
+    "MSG_ACK",
+    "MSG_NACK",
+    "MSG_RUN",
+    "MSG_QUIT",
+    "MSG_CONT",
+    "MSG_STEP",
+    "MSG_KILL",
+    "MSG_PEEK_MEM",
+    "MSG_POKE_MEM",
+    "MSG_SET_BPOINT",
+    "MSG_CLEAR_BPOINT",
+    "MSG_TARGET_STOPPED"
+};
 
 
 //
@@ -121,18 +139,18 @@ void process_remote_commands()
     }
 
     // TODO: Catch Ctrl-C
-    while(1) {
+    while(TRUE) {
         LOG(INFO, "Waiting for command from host...");
         // TODO: add timeout
         if (recv_message(gp_dbg->p_host_conn, &msg) == DOSFALSE) {
             LOG(ERROR, "Failed to receive message from host");
             quit_debugger(gp_dbg, RETURN_ERROR);
         }
-        // TODO: Log message type as string
         LOG(
             DEBUG,
-            "Message from host received: seqnum=%d, type=%d, length=%d",
+            "Message from host received: seqnum=%d, type=%s (%d), length=%d",
             msg.seqnum,
+            msg_type_names[msg.type],
             msg.type,
             msg.length
         );
@@ -160,7 +178,7 @@ void process_remote_commands()
                 send_ack_msg(gp_dbg->p_host_conn, NULL, 0);
                 break;
 
-            case MSG_SET_BP:
+            case MSG_SET_BPOINT:
                 if (unpack_data(msg.data, msg.length, "!I!H", &bpoint_offset, &bpoint_type) == DOSTRUE) {
                     if ((dbg_errno = set_breakpoint(gp_dbg->p_target, bpoint_offset, bpoint_type)) == NULL) {
                     // TODO: Return breakpoint number
@@ -172,12 +190,12 @@ void process_remote_commands()
                     }
                 }
                 else {
-                    LOG(ERROR, "Failed to unpack data of MSG_SET_BP message");
+                    LOG(ERROR, "Failed to unpack data of MSG_SET_BPOINT message");
                     send_nack_msg(gp_dbg->p_host_conn, ERROR_BAD_DATA);
                 }
                 break;
 
-            case MSG_CLEAR_BP:
+            case MSG_CLEAR_BPOINT:
                 if (unpack_data(msg.data, msg.length, "!I", &bpoint_num) == DOSTRUE) {
                     if ((p_bpoint = find_bpoint_by_num(gp_dbg->p_target, bpoint_num)) != NULL) {
                         clear_breakpoint(gp_dbg->p_target, p_bpoint);
@@ -189,7 +207,7 @@ void process_remote_commands()
                     }
                 }
                 else {
-                    LOG(ERROR, "Failed to unpack data of MSG_CLEAR_BP message");
+                    LOG(ERROR, "Failed to unpack data of MSG_CLEAR_BPOINT message");
                     send_nack_msg(gp_dbg->p_host_conn, ERROR_BAD_DATA);
                 }
                 break;
