@@ -70,6 +70,9 @@ static void send_target_stopped_msg(HostConnection *p_conn, TargetInfo *p_target
 
 static int is_correct_target_state_for_command(uint32_t state, uint8_t msg_type);
 
+static void handle_set_bpoint_msg(ProtoMessage *p_msg);
+static void handle_clear_bpoint_msg(ProtoMessage *p_msg);
+
 
 // keep aligned with definitions above
 static char *msg_type_names[] = {
@@ -125,10 +128,6 @@ void process_remote_commands()
 {
     ProtoMessage msg;
     TargetInfo   target_info;
-    Breakpoint   *p_bpoint;
-    uint8_t      dbg_errno;
-    uint32_t     bpoint_offset, bpoint_num;
-    uint16_t     bpoint_type;
 
     // If we've been called by run_target() the target is still running. In this case the host is waiting for us and we
     // send a MSG_TARGET_STOPPED message to indicate that the target has stopped and provide the target information to the host.
@@ -168,8 +167,6 @@ void process_remote_commands()
             quit_debugger(gp_dbg, RETURN_FAIL);
         }
 
-        // TODO: Use table with ServerCommand objects and format strings for unpack()
-        //       (like in _The Practice Of Programming_)
         switch (msg.type) {
             case MSG_INIT:
                 LOG(DEBUG, "Initializing connection");
@@ -179,37 +176,11 @@ void process_remote_commands()
                 break;
 
             case MSG_SET_BPOINT:
-                if (unpack_data(msg.data, msg.length, "!I!H", &bpoint_offset, &bpoint_type) == DOSTRUE) {
-                    if ((dbg_errno = set_breakpoint(gp_dbg->p_target, bpoint_offset, bpoint_type)) == NULL) {
-                    // TODO: Return breakpoint number
-                    send_ack_msg(gp_dbg->p_host_conn, NULL, 0);
-                    }
-                    else {
-                        LOG(ERROR, "Failed to set breakpoint");
-                        send_nack_msg(gp_dbg->p_host_conn, dbg_errno);
-                    }
-                }
-                else {
-                    LOG(ERROR, "Failed to unpack data of MSG_SET_BPOINT message");
-                    send_nack_msg(gp_dbg->p_host_conn, ERROR_BAD_DATA);
-                }
+                handle_set_bpoint_msg(&msg);
                 break;
 
             case MSG_CLEAR_BPOINT:
-                if (unpack_data(msg.data, msg.length, "!I", &bpoint_num) == DOSTRUE) {
-                    if ((p_bpoint = find_bpoint_by_num(gp_dbg->p_target, bpoint_num)) != NULL) {
-                        clear_breakpoint(gp_dbg->p_target, p_bpoint);
-                        send_ack_msg(gp_dbg->p_host_conn, NULL, 0);
-                    }
-                    else {
-                        LOG(ERROR, "Breakpoint #%d not found", bpoint_num);
-                        send_nack_msg(gp_dbg->p_host_conn, ERROR_UNKNOWN_BREAKPOINT);
-                    }
-                }
-                else {
-                    LOG(ERROR, "Failed to unpack data of MSG_CLEAR_BPOINT message");
-                    send_nack_msg(gp_dbg->p_host_conn, ERROR_BAD_DATA);
-                }
+                handle_clear_bpoint_msg(&msg);
                 break;
 
             case MSG_RUN:
@@ -419,4 +390,49 @@ static int is_correct_target_state_for_command(uint32_t state, uint8_t msg_type)
         return 0;
     }
     return 1;
+}
+
+
+static void handle_set_bpoint_msg(ProtoMessage *p_msg)
+{
+    uint32_t bpoint_offset;
+    uint16_t bpoint_type;
+    uint8_t  dbg_errno;
+
+    if (unpack_data(p_msg->data, p_msg->length, "!I!H", &bpoint_offset, &bpoint_type) == DOSTRUE) {
+        if ((dbg_errno = set_breakpoint(gp_dbg->p_target, bpoint_offset, bpoint_type)) == NULL) {
+        // TODO: Return breakpoint number
+        send_ack_msg(gp_dbg->p_host_conn, NULL, 0);
+        }
+        else {
+            LOG(ERROR, "Failed to set breakpoint");
+            send_nack_msg(gp_dbg->p_host_conn, dbg_errno);
+        }
+    }
+    else {
+        LOG(ERROR, "Failed to unpack data of MSG_SET_BPOINT message");
+        send_nack_msg(gp_dbg->p_host_conn, ERROR_BAD_DATA);
+    }
+}
+
+
+static void handle_clear_bpoint_msg(ProtoMessage *p_msg)
+{
+    uint32_t   bpoint_num;
+    Breakpoint *p_bpoint;
+
+    if (unpack_data(p_msg->data, p_msg->length, "!I", &bpoint_num) == DOSTRUE) {
+        if ((p_bpoint = find_bpoint_by_num(gp_dbg->p_target, bpoint_num)) != NULL) {
+            clear_breakpoint(gp_dbg->p_target, p_bpoint);
+            send_ack_msg(gp_dbg->p_host_conn, NULL, 0);
+        }
+        else {
+            LOG(ERROR, "Breakpoint #%d not found", bpoint_num);
+            send_nack_msg(gp_dbg->p_host_conn, ERROR_UNKNOWN_BREAKPOINT);
+        }
+    }
+    else {
+        LOG(ERROR, "Failed to unpack data of MSG_CLEAR_BPOINT message");
+        send_nack_msg(gp_dbg->p_host_conn, ERROR_BAD_DATA);
+    }
 }
