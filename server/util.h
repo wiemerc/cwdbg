@@ -28,8 +28,8 @@
 //
 void logmsg(const char *p_fname, int lineno, const char *p_func, UBYTE level, const char *p_fmtstr, ...);
 void dump_memory(const uint8_t *p_addr, uint32_t size);
-int pack_data(uint8_t *p_buffer, uint32_t buf_size, const char *p_fmt_str, ...);
-int unpack_data(uint8_t *p_buffer, uint32_t buf_size, const char *p_fmt_str, ...);
+int pack_data(uint8_t *p_buffer, size_t buf_size, const char *p_fmt_str, ...);
+int unpack_data(const uint8_t *p_buffer, size_t buf_size, const char *p_fmt_str, ...);
 
 
 //

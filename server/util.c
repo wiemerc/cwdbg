@@ -7,6 +7,7 @@
 
 
 #include <assert.h>
+#include <ctype.h>
 #ifdef TEST
     #include <clib/exec_protos.h>
 #else
@@ -14,6 +15,8 @@
 #endif
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #ifdef TEST
     #include <setjmp.h>
     #include <cmocka.h>
@@ -39,6 +42,11 @@ static char *p_level_name[] = {
     "ERROR",
     "CRIT"
 };
+
+
+#ifndef TEST
+    static size_t strnlen(const char *p_str, size_t max_len);
+#endif
 
 
 void logmsg(const char *p_fname, int lineno, const char *p_func, uint8_t level, const char *p_fmtstr, ...)
@@ -93,7 +101,7 @@ void dump_memory(const uint8_t *p_addr, uint32_t size)
 }
 
 
-int pack_data(uint8_t *p_buffer, uint32_t buf_size, const char *p_format_str, ...)
+int pack_data(uint8_t *p_buffer, size_t buf_size, const char *p_format_str, ...)
 {
     va_list args;
     const char *p_fmt;
@@ -172,18 +180,19 @@ int pack_data(uint8_t *p_buffer, uint32_t buf_size, const char *p_format_str, ..
 }
 
 
-int unpack_data(uint8_t *p_buffer, uint32_t buf_size, const char *p_format_str, ...)
+int unpack_data(const uint8_t *p_buffer, size_t buf_size, const char *p_format_str, ...)
 {
     va_list args;
     const char *p_fmt;
-    uint8_t *p_buf_pos = p_buffer;
-    uint32_t buf_size_left = buf_size;
+    const uint8_t *p_buf_pos = p_buffer;
+    size_t buf_size_left = buf_size, str_size, max_str_size;
     int rc = DOSTRUE;
 
     // output variables of the respective types, passed in as variadic args
     uint8_t *p8;
     uint16_t *p16;
     uint32_t *p32;
+    char *p_str;
 
     assert((p_buffer != NULL) && (buf_size > 0) && (p_format_str != NULL));
     va_start(args, p_format_str);
@@ -238,9 +247,51 @@ int unpack_data(uint8_t *p_buffer, uint32_t buf_size, const char *p_format_str, 
                 break;
 
             default:
-                LOG(ERROR, "Unknown format specifier '%c'", *p_fmt);
-                rc = DOSFALSE;
-                goto exit;
+                if (isdigit(*p_fmt)) {
+                    // string with size qualifier
+                    max_str_size = strtoul(p_fmt, &p_fmt, 10);
+                    if ((max_str_size == 0) || (max_str_size > 1024)) {
+                        LOG(ERROR, "Invalid string size %ld, has to be between 1 and 1024", max_str_size);
+                        rc = DOSFALSE;
+                        goto exit;
+                    }
+                    if (*p_fmt != 's') {
+                        LOG(ERROR, "Size qualifier only supported for format 's', not for '%c'", *p_fmt);
+                        rc = DOSFALSE;
+                        goto exit;
+                    }
+                    if (buf_size_left >= 2) {
+                        // at least one character + null byte
+                        p_str = va_arg(args, char *);
+
+                        str_size = strnlen((const char *) p_buf_pos, buf_size_left);
+                        if (str_size == buf_size_left) {
+                            LOG(ERROR, "Buffer contains unterminated string (%ld characters)", str_size);
+                            rc = DOSFALSE;
+                            goto exit;
+                        }
+                        if (str_size > max_str_size) {
+                            LOG(ERROR, "Buffer contains string exceeding the maximum size (%ld > %ld characters)", str_size, max_str_size);
+                            rc = DOSFALSE;
+                            goto exit;
+                        }
+
+                        strcpy(p_str, (char *) p_buf_pos);
+                        ++str_size;  // to account for the null byte
+                        p_buf_pos += str_size;
+                        buf_size_left -= str_size;
+                    }
+                    else {
+                        LOG(ERROR, "Not enough bytes (>= 2) in buffer to unpack string");
+                        rc = DOSFALSE;
+                        goto exit;
+                    }
+                }
+                else {
+                    LOG(ERROR, "Unknown format specifier '%c'", *p_fmt);
+                    rc = DOSFALSE;
+                    goto exit;
+                }
         }
     }
 
@@ -248,6 +299,18 @@ int unpack_data(uint8_t *p_buffer, uint32_t buf_size, const char *p_format_str, 
         va_end(args);
         return rc;
 }
+
+
+#ifndef TEST
+// libnix doesn't contain strnlen(), so we have to implement it ourselves.
+static size_t strnlen(const char *p_str, size_t max_len)
+{
+    size_t len = 0;
+    while ((max_len-- > 0) && (*p_str++ != 0))
+        ++len;
+    return len;
+}
+#endif
 
 
 //
@@ -263,14 +326,12 @@ static void test_pack_byte(void **state)
     assert_memory_equal(buffer, ((uint8_t[]) {0x42}), 1);
 }
 
-
 static void test_pack_word(void **state)
 {
     uint8_t buffer[2], expected_buffer[] = {0xca, 0xfe};
     pack_data(buffer, sizeof(buffer), "!H", 0xcafe);
     assert_memory_equal(buffer, expected_buffer, 2);
 }
-
 
 static void test_pack_dword(void **state)
 {
@@ -279,14 +340,12 @@ static void test_pack_dword(void **state)
     assert_memory_equal(buffer, expected_buffer, 4);
 }
 
-
 static void test_pack_wrong_size(void **state)
 {
     uint8_t buffer[2];
     int rc = pack_data(buffer, sizeof(buffer), "!I", 0xcafebabe);
     assert_int_equal(rc, DOSFALSE);
 }
-
 
 static void test_pack_wrong_format(void **state)
 {
@@ -295,12 +354,10 @@ static void test_pack_wrong_format(void **state)
     assert_int_equal(rc, DOSFALSE);
 }
 
-
 static void test_pack_null_args(void **state)
 {
     expect_assert_failure(pack_data(NULL, 0, NULL));
 }
-
 
 static void test_unpack_byte(void **state)
 {
@@ -310,7 +367,6 @@ static void test_unpack_byte(void **state)
     assert_int_equal(result, 0x42);
 }
 
-
 static void test_unpack_word(void **state)
 {
     uint8_t buffer[] = {0xca, 0xfe};
@@ -318,7 +374,6 @@ static void test_unpack_word(void **state)
     unpack_data(buffer, sizeof(buffer), "!H", &result);
     assert_int_equal(result, 0xcafe);
 }
-
 
 static void test_unpack_dword(void **state)
 {
@@ -328,24 +383,50 @@ static void test_unpack_dword(void **state)
     assert_int_equal(result, 0xcafebabe);
 }
 
+static void test_unpack_string_and_byte(void **state)
+{
+    uint8_t buffer[] = {'t', 'e', 's', 't', 0, 42};
+    char string[16];
+    uint8_t byte;
+    unpack_data(buffer, sizeof(buffer), "10s!B", string, &byte);
+    assert_string_equal(string, "test");
+    assert_int_equal(byte, 42);
+}
+
+static void test_unpack_string_wrong_size(void **state)
+{
+    assert_int_equal(unpack_data((const uint8_t *) 0xdeadbeef, 1, "2000s", NULL), DOSFALSE);
+}
+
+static void test_unpack_size_with_wrong_format(void **state)
+{
+    assert_int_equal(unpack_data((const uint8_t *) 0xdeadbeef, 1, "10B", NULL), DOSFALSE);
+}
+
+static void test_unpack_string_too_big(void **state)
+{
+    uint8_t buffer[] = {'t', 'e', 's', 't', 0};
+    char string[16];
+    assert_int_equal(unpack_data(buffer, sizeof(buffer), "3s", string), DOSFALSE);
+}
+
+static void test_unpack_string_not_terminated(void **state)
+{
+    uint8_t buffer[] = {'t', 'e', 's', 't'};
+    char string[16];
+    assert_int_equal(unpack_data(buffer, sizeof(buffer), "10s", string), DOSFALSE);
+}
 
 static void test_unpack_wrong_size(void **state)
 {
     uint8_t buffer[] = {0xca, 0xfe};
-    uint16_t result;
-    int rc = unpack_data(buffer, sizeof(buffer), "!I", &result);
-    assert_int_equal(rc, DOSFALSE);
+    assert_int_equal(unpack_data(buffer, sizeof(buffer), "!I", NULL), DOSFALSE);
 }
-
 
 static void test_unpack_wrong_format(void **state)
 {
-    uint8_t buffer[] = {0xca, 0xfe};
-    uint16_t result;
-    int rc = unpack_data(buffer, sizeof(buffer), ">H", &result);
-    assert_int_equal(rc, DOSFALSE);
+    assert_int_equal(unpack_data((const uint8_t *) 0xdeadbeef, 1, ">H", NULL), DOSFALSE);
 }
-
 
 static void test_unpack_null_args(void **state)
 {
@@ -365,6 +446,11 @@ int main(void)
         cmocka_unit_test(test_unpack_byte),
         cmocka_unit_test(test_unpack_word),
         cmocka_unit_test(test_unpack_dword),
+        cmocka_unit_test(test_unpack_string_and_byte),
+        cmocka_unit_test(test_unpack_string_wrong_size),
+        cmocka_unit_test(test_unpack_size_with_wrong_format),
+        cmocka_unit_test(test_unpack_string_too_big),
+        cmocka_unit_test(test_unpack_string_not_terminated),
         cmocka_unit_test(test_unpack_wrong_size),
         cmocka_unit_test(test_unpack_wrong_format),
         cmocka_unit_test(test_unpack_null_args),
