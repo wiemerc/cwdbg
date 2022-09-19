@@ -21,25 +21,28 @@
 //
 // debugger protocol messages
 //
-#define MSG_INIT            0x00
-#define MSG_ACK             0x01
-#define MSG_NACK            0x02
-#define MSG_RUN             0x03
-#define MSG_QUIT            0x04
-#define MSG_CONT            0x05
-#define MSG_STEP            0x06
-#define MSG_KILL            0x07
-#define MSG_PEEK_MEM        0x08
-#define MSG_POKE_MEM        0x09
-#define MSG_SET_BPOINT      0x0a
-#define MSG_CLEAR_BPOINT    0x0b
-#define MSG_TARGET_STOPPED  0x0c
+#define MSG_INIT             0x00
+#define MSG_ACK              0x01
+#define MSG_NACK             0x02
+#define MSG_RUN              0x03
+#define MSG_QUIT             0x04
+#define MSG_CONT             0x05
+#define MSG_STEP             0x06
+#define MSG_KILL             0x07
+#define MSG_PEEK_MEM         0x08
+#define MSG_POKE_MEM         0x09
+#define MSG_SET_BPOINT       0x0a
+#define MSG_CLEAR_BPOINT     0x0b
+#define MSG_TARGET_STOPPED   0x0c
+#define MSG_GET_BASE_ADDRESS 0x0d
 
 //
 // connection states - for future use
 //
 #define CONN_STATE_INITIAL   0
 #define CONN_STATE_CONNECTED 1
+
+#define MAX_LIB_NAME_LEN 64
 
 
 struct HostConnection {
@@ -72,6 +75,7 @@ static int is_correct_target_state_for_command(uint32_t state, uint8_t msg_type)
 
 static void handle_set_bpoint_msg(ProtoMessage *p_msg);
 static void handle_clear_bpoint_msg(ProtoMessage *p_msg);
+static void handle_get_base_address_msg(ProtoMessage *p_msg);
 
 
 // keep aligned with definitions above
@@ -88,7 +92,8 @@ static char *msg_type_names[] = {
     "MSG_POKE_MEM",
     "MSG_SET_BPOINT",
     "MSG_CLEAR_BPOINT",
-    "MSG_TARGET_STOPPED"
+    "MSG_TARGET_STOPPED",
+    "MSG_GET_BASE_ADDRESS"
 };
 
 
@@ -206,6 +211,10 @@ void process_remote_commands()
                 // Return to run_target() so it can exit and the outer invocation can take over again (which will also
                 // send the MSG_TARGET_STOPPED message)
                 return;
+
+            case MSG_GET_BASE_ADDRESS:
+                handle_get_base_address_msg(&msg);
+                break;
 
             case MSG_QUIT:
                 send_ack_msg(gp_dbg->p_host_conn, NULL, 0);
@@ -433,6 +442,38 @@ static void handle_clear_bpoint_msg(ProtoMessage *p_msg)
     }
     else {
         LOG(ERROR, "Failed to unpack data of MSG_CLEAR_BPOINT message");
+        send_nack_msg(gp_dbg->p_host_conn, ERROR_BAD_DATA);
+    }
+}
+
+
+static void handle_get_base_address_msg(ProtoMessage *p_msg)
+{
+    char lib_name[MAX_LIB_NAME_LEN];
+    uint8_t msg_data[4];
+    struct Library **pp_sys_base = (struct Library **) 4l, *p_lib_base;
+
+    if (unpack_data(p_msg->data, p_msg->length, "64s", lib_name) == DOSTRUE) {
+        if (strncmp(lib_name, "exec.library", MAX_LIB_NAME_LEN) == 0) {
+            LOG(DEBUG, "Base address of exec.library = 0x%08x\n", *pp_sys_base);
+            pack_data(msg_data, 4, "!I", *pp_sys_base);
+            send_ack_msg(gp_dbg->p_host_conn, msg_data, 4);
+        }
+        else {
+            if ((p_lib_base = OpenLibrary(lib_name, 0l)) != NULL) {
+                LOG(DEBUG, "Base address of %s = 0x%08x\n", lib_name, p_lib_base);
+                CloseLibrary(p_lib_base);
+                pack_data(msg_data, 4, "!I", p_lib_base);
+                send_ack_msg(gp_dbg->p_host_conn, msg_data, 4);
+            }
+            else {
+                LOG(ERROR, "Could not open library %s\n", lib_name);
+                send_nack_msg(gp_dbg->p_host_conn, ERROR_OPEN_LIB_FAILED);
+            }
+        }
+    }
+    else {
+        LOG(ERROR, "Failed to unpack data of MSG_GET_BASE_ADDRESS message");
         send_nack_msg(gp_dbg->p_host_conn, ERROR_BAD_DATA);
     }
 }

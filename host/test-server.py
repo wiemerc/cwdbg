@@ -11,6 +11,7 @@ from debugger import ErrorCodes, TargetStates
 from server import (
     SrvClearBreakpoint,
     SrvContinue,
+    SrvGetBaseAddress,
     SrvKill,
     SrvQuit,
     SrvRun,
@@ -30,6 +31,14 @@ def server_conn():
 
 def test_connect(server_conn: ServerConnection):
     pass
+
+
+def test_get_base_address(server_conn: ServerConnection):
+    # Addresses are valid for AmigaOS 3.1.
+    cmd = SrvGetBaseAddress(library_name="exec.library").execute(server_conn)
+    assert cmd.result == 0x078007f8
+    cmd = SrvGetBaseAddress(library_name="dos.library").execute(server_conn)
+    assert cmd.result == 0x0780f8c4
 
 
 def test_set_bpoint(server_conn: ServerConnection):

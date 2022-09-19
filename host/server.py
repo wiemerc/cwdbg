@@ -32,19 +32,20 @@ SLIP_ESCAPED_ESC   = b'\xdd'
 
 
 class MsgTypes(IntEnum):
-    MSG_INIT           = 0
-    MSG_ACK            = 1
-    MSG_NACK           = 2
-    MSG_RUN            = 3
-    MSG_QUIT           = 4
-    MSG_CONT           = 5
-    MSG_STEP           = 6
-    MSG_KILL           = 7
-    MSG_PEEK_MEM       = 8
-    MSG_POKE_MEM       = 9
-    MSG_SET_BPOINT     = 10
-    MSG_CLEAR_BPOINT   = 11
-    MSG_TARGET_STOPPED = 12
+    MSG_INIT             = 0
+    MSG_ACK              = 1
+    MSG_NACK             = 2
+    MSG_RUN              = 3
+    MSG_QUIT             = 4
+    MSG_CONT             = 5
+    MSG_STEP             = 6
+    MSG_KILL             = 7
+    MSG_PEEK_MEM         = 8
+    MSG_POKE_MEM         = 9
+    MSG_SET_BPOINT       = 10
+    MSG_CLEAR_BPOINT     = 11
+    MSG_TARGET_STOPPED   = 12
+    MSG_GET_BASE_ADDRESS = 13
 
 
 class ProtoMessage(BigEndianStructure):
@@ -152,8 +153,8 @@ class ServerConnection:
 
 #
 # Classes for the debugger commands
-# ServerCommand itself implements the commands by sending and receiving the appropriate protocol messages. The
-# derived classes just set the message type and serialize the command's arguments, if any.
+# ServerCommand itself implements the commands by sending and receiving the appropriate protocol messages. The derived classes
+# set the message type, serialize the command's arguments and deserialize the result (provided as property), if any.
 #
 @dataclass
 class ServerCommand:
@@ -197,6 +198,15 @@ class SrvClearBreakpoint(ServerCommand):
 class SrvContinue(ServerCommand):
     def __init__(self):
         super().__init__(MsgTypes.MSG_CONT)
+
+
+class SrvGetBaseAddress(ServerCommand):
+    def __init__(self, library_name: str):
+        super().__init__(MsgTypes.MSG_GET_BASE_ADDRESS, data=library_name.encode() + b'\x00')
+
+    @property
+    def result(self):
+        return struct.unpack(M68K_UINT32, self.data[0:4])[0]
 
 
 class SrvInit(ServerCommand):
