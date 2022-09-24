@@ -13,7 +13,7 @@ import sys
 
 from argparse import ArgumentParser
 
-from debugger import SyscallArg, SyscallInfo, TargetRegisters
+from target import SyscallArg, SyscallInfo, TargetRegisters
 
 def main():
     parser = ArgumentParser(description='Create a database with syscall information from the prototypes and pragmas')

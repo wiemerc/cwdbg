@@ -13,7 +13,8 @@ from ctypes import BigEndianStructure, c_uint8, c_uint16, sizeof
 from enum import IntEnum
 from loguru import logger
 
-from debugger import ErrorCodes, TargetInfo, TargetStates
+from errors import ErrorCodes
+from target import TargetInfo
 
 
 #

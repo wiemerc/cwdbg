@@ -28,17 +28,17 @@ RETURN_ERROR = 1
 def main():
     args = _parse_command_line()
     _setup_logging(args.verbose)
-    _init_debugger(args)
 
     try:
+        _init_debugger(args)
         if args.no_tui:
             _print_banner()
             while True:
                 cmd_line = input('> ')
                 try:
-                    result = dbg.cli.process_command(cmd_line)
-                    if result[0]:
-                        print(result[0])
+                    result_str, target_info = dbg.cli.process_command(cmd_line)
+                    if result_str:
+                        print(result_str)
                 except QuitDebuggerException:
                     logger.debug("Exiting debugger...")
                     break
@@ -58,8 +58,8 @@ def _parse_command_line() -> argparse.Namespace:
     )
     parser.add_argument('--prog', help="Program you want to debug (with debug information)")
     parser.add_argument('--verbose', '-v', action="store_true", default=False, help="Enable verbose logging")
-    parser.add_argument('--host', '-H', help="IP address / name of debugger server")
-    parser.add_argument('--port', '-P', type=int, help="Port of debugger server")
+    parser.add_argument('--host', '-H', default='127.0.0.1', help="IP address / name of debugger server")
+    parser.add_argument('--port', '-P', type=int, default=1234, help="Port of debugger server")
     parser.add_argument('--no-tui', action='store_true', default=False, help="Disable TUI (mainly for debugging the debugger itself)")
     parser.add_argument('--syscall-db-dir', default='../syscall-db', help="Directory containing the system call database files")
     args = parser.parse_args()
@@ -89,14 +89,14 @@ def _print_banner():
     """)
 
 
+# TODO: Move routine to debugger object once the circular import debugger.py <-> cli.py is broken
 def _init_debugger(args: argparse.Namespace):
         if args.prog:
             dbg.program = ProgramWithDebugInfo.from_stabs_data(get_debug_infos_from_exe(args.prog))
-        if args.host and args.port:
-            dbg.server_conn = ServerConnection(args.host, args.port) 
+        dbg.server_conn = ServerConnection(args.host, args.port) 
         dbg.cli = Cli()
-        dbg.disasm = capstone.Cs(capstone.CS_ARCH_M68K, capstone.CS_MODE_32)
         dbg.load_syscall_db(args.syscall_db_dir)
+        dbg.get_lib_base_addresses(args.syscall_db_dir)
 
 
 if __name__ == '__main__':

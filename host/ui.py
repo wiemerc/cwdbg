@@ -12,7 +12,8 @@ from typing import Any
 from urwid import AttrMap, Columns, Edit, ExitMainLoop, Filler, Frame, LineBox, MainLoop, Padding, Pile, Text
 
 from cli import QuitDebuggerException
-from debugger import TargetInfo, NUM_NEXT_INSTRUCTIONS, NUM_TOP_STACK_DWORDS, dbg
+from debugger import dbg
+from target import TargetInfo, NUM_NEXT_INSTRUCTIONS, NUM_TOP_STACK_DWORDS
 
 
 PALETTE = [
@@ -220,7 +221,11 @@ class MainScreen:
 
         logger.debug("Updating disassembler view")
         instructions = []
-        for instr in dbg.disasm.disasm(bytes(target_info.next_instr_bytes), target_info.task_context.reg_pc, NUM_NEXT_INSTRUCTIONS):
+        for instr in capstone.Cs(capstone.CS_ARCH_M68K, capstone.CS_MODE_32).disasm(
+            bytes(target_info.next_instr_bytes),
+            target_info.task_context.reg_pc,
+            NUM_NEXT_INSTRUCTIONS,
+        ):
             instructions.append(f'0x{instr.address:08x} (PC + {instr.address - target_info.task_context.reg_pc:02}):    {instr.mnemonic:<10}{instr.op_str}\n')
         self._disasm_view.set_text(instructions)
 

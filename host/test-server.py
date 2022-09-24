@@ -7,7 +7,7 @@
 
 import pytest
 
-from debugger import ErrorCodes, TargetStates
+from errors import ErrorCodes
 from server import (
     SrvClearBreakpoint,
     SrvContinue,
@@ -20,6 +20,7 @@ from server import (
     ServerCommandError,
     ServerConnection,
 )
+from target import TargetStates
 
 
 @pytest.fixture(scope='module')
@@ -27,10 +28,6 @@ def server_conn():
     conn = ServerConnection('localhost', 1234)
     yield conn
     conn.close()
-
-
-def test_connect(server_conn: ServerConnection):
-    pass
 
 
 def test_get_base_address(server_conn: ServerConnection):
@@ -95,10 +92,6 @@ def test_one_shot_bpoint(server_conn: ServerConnection):
     cmd = SrvContinue().execute(server_conn)
     assert cmd.target_info.target_state == TargetStates.TS_EXITED
     assert cmd.target_info.exit_code == 0
-
-
-def test_disconnect(server_conn: ServerConnection):
-    pass
 
 
 def test_quit(server_conn: ServerConnection):

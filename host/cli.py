@@ -14,7 +14,8 @@ from dataclasses import dataclass
 
 from loguru import logger
 
-from debugger import ErrorCodes, TargetInfo, TargetStates, dbg
+from debugger import dbg
+from errors import ErrorCodes
 from server import (
     ServerCommandError,
     SrvClearBreakpoint,
@@ -25,6 +26,7 @@ from server import (
     SrvSetBreakpoint,
     SrvSingleStep
 )
+from target import TargetInfo, TargetStates
 
 
 class QuitDebuggerException(RuntimeError):
@@ -309,6 +311,7 @@ class Cli:
                 subparser.add_argument(arg.name, help=arg.help, type=arg.type)
 
 
+    # TODO: Pass server connection explicitly instead of accessing it via the global debugger object to break the circular import
     def process_command(self, cmd_line: str) -> tuple[str | None, TargetInfo | None]:
         try:
             try:
