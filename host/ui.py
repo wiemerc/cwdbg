@@ -12,7 +12,7 @@ from typing import Any
 from urwid import AttrMap, Columns, Edit, ExitMainLoop, Filler, Frame, LineBox, MainLoop, Padding, Pile, Text
 
 from cli import QuitDebuggerException
-from debugger import TargetInfo, NUM_NEXT_INSTRUCTIONS, NUM_TOP_STACK_DWORDS, dbg_state
+from debugger import TargetInfo, NUM_NEXT_INSTRUCTIONS, NUM_TOP_STACK_DWORDS, dbg
 
 
 PALETTE = [
@@ -45,7 +45,7 @@ class CommandInput(Edit):
         if key == 'enter':
             cmd_line = self.get_edit_text().strip()
             try:
-                result, target_info = dbg_state.cli.process_command(cmd_line)
+                result, target_info = dbg.cli.process_command(cmd_line)
             except QuitDebuggerException:
                 logger.debug("Exiting debugger...")
                 raise ExitMainLoop()
@@ -212,6 +212,7 @@ class MainScreen:
 
 
     def update_views(self, target_info: TargetInfo):
+        # TODO: Move views to separate routines / classes
         logger.debug("Updating register view")
         regs = []
         for i in range(7):

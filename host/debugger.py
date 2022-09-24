@@ -14,7 +14,7 @@ from enum import IntEnum
 from typing import Optional
 
 
-# keep in sync with values in debugger.h
+# keep in sync with values in target.h
 NUM_NEXT_INSTRUCTIONS = 8
 MAX_INSTR_BYTES       = 8
 NUM_TOP_STACK_DWORDS  = 8
@@ -101,7 +101,7 @@ class TargetStates(IntEnum):
     TS_ERROR                       = 65536
 
 
-# keep in sync with values in debugger.h
+# keep in sync with values in target.h
 class ErrorCodes(IntEnum):
     ERROR_OK                     = 0
     ERROR_NOT_ENOUGH_MEMORY      = 1
@@ -113,14 +113,17 @@ class ErrorCodes(IntEnum):
     ERROR_NO_TRAP                = 7
     ERROR_RUN_COMMAND_FAILED     = 8
     ERROR_BAD_DATA               = 9
+    ERROR_OPEN_LIB_FAILED        = 10
 
 
 @dataclass
-class DebuggerState:
-    cli: Optional['Cli'] = None
+class Debugger:
+    cli: 'Cli'
     program: Optional['ProgramWithDebugInfo'] = None
     server_conn: Optional['ServerConnection'] = None
-    target_info: TargetInfo | None = None
+    target_info: Optional[TargetInfo] = None
 
 
-dbg_state = DebuggerState()
+# We create an "empty" object here. The attributes will be set later by _init_debugger() in cwdebug.py. It can't be
+# done here because then we would need to import cli.py and server.py, which themselves import us -> circular imports.
+dbg = Debugger(cli=None)

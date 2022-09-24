@@ -13,7 +13,7 @@ import sys
 from loguru import logger
 
 from cli import Cli, QuitDebuggerException
-from debugger import dbg_state
+from debugger import Debugger, dbg
 from hunklib import get_debug_infos_from_exe
 from server import ServerConnection
 from stabslib import ProgramWithDebugInfo
@@ -27,20 +27,15 @@ RETURN_ERROR = 1
 def main():
     args = _parse_command_line()
     _setup_logging(args.verbose)
+    _init_debugger(args)
 
     try:
-        # TODO: Make server connection optional and implement 'connect' and 'disconnect' commands
-        dbg_state.server_conn = ServerConnection(args.host, args.port)
-        if args.prog:
-            dbg_state.program = ProgramWithDebugInfo.from_stabs_data(get_debug_infos_from_exe(args.prog))
-        dbg_state.cli = Cli()
-
         if args.no_tui:
             _print_banner()
             while True:
                 cmd_line = input('> ')
                 try:
-                    result = dbg_state.cli.process_command(cmd_line)
+                    result = dbg.cli.process_command(cmd_line)
                     if result[0]:
                         print(result[0])
                 except QuitDebuggerException:
@@ -51,16 +46,19 @@ def main():
     except Exception as e:
         logger.exception(f"Internal error occurred: {e}")
     finally:
-        if dbg_state.server_conn:
-            dbg_state.server_conn.close()
+        if dbg.server_conn:
+            dbg.server_conn.close()
 
 
 def _parse_command_line() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="CWDebug, a source-level debugger for the AmigaOS")
+    parser = argparse.ArgumentParser(
+        description="CWDebug, a source-level debugger for the AmigaOS",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
     parser.add_argument('--prog', help="Program you want to debug (with debug information)")
     parser.add_argument('--verbose', '-v', action="store_true", default=False, help="Enable verbose logging")
-    parser.add_argument('--host', '-H', default='127.0.0.1', help="IP address / name of debugger server (default=127.0.0.1)")
-    parser.add_argument('--port', '-P', type=int, default=1234, help="Port of debugger server(default=1234)")
+    parser.add_argument('--host', '-H', help="IP address / name of debugger server")
+    parser.add_argument('--port', '-P', type=int, help="Port of debugger server")
     parser.add_argument('--no-tui', action='store_true', default=False, help="Disable TUI (mainly for debugging the debugger itself)")
     args = parser.parse_args()
     return args
@@ -87,6 +85,16 @@ def _print_banner():
                                       /____/   
 
     """)
+
+
+def _init_debugger(args: argparse.Namespace):
+        dbg.cli = Cli()
+        if args.prog:
+            dbg.program = ProgramWithDebugInfo.from_stabs_data(get_debug_infos_from_exe(args.prog))
+        if args.host and args.port:
+            dbg.server_conn = ServerConnection(args.host, args.port) 
+        # TODO: Create disassembler object
+        # TODO: Load db with syscall infos
 
 
 if __name__ == '__main__':

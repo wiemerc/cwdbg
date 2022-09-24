@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 from loguru import logger
 
-from debugger import ErrorCodes, TargetInfo, TargetStates, dbg_state
+from debugger import ErrorCodes, TargetInfo, TargetStates, dbg
 from server import (
     ServerCommandError,
     SrvClearBreakpoint,
@@ -102,7 +102,7 @@ class CliClearBreakpoint(CliCommand):
 
     def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
         try:
-            SrvClearBreakpoint(args.number).execute(dbg_state.server_conn)
+            SrvClearBreakpoint(args.number).execute(dbg.server_conn)
             return "Breakpoint cleared", None
         except ServerCommandError as e:
             return f"Clearing breakpoint failed: {e}", None
@@ -114,14 +114,14 @@ class CliContinue(CliCommand):
 
     def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
         try:
-            cmd = SrvContinue().execute(dbg_state.server_conn)
-            dbg_state.target_info = cmd.target_info
+            cmd = SrvContinue().execute(dbg.server_conn)
+            dbg.target_info = cmd.target_info
             return self._get_target_status_for_ui(cmd.target_info)
         except ServerCommandError as e:
             return f"Continuing target failed: {e}", None
 
     def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
-        if not dbg_state.target_info or not (dbg_state.target_info.target_state & TargetStates.TS_RUNNING):
+        if not dbg.target_info or not (dbg.target_info.target_state & TargetStates.TS_RUNNING):
             return False, "Incorrect state for command 'continue': target is not yet running"
         else:
             return True, None
@@ -133,14 +133,14 @@ class CliKill(CliCommand):
 
     def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
         try:
-            cmd = SrvKill().execute(dbg_state.server_conn)
-            dbg_state.target_info = cmd.target_info
+            cmd = SrvKill().execute(dbg.server_conn)
+            dbg.target_info = cmd.target_info
             return self._get_target_status_for_ui(cmd.target_info)
         except ServerCommandError as e:
             return f"Killing target failed: {e}", None
 
     def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
-        if not dbg_state.target_info or not (dbg_state.target_info.target_state & TargetStates.TS_RUNNING):
+        if not dbg.target_info or not (dbg.target_info.target_state & TargetStates.TS_RUNNING):
             return False, "Incorrect state for command 'kill': target is not yet running"
         else:
             return True, None
@@ -154,25 +154,25 @@ class CliNextInstr(CliCommand):
         try:
             # Check if next instruction is a JSR. If yes, set one-shot breakpoint at the instruction following the JSR
             # and continue. If no, just single-step.
-            if dbg_state.target_info.next_instr_is_jsr():
+            if dbg.target_info.next_instr_is_jsr():
                 offset = (
-                    dbg_state.target_info.task_context.reg_pc
-                    - dbg_state.target_info.initial_pc
-                    + dbg_state.target_info.get_bytes_used_by_jsr()
+                    dbg.target_info.task_context.reg_pc
+                    - dbg.target_info.initial_pc
+                    + dbg.target_info.get_bytes_used_by_jsr()
                 )
-                SrvSetBreakpoint(bpoint_offset=offset, is_one_shot=True).execute(dbg_state.server_conn)
-                cmd = SrvContinue().execute(dbg_state.server_conn)
-                dbg_state.target_info = cmd.target_info
+                SrvSetBreakpoint(bpoint_offset=offset, is_one_shot=True).execute(dbg.server_conn)
+                cmd = SrvContinue().execute(dbg.server_conn)
+                dbg.target_info = cmd.target_info
                 return self._get_target_status_for_ui(cmd.target_info)
             else:
-                cmd = SrvSingleStep().execute(dbg_state.server_conn)
-                dbg_state.target_info = cmd.target_info
+                cmd = SrvSingleStep().execute(dbg.server_conn)
+                dbg.target_info = cmd.target_info
                 return self._get_target_status_for_ui(cmd.target_info)
         except ServerCommandError as e:
             return f"Executing target until next instruction failed: {e}", None
 
     def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
-        if not dbg_state.target_info or not (dbg_state.target_info.target_state & TargetStates.TS_RUNNING):
+        if not dbg.target_info or not (dbg.target_info.target_state & TargetStates.TS_RUNNING):
             return False, "Incorrect state for command 'step': target is not yet running"
         else:
             return True, None
@@ -183,11 +183,11 @@ class CliQuit(CliCommand):
         super().__init__('quit', ('q', ), 'Quit debugger')
 
     def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
-        SrvQuit().execute(dbg_state.server_conn)
+        SrvQuit().execute(dbg.server_conn)
         raise QuitDebuggerException()
 
     def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
-        if dbg_state.target_info and dbg_state.target_info.target_state & TargetStates.TS_RUNNING:
+        if dbg.target_info and dbg.target_info.target_state & TargetStates.TS_RUNNING:
             return False, "Incorrect state for command 'quit': target is still running"
         else:
             return True, None
@@ -199,14 +199,14 @@ class CliRun(CliCommand):
 
     def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
         try:
-            cmd = SrvRun().execute(dbg_state.server_conn)
-            dbg_state.target_info = cmd.target_info
+            cmd = SrvRun().execute(dbg.server_conn)
+            dbg.target_info = cmd.target_info
             return self._get_target_status_for_ui(cmd.target_info)
         except ServerCommandError as e:
             return f"Running target failed: {e}", None
 
     def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
-        if dbg_state.target_info and dbg_state.target_info.target_state & TargetStates.TS_RUNNING:
+        if dbg.target_info and dbg.target_info.target_state & TargetStates.TS_RUNNING:
             return False, "Incorrect state for command 'run': target is already running"
         else:
             return True, None
@@ -233,20 +233,20 @@ class CliSetBreakpoint(CliCommand):
         if re.search(r'^0x[0-9a-fA-F]+$', args.location):
             offset = int(args.location, 16)
         elif re.search('^\d+$', args.location):
-            if dbg_state.program:
-                offset = dbg_state.program.get_addr_for_lineno(int(args.location, 10))
+            if dbg.program:
+                offset = dbg.program.get_addr_for_lineno(int(args.location, 10))
             else:
                 return "Program not loaded on host, source-level debugging not available", None
         elif re.search(r'^[a-zA-Z_]\w+$', args.location):
-            if dbg_state.program:
-                offset = dbg_state.program.get_addr_for_func_name(args.location)
+            if dbg.program:
+                offset = dbg.program.get_addr_for_func_name(args.location)
             else:
                 return "Program not loaded on host, source-level debugging not available", None
         else:
             # TODO: Implement <file name>:<line number> as location
             return "Invalid format of breakpoint location", None
         try:
-            SrvSetBreakpoint(offset).execute(dbg_state.server_conn)
+            SrvSetBreakpoint(offset).execute(dbg.server_conn)
             return "Breakpoint set", None
         except ServerCommandError as e:
             return f"Setting breakpoint failed: {e}", None
@@ -258,14 +258,14 @@ class CliSingleStep(CliCommand):
 
     def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
         try:
-            cmd = SrvSingleStep().execute(dbg_state.server_conn)
-            dbg_state.target_info = cmd.target_info
+            cmd = SrvSingleStep().execute(dbg.server_conn)
+            dbg.target_info = cmd.target_info
             return self._get_target_status_for_ui(cmd.target_info)
         except ServerCommandError as e:
             return f"Single-stepping target failed: {e}", None
 
     def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
-        if not dbg_state.target_info or not (dbg_state.target_info.target_state & TargetStates.TS_RUNNING):
+        if not dbg.target_info or not (dbg.target_info.target_state & TargetStates.TS_RUNNING):
             return False, "Incorrect state for command 'step': target is not yet running"
         else:
             return True, None
