@@ -6,6 +6,9 @@
 
 
 import capstone
+import glob
+import os
+import pickle
 import struct
 
 from ctypes import BigEndianStructure, c_uint8, c_uint16, c_uint32
@@ -46,6 +49,37 @@ class Breakpoint(BigEndianStructure):
     )
 
 
+class TargetRegisters(IntEnum):
+    D0 = 0
+    D1 = 1
+    D2 = 2
+    D3 = 3
+    D4 = 4
+    D5 = 5
+    D6 = 6
+    D7 = 7
+    A0 = 8
+    A1 = 9
+    A2 = 10
+    A3 = 11
+    A4 = 12
+    A5 = 13
+    A6 = 14
+
+
+@dataclass
+class SyscallArg:
+    decl: str
+    register: int = None
+
+
+@dataclass
+class SyscallInfo:
+    name: str
+    args: list[SyscallArg]
+    ret_type: str
+
+
 class TargetInfo(BigEndianStructure):
     _pack_ = 2
     _fields_ = (
@@ -74,14 +108,18 @@ class TargetInfo(BigEndianStructure):
         jsr_instr = next(dbg.disasm.disasm(bytes(self.next_instr_bytes), self.task_context.reg_pc, NUM_NEXT_INSTRUCTIONS))
         return jsr_instr.size
 
-    def next_instr_is_system_call(self) -> bool:
+    def get_system_call_info(self) -> SyscallInfo | None:
+        # TODO
+        pass
+
+    def _next_instr_is_system_call(self) -> bool:
         # check if next instruction is JSR with an effective address of register A6 + 16-bit offset
         if (struct.unpack(M68K_UINT16, bytes(self.next_instr_bytes)[0:2])[0] & 0xffff) == 0x4eae:
             return True
         else:
             return False
 
-    def get_system_call_offset(self) -> int:
+    def _get_system_call_offset(self) -> int:
         # This only works if the next instruction is indeed a system call.
         return struct.unpack(M68K_INT16, bytes(self.next_instr_bytes)[2:4])[0]
 
@@ -116,13 +154,22 @@ class ErrorCodes(IntEnum):
 
 @dataclass
 class Debugger:
-    cli: 'Cli'
-    disasm: capstone.Cs
+    # We reference other classes of the debugger only by name because we don't want to import the files defining them.
+    # Otherwise these files couldn't import the global debugger object without creating circular imports.
     program: Optional['ProgramWithDebugInfo'] = None
     server_conn: Optional['ServerConnection'] = None
+    cli: Optional['Cli'] = None
+    disasm: Optional[capstone.Cs] = None
+    syscall_db: Optional[dict[str, dict[int, SyscallInfo]]] = None
     target_info: Optional[TargetInfo] = None
+
+    def load_syscall_db(self, syscall_db_dir: str):
+        self.syscall_db = {}
+        for fname in glob.glob(os.path.join(syscall_db_dir, '*.data')):
+            with open(fname, 'rb') as f:
+                self.syscall_db[os.path.splitext(os.path.basename(fname))[0]] = pickle.load(f)
 
 
 # We create an "empty" object here. The attributes will be set later by _init_debugger() in cwdebug.py. It can't be
 # done here because then we would need to import cli.py and server.py, which themselves import us -> circular imports.
-dbg = Debugger(cli=None, disasm=None)
+dbg = Debugger()

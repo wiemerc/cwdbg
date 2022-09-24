@@ -12,40 +12,8 @@ import re
 import sys
 
 from argparse import ArgumentParser
-from dataclasses import dataclass
-from enum import IntEnum
 
-
-class Registers(IntEnum):
-    D0 = 0
-    D1 = 1
-    D2 = 2
-    D3 = 3
-    D4 = 4
-    D5 = 5
-    D6 = 6
-    D7 = 7
-    A0 = 8
-    A1 = 9
-    A2 = 10
-    A3 = 11
-    A4 = 12
-    A5 = 13
-    A6 = 14
-
-
-@dataclass
-class SyscallArg:
-    decl: str
-    register: int = -1
-
-
-@dataclass
-class SyscallInfo:
-    name: str
-    args: list[SyscallArg]
-    ret_type: str
-
+from debugger import SyscallArg, SyscallInfo, TargetRegisters
 
 def main():
     parser = ArgumentParser(description='Create a database with syscall information from the prototypes and pragmas')
@@ -89,6 +57,7 @@ def main():
             line = line.strip()
             if line.startswith('#pragma'):
                 name, offset, reg_info = line.split()[-3:]
+                offset = int(offset, 16)
                 if name in syscall_infos_by_name:
                     sci = syscall_infos_by_name[name]
 
@@ -111,7 +80,7 @@ def main():
                         continue
 
                     for arg in sci.args:
-                        arg.register = Registers(reg_info.pop())
+                        arg.register = TargetRegisters(reg_info.pop())
 
                     syscall_infos_by_offset[offset] = sci
 #                    print(sci)

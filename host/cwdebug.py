@@ -14,7 +14,7 @@ import sys
 from loguru import logger
 
 from cli import Cli, QuitDebuggerException
-from debugger import Debugger, dbg
+from debugger import dbg
 from hunklib import get_debug_infos_from_exe
 from server import ServerConnection
 from stabslib import ProgramWithDebugInfo
@@ -61,6 +61,7 @@ def _parse_command_line() -> argparse.Namespace:
     parser.add_argument('--host', '-H', help="IP address / name of debugger server")
     parser.add_argument('--port', '-P', type=int, help="Port of debugger server")
     parser.add_argument('--no-tui', action='store_true', default=False, help="Disable TUI (mainly for debugging the debugger itself)")
+    parser.add_argument('--syscall-db-dir', default='../syscall-db', help="Directory containing the system call database files")
     args = parser.parse_args()
     return args
 
@@ -89,13 +90,13 @@ def _print_banner():
 
 
 def _init_debugger(args: argparse.Namespace):
-        dbg.cli = Cli()
         if args.prog:
             dbg.program = ProgramWithDebugInfo.from_stabs_data(get_debug_infos_from_exe(args.prog))
         if args.host and args.port:
             dbg.server_conn = ServerConnection(args.host, args.port) 
+        dbg.cli = Cli()
         dbg.disasm = capstone.Cs(capstone.CS_ARCH_M68K, capstone.CS_MODE_32)
-        # TODO: Load db with syscall infos
+        dbg.load_syscall_db(args.syscall_db_dir)
 
 
 if __name__ == '__main__':
