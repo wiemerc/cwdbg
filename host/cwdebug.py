@@ -8,6 +8,7 @@
 
 
 import argparse
+import capstone
 import sys
 
 from loguru import logger
@@ -93,7 +94,7 @@ def _init_debugger(args: argparse.Namespace):
             dbg.program = ProgramWithDebugInfo.from_stabs_data(get_debug_infos_from_exe(args.prog))
         if args.host and args.port:
             dbg.server_conn = ServerConnection(args.host, args.port) 
-        # TODO: Create disassembler object
+        dbg.disasm = capstone.Cs(capstone.CS_ARCH_M68K, capstone.CS_MODE_32)
         # TODO: Load db with syscall infos
 
 

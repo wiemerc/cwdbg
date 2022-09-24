@@ -205,8 +205,6 @@ class MainScreen:
         logger.add(UrwidHandler(self._log_view))
         logger.info("Created main screen, starting event loop")
 
-        self._disassembler = capstone.Cs(capstone.CS_ARCH_M68K, capstone.CS_MODE_32)
-
         loop = MainLoop(screen, PALETTE, unhandled_input=_handle_global_input)
         loop.run()
 
@@ -222,7 +220,7 @@ class MainScreen:
 
         logger.debug("Updating disassembler view")
         instructions = []
-        for instr in self._disassembler.disasm(bytes(target_info.next_instr_bytes), target_info.task_context.reg_pc, NUM_NEXT_INSTRUCTIONS):
+        for instr in dbg.disasm.disasm(bytes(target_info.next_instr_bytes), target_info.task_context.reg_pc, NUM_NEXT_INSTRUCTIONS):
             instructions.append(f'0x{instr.address:08x} (PC + {instr.address - target_info.task_context.reg_pc:02}):    {instr.mnemonic:<10}{instr.op_str}\n')
         self._disasm_view.set_text(instructions)
 

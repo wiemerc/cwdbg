@@ -71,9 +71,7 @@ class TargetInfo(BigEndianStructure):
     def get_bytes_used_by_jsr(self) -> int:
         # This only works if the next instruction is indeed a JSR. We use the disassembler here to get the size of the
         # JSR instruction so we don't have to decode the different address modes ourselves.
-        # TODO: Move disassembler to DebuggerState
-        disasm = capstone.Cs(capstone.CS_ARCH_M68K, capstone.CS_MODE_32)
-        jsr_instr = next(disasm.disasm(bytes(self.next_instr_bytes), self.task_context.reg_pc, NUM_NEXT_INSTRUCTIONS))
+        jsr_instr = next(dbg.disasm.disasm(bytes(self.next_instr_bytes), self.task_context.reg_pc, NUM_NEXT_INSTRUCTIONS))
         return jsr_instr.size
 
     def next_instr_is_system_call(self) -> bool:
@@ -119,6 +117,7 @@ class ErrorCodes(IntEnum):
 @dataclass
 class Debugger:
     cli: 'Cli'
+    disasm: capstone.Cs
     program: Optional['ProgramWithDebugInfo'] = None
     server_conn: Optional['ServerConnection'] = None
     target_info: Optional[TargetInfo] = None
@@ -126,4 +125,4 @@ class Debugger:
 
 # We create an "empty" object here. The attributes will be set later by _init_debugger() in cwdebug.py. It can't be
 # done here because then we would need to import cli.py and server.py, which themselves import us -> circular imports.
-dbg = Debugger(cli=None)
+dbg = Debugger(cli=None, disasm=None)
