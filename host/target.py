@@ -27,6 +27,9 @@ NUM_TOP_STACK_DWORDS  = 8
 M68K_UINT16 = '>H'
 M68K_INT16  = '>h'
 
+# keep in sync with instruction format in TargetInfo.get_disasm_view()
+INDENT_FOR_SYSCALL_ANNO = 27
+
 
 class TaskContext(BigEndianStructure):
     _pack_ = 2
@@ -140,15 +143,19 @@ class TargetInfo(BigEndianStructure):
         return stack_dwords
 
     def get_disasm_view(self) -> list[str]:
+        disasm = capstone.Cs(capstone.CS_ARCH_M68K, capstone.CS_MODE_32)
         instructions = []
-        # TODO: Annotate first instruction if it's a syscall
-        self._get_syscall_info()
-        for instr in capstone.Cs(capstone.CS_ARCH_M68K, capstone.CS_MODE_32).disasm(
-            bytes(self.next_instr_bytes),
-            self.task_context.reg_pc,
-            NUM_NEXT_INSTRUCTIONS,
-        ):
-            instructions.append(f'0x{instr.address:08x} (PC + {instr.address - self.task_context.reg_pc:02}):    {instr.mnemonic:<10}{instr.op_str}\n')
+        for idx, instr in enumerate(disasm.disasm(bytes(self.next_instr_bytes), self.task_context.reg_pc, NUM_NEXT_INSTRUCTIONS)):
+            instructions.append(f'0x{instr.address:08x} (PC + {instr.address - self.task_context.reg_pc:04}):    {instr.mnemonic:<10}{instr.op_str}\n')
+            if (idx == 0) and (syscall_info := self._get_syscall_info()):
+                instructions.append(f'{" " * INDENT_FOR_SYSCALL_ANNO}{syscall_info.name}(\n')
+                for arg in syscall_info.args:
+                    if arg.register >= 8:
+                        arg_val = self.task_context.reg_a[arg.register - 8]
+                    else:
+                        arg_val = self.task_context.reg_d[arg.register]
+                    instructions.append(f'{" " * (INDENT_FOR_SYSCALL_ANNO + 4)}{arg.decl} = {hex(arg_val)},\n')
+                instructions.append(f'{" " * INDENT_FOR_SYSCALL_ANNO})\n')
         return instructions
 
     def _get_syscall_info(self) -> SyscallInfo | None:
