@@ -66,6 +66,19 @@ class TargetRegisters(IntEnum):
     A6 = 14
 
 
+class TargetStates(IntEnum):
+    TS_IDLE                        = 0
+    TS_RUNNING                     = 1
+    TS_SINGLE_STEPPING             = 2
+    TS_EXITED                      = 4
+    TS_KILLED                      = 8
+    TS_STOPPED_BY_BPOINT           = 16
+    TS_STOPPED_BY_ONE_SHOT_BPOINT  = 32
+    TS_STOPPED_BY_SINGLE_STEP      = 64
+    TS_STOPPED_BY_EXCEPTION        = 128
+    TS_ERROR                       = 65536
+
+
 @dataclass
 class SyscallArg:
     decl: str
@@ -111,7 +124,28 @@ class TargetInfo(BigEndianStructure):
         ))
         return jsr_instr.size
 
-    def get_syscall_info(self) -> SyscallInfo | None:
+    def get_register_view(self) -> list[str]:
+        regs = []
+        for i in range(7):
+            regs.append(f'A{i}=0x{self.task_context.reg_a[i]:08x}        D{i}=0x{self.task_context.reg_d[i]:08x}\n')
+        regs.append(f'A7=0x{self.task_context.reg_sp:08x}        D7=0x{self.task_context.reg_d[7]:08x}\n')
+
+    def get_stack_view(self) -> list[str]:
+        stack_dwords = []
+        for i in range(NUM_TOP_STACK_DWORDS):
+            stack_dwords.append(f'SP + {i * 4:02}:    0x{self.top_stack_dwords[i]:08x}\n')
+
+    def get_disasm_view(self) -> list[str]:
+        instructions = []
+        # TODO: Annotate first instruction if it's a syscall
+        for instr in capstone.Cs(capstone.CS_ARCH_M68K, capstone.CS_MODE_32).disasm(
+            bytes(self.next_instr_bytes),
+            self.task_context.reg_pc,
+            NUM_NEXT_INSTRUCTIONS,
+        ):
+            instructions.append(f'0x{instr.address:08x} (PC + {instr.address - self.task_context.reg_pc:02}):    {instr.mnemonic:<10}{instr.op_str}\n')
+
+    def _get_syscall_info(self) -> SyscallInfo | None:
         # TODO
         pass
 
@@ -125,16 +159,3 @@ class TargetInfo(BigEndianStructure):
     def _get_syscall_offset(self) -> int:
         # This only works if the next instruction is indeed a system call.
         return struct.unpack(M68K_INT16, bytes(self.next_instr_bytes)[2:4])[0]
-
-
-class TargetStates(IntEnum):
-    TS_IDLE                        = 0
-    TS_RUNNING                     = 1
-    TS_SINGLE_STEPPING             = 2
-    TS_EXITED                      = 4
-    TS_KILLED                      = 8
-    TS_STOPPED_BY_BPOINT           = 16
-    TS_STOPPED_BY_ONE_SHOT_BPOINT  = 32
-    TS_STOPPED_BY_SINGLE_STEP      = 64
-    TS_STOPPED_BY_EXCEPTION        = 128
-    TS_ERROR                       = 65536

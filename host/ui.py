@@ -211,26 +211,9 @@ class MainScreen:
 
 
     def update_views(self, target_info: TargetInfo):
-        # TODO: Move views to separate routines / classes
         logger.debug("Updating register view")
-        regs = []
-        for i in range(7):
-            regs.append(f'A{i}=0x{target_info.task_context.reg_a[i]:08x}        D{i}=0x{target_info.task_context.reg_d[i]:08x}\n')
-        regs.append(f'A7=0x{target_info.task_context.reg_sp:08x}        D7=0x{target_info.task_context.reg_d[7]:08x}\n')
-        self._register_view.set_text(regs)
-
+        self._register_view.set_text(target_info.get_register_view())
         logger.debug("Updating disassembler view")
-        instructions = []
-        for instr in capstone.Cs(capstone.CS_ARCH_M68K, capstone.CS_MODE_32).disasm(
-            bytes(target_info.next_instr_bytes),
-            target_info.task_context.reg_pc,
-            NUM_NEXT_INSTRUCTIONS,
-        ):
-            instructions.append(f'0x{instr.address:08x} (PC + {instr.address - target_info.task_context.reg_pc:02}):    {instr.mnemonic:<10}{instr.op_str}\n')
-        self._disasm_view.set_text(instructions)
-
+        self._disasm_view.set_text(target_info.get_disasm_view())
         logger.debug("Updating stack view")
-        stack_dwords = []
-        for i in range(NUM_TOP_STACK_DWORDS):
-            stack_dwords.append(f'SP + {i * 4:02}:    0x{target_info.top_stack_dwords[i]:08x}\n')
-        self._stack_view.set_text(stack_dwords)
+        self._stack_view.set_text(target_info.get_stack_view())
