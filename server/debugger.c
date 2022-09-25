@@ -36,7 +36,7 @@ Debugger *create_debugger(int f_server_mode)
         LOG(ERROR, "Could not allocate memory for debugger object");
         return NULL;
     }
-    if ((p_dbg->p_debugger_port = CreatePort("CWDEBUG_DBG", 0)) == NULL) {
+    if ((p_dbg->p_debugger_port = CreatePort(NULL, 0)) == NULL) {
         LOG(ERROR, "Could not create message port for debugger");
         FreeVec(p_dbg);
         return NULL;

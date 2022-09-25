@@ -25,21 +25,21 @@
 #define TRAP_NUM_RESTORE      1
 #define TRAP_OPCODE           0x4e40
 #define TARGET_STACK_SIZE     8192
-#define TARGET_DELAY_TIME     50  // in ticks, 1s = 50 ticks
 
 
 struct Target {
-    struct MsgPort *p_port;
-    BPTR           p_seglist;
-    uint32_t       (*p_entry_point)();
-    struct Task    *p_task;
-    TaskContext    *p_task_context;
-    uint32_t       state;
-    uint32_t       exit_code;
-    uint32_t       error_code;
-    struct List    bpoints;
-    uint32_t       next_bpoint_num;
-    Breakpoint     *p_active_bpoint;
+    struct SignalSemaphore sema;
+    struct MsgPort         *p_port;
+    BPTR                   p_seglist;
+    uint32_t               (*p_entry_point)();
+    struct Task            *p_task;
+    TaskContext            *p_task_context;
+    uint32_t               state;
+    uint32_t               exit_code;
+    uint32_t               error_code;
+    struct List            bpoints;
+    uint32_t               next_bpoint_num;
+    Breakpoint             *p_active_bpoint;
 };
 
 typedef struct TargetStoppedMsg {
@@ -73,7 +73,8 @@ Target *create_target()
         LOG(ERROR, "Could not allocate memory for target object");
         return NULL;
     }
-    if ((p_target->p_port = CreatePort("CWDEBUG_TARGET", 0)) == NULL) {
+    InitSemaphore(&p_target->sema);
+    if ((p_target->p_port = CreatePort(NULL, 0)) == NULL) {
         LOG(ERROR, "Could not create message port for target");
         FreeVec(p_target);
         return NULL;
@@ -131,6 +132,9 @@ void run_target(Target *p_target)
 
     // TODO: support arguments for target
     LOG(INFO, "Starting target");
+    // We must protect all changes to the target object here with a semaphore. Otherwise, the target process could
+    // access it at the same time, possibly getting an inconsistent state.
+    ObtainSemaphore(&p_target->sema);
     p_target->state = TS_RUNNING;
     if ((p_target->p_task = (struct Task *) CreateNewProcTags(
         NP_Name, (uint32_t) "CWDEBUG_TARGET",
@@ -142,10 +146,8 @@ void run_target(Target *p_target)
         NP_CloseOutput, FALSE,
         // TODO: The libnix startup code used by GCC checks if pr_CLI is NULL and, if so, waits for the Workbench startup message and
         // therefore hangs (see https://github.com/adtools/libnix/blob/e7bfc563a4dda18c2c0d9dd95f863a3bb6c2a356/sources/startup/ncrt0.S#L34).
-        // So we have to specify NP_Cli = TRUE and use RunCommand() to run the target. But this causes several problems:
-        // - The CLI process, in which the debugger was launched, terminates upon exit (sometimes closing the console windows with it).
-        // - In some cases, CreateNewProcTags() itself just seems to hang.
-        // - Any C program using the startup code hangs upon exit when it is run a second time.
+        // So we have to specify NP_Cli = TRUE and use RunCommand() to run the target. But this causes any C program
+        // using the startup code to hang upon exit when it is run a second time.
         NP_Cli, TRUE
     )) == NULL) {
         LOG(CRIT, "Could not create process for target");
@@ -154,10 +156,12 @@ void run_target(Target *p_target)
         // TS_ERROR and the error code into the MSG_TARGET_STOPPED message which is sent when this function returns.
         p_target->state = TS_ERROR;
         p_target->error_code = ERROR_CREATE_PROC_FAILED;
+        ReleaseSemaphore(&p_target->sema);
         return;
     }
     // associate target task with the message port so that the task gets signalled when a message arrives
     p_target->p_port->mp_SigTask = p_target->p_task;
+    ReleaseSemaphore(&p_target->sema);
 
     while (TRUE) {
         LOG(DEBUG, "Waiting for messages from target...");
@@ -391,14 +395,18 @@ static void wrap_target()
     TargetStoppedMsg stopped_msg;
     int result;
 
-    // TODO: There is a race condition between CreateNewProcTags() returning in run_target() and thus setting
-    //       gp_dbg->p_target->p_task and us accessing it here, so we just wait a little. A clean solution would
-    //       be to use a semaphore.
-    Delay(TARGET_DELAY_TIME);
+    // Once the debugger process has released the semaphore, it will no longer modify the target object until it
+    // receives a message from us (sent here or in handle_stopped_target()). So we can release the semaphore
+    // immediately after we obtained it.
+    ObtainSemaphore(&gp_dbg->p_target->sema);
+    ReleaseSemaphore(&gp_dbg->p_target->sema);
+
     init_target_stopped_msg(&stopped_msg, gp_dbg->p_target->p_port);
 
-    // allocate traps and install exception handler
+    // install exception handler
     gp_dbg->p_target->p_task->tc_TrapCode = exc_handler;
+
+    // allocate traps
     if (AllocTrap(TRAP_NUM_BPOINT) == -1) {
         LOG(CRIT, "Internal error: could not allocate trap for breakpoints");
         stopped_msg.stop_reason = TS_ERROR;
@@ -429,6 +437,7 @@ static void wrap_target()
     else {
         stopped_msg.stop_reason = TS_EXITED;
         stopped_msg.exit_code = (uint32_t) result;
+        goto send_msg;
     }
 
     // Send message to debugger to inform it that target has finished or an error occurred
