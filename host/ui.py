@@ -5,15 +5,13 @@
 # Copyright(C) 2018-2022 Constantin Wiemer
 
 
-import capstone
-
 from loguru import logger
 from typing import Any
 from urwid import AttrMap, Columns, Edit, ExitMainLoop, Filler, Frame, LineBox, MainLoop, Padding, Pile, Text
 
 from cli import QuitDebuggerException
 from debugger import dbg
-from target import TargetInfo, NUM_NEXT_INSTRUCTIONS, NUM_TOP_STACK_DWORDS
+from target import TargetInfo
 
 
 PALETTE = [
@@ -51,7 +49,6 @@ class CommandInput(Edit):
                 logger.debug("Exiting debugger...")
                 raise ExitMainLoop()
             if target_info:
-                # TODO: Should we clear all views if we don't have a target_info?
                 self._main_screen.update_views(target_info)
 
             self._history.append(f"> {cmd_line}")
