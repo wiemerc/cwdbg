@@ -15,6 +15,8 @@ import capstone
 
 from loguru import logger
 
+from debugger import dbg
+
 
 # keep in sync with values in target.h
 NUM_NEXT_INSTRUCTIONS = 8
@@ -129,25 +131,47 @@ class TargetInfo(BigEndianStructure):
         for i in range(7):
             regs.append(f'A{i}=0x{self.task_context.reg_a[i]:08x}        D{i}=0x{self.task_context.reg_d[i]:08x}\n')
         regs.append(f'A7=0x{self.task_context.reg_sp:08x}        D7=0x{self.task_context.reg_d[7]:08x}\n')
+        return regs
 
     def get_stack_view(self) -> list[str]:
         stack_dwords = []
         for i in range(NUM_TOP_STACK_DWORDS):
             stack_dwords.append(f'SP + {i * 4:02}:    0x{self.top_stack_dwords[i]:08x}\n')
+        return stack_dwords
 
     def get_disasm_view(self) -> list[str]:
         instructions = []
         # TODO: Annotate first instruction if it's a syscall
+        self._get_syscall_info()
         for instr in capstone.Cs(capstone.CS_ARCH_M68K, capstone.CS_MODE_32).disasm(
             bytes(self.next_instr_bytes),
             self.task_context.reg_pc,
             NUM_NEXT_INSTRUCTIONS,
         ):
             instructions.append(f'0x{instr.address:08x} (PC + {instr.address - self.task_context.reg_pc:02}):    {instr.mnemonic:<10}{instr.op_str}\n')
+        return instructions
 
     def _get_syscall_info(self) -> SyscallInfo | None:
-        # TODO
-        pass
+        if self._next_instr_is_syscall():
+            lib_base_addr = self.task_context.reg_a[6]
+            if lib_base_addr in dbg.lib_base_addresses:
+                lib_name = dbg.lib_base_addresses[lib_base_addr]
+                syscall_offset = self._get_syscall_offset()
+                if syscall_offset in dbg.syscall_db[lib_name]:
+                    syscall_info = dbg.syscall_db[lib_name][syscall_offset]
+                    logger.debug(f"Next instruction is syscall {syscall_info} in {lib_name}.library")
+                    return syscall_info
+                else:
+                    logger.warning(
+                        f"Register A6 contains base address of {lib_name}.library but syscall with offset {syscall_offset} "
+                        f"was not found in syscall db"
+                    )
+                    return None
+            else:
+                logger.warning(f"Next instruction seems to be a syscall but base address {hex(lib_base_addr)} is unknown")
+                return None
+        else:
+            return None
 
     def _next_instr_is_syscall(self) -> bool:
         # check if next instruction is JSR with an effective address of register A6 + 16-bit offset
@@ -157,5 +181,6 @@ class TargetInfo(BigEndianStructure):
             return False
 
     def _get_syscall_offset(self) -> int:
-        # This only works if the next instruction is indeed a system call.
-        return struct.unpack(M68K_INT16, bytes(self.next_instr_bytes)[2:4])[0]
+        # This only works if the next instruction is indeed a system call. We return the unsigned value because that's
+        # how they appear in the pragmas and therefore in the syscall database.
+        return abs(struct.unpack(M68K_INT16, bytes(self.next_instr_bytes)[2:4])[0])
