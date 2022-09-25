@@ -12,8 +12,6 @@ import shlex
 from abc import abstractmethod
 from dataclasses import dataclass
 
-from loguru import logger
-
 from debugger import dbg
 from errors import ErrorCodes
 from server import (
@@ -47,6 +45,7 @@ class CliCommandArg:
     name: str
     help: str
     type: type = str
+    choices: list = None
 
 
 #
@@ -95,9 +94,9 @@ class CliClearBreakpoint(CliCommand):
             'Delete breakpoint',
             (
                 CliCommandArg(
-                    'number',
-                    'Breakpoint number',
-                    int,
+                    name='number',
+                    help='Breakpoint number',
+                    type=int,
                 ),
             ),
         )
@@ -125,6 +124,36 @@ class CliContinue(CliCommand):
     def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
         if not dbg.target_info or not (dbg.target_info.target_state & TargetStates.TS_RUNNING):
             return False, "Incorrect state for command 'continue': target is not yet running"
+        else:
+            return True, None
+
+
+class CliInspect(CliCommand):
+    def __init__(self):
+        super().__init__(
+            'inspect',
+            ('i', ),
+            'Inspect target',
+            (
+                CliCommandArg(
+                    name='what',
+                    help='Type of object to inspect: d(issambly), r(egisters) or s(tack)',
+                    choices=('d', 'r', 's'),
+                ),
+            ),
+        )
+
+    def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+        if args.what == 'd':
+            return ''.join(dbg.target_info.get_disasm_view()), None
+        elif args.what == 'r':
+            return ''.join(dbg.target_info.get_register_view()), None
+        elif args.what == 's':
+            return ''.join(dbg.target_info.get_stack_view()), None
+
+    def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
+        if not dbg.target_info or not (dbg.target_info.target_state & TargetStates.TS_RUNNING):
+            return False, "Incorrect state for command 'inspect': target is not yet running"
         else:
             return True, None
 
@@ -280,6 +309,7 @@ class CliSingleStep(CliCommand):
 CLI_COMMANDS = [
     CliClearBreakpoint(),
     CliContinue(),
+    CliInspect(),
     CliKill(),
     CliNextInstr(),
     CliQuit(),
@@ -308,7 +338,7 @@ class Cli:
                     raise ValueError(f"Command alias '{alias}' already used by command '{self._commands_by_name[alias]}'")
             subparser = subparsers.add_parser(cmd.command, aliases=cmd.aliases, help=cmd.help)
             for arg in cmd.arg_spec:
-                subparser.add_argument(arg.name, help=arg.help, type=arg.type)
+                subparser.add_argument(arg.name, help=arg.help, type=arg.type, choices=arg.choices)
 
 
     # TODO: Pass server connection explicitly instead of accessing it via the global debugger object to break the circular import
