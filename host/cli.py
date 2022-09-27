@@ -11,9 +11,10 @@ import re
 import readline
 import shlex
 import struct
-
 from abc import abstractmethod
 from dataclasses import dataclass
+
+import capstone
 
 from debugger import dbg
 from errors import ErrorCodes
@@ -28,7 +29,7 @@ from server import (
     SrvSetBreakpoint,
     SrvSingleStep
 )
-from target import TargetInfo, TargetStates
+from target import MAX_INSTR_BYTES, TargetInfo, TargetStates
 
 
 class QuitDebuggerException(RuntimeError):
@@ -130,6 +131,39 @@ class CliContinue(CliCommand):
             return False, "Incorrect state for command 'continue': target is not yet running"
         else:
             return True, None
+
+
+class CliDisassemble(CliCommand):
+    def __init__(self):
+        super().__init__(
+            'disassemble',
+            ('di', ),
+            'Create disassembly of a block of memory',
+            (
+                CliCommandArg(
+                    name='address',
+                    help='Address of memory block',
+                    type=functools.partial(int, base=0),
+                ),
+                CliCommandArg(
+                    name='ninstr',
+                    help='Number of instructions (currently limited to <= 32)',
+                    type=functools.partial(int, base=10),
+                ),
+            ),
+        )
+
+    def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+        try:
+            cmd = SrvPeekMem(address=args.address, nbytes=args.ninstr * MAX_INSTR_BYTES).execute(dbg.server_conn)
+        except ServerCommandError as e:
+            return f"Reading memory failed: {e}", None
+
+        disasm = capstone.Cs(capstone.CS_ARCH_M68K, capstone.CS_MODE_32)
+        listing = ''
+        for instr in disasm.disasm(cmd.result, args.address, args.ninstr):
+            listing += f"0x{instr.address:08x}:  {instr.mnemonic:<10}{instr.op_str}\n"
+        return listing, None
 
 
 class CliExamine(CliCommand):
@@ -374,11 +408,11 @@ class CliSingleStep(CliCommand):
 
 
 # TODO: Align commands with GDB
-# TODO: Implement command to inspect / disassemble memory (like 'x' in GDB)
 # TODO: Implement 'backtrace' command
 CLI_COMMANDS = [
     CliClearBreakpoint(),
     CliContinue(),
+    CliDisassemble(),
     CliExamine(),
     CliInspect(),
     CliHexdump(),
