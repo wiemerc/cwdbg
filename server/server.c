@@ -494,13 +494,16 @@ static void handle_peek_mem_msg(ProtoMessage *p_msg)
         if (nbytes > MAX_MSG_DATA_LEN) {
             LOG(ERROR, "Number of bytes %d exceeds maximum message data size %d", nbytes, MAX_MSG_DATA_LEN);
             send_nack_msg(gp_dbg->p_host_conn, ERROR_BAD_DATA);
+            return;
         }
         if (address > (0xffffffff - nbytes)) {
             LOG(ERROR, "Invalid address 0x%08x, is greater than maximum address - %d", address, nbytes);
             send_nack_msg(gp_dbg->p_host_conn, ERROR_BAD_DATA);
+            return;
         }
         // Due to the fact that all processes share the same address space in AmigaOS we can just pass address and
         // number of bytes to send_ack_msg(), which will copy the data and send it to the host.
+        LOG(DEBUG, "Copying %d bytes from address 0x%08x to message", nbytes, address);
         send_ack_msg(gp_dbg->p_host_conn, (uint8_t *) address, nbytes);
     }
     else {
