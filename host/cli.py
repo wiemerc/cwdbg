@@ -6,9 +6,12 @@
 
 
 import argparse
+import functools
 import re
 import readline
 import shlex
+import struct
+
 from abc import abstractmethod
 from dataclasses import dataclass
 
@@ -19,6 +22,7 @@ from server import (
     SrvClearBreakpoint,
     SrvContinue,
     SrvKill,
+    SrvPeekMem,
     SrvQuit,
     SrvRun,
     SrvSetBreakpoint,
@@ -126,6 +130,38 @@ class CliContinue(CliCommand):
             return False, "Incorrect state for command 'continue': target is not yet running"
         else:
             return True, None
+
+
+class CliExamine(CliCommand):
+    def __init__(self):
+        super().__init__(
+            'examine',
+            ('x', ),
+            'Examine memory',
+            (
+                CliCommandArg(
+                    name='format',
+                    help='Format string as understood by the unpack() function in the Python "struct" module',
+                ),
+                CliCommandArg(
+                    name='address',
+                    help='Memory address',
+                    type=functools.partial(int, base=0),
+                ),
+            ),
+        )
+
+    def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+        try:
+            cmd = SrvPeekMem(address=args.address, nbytes=struct.calcsize(args.format)).execute(dbg.server_conn)
+            return '\n'.join([
+                hex(val) if isinstance(val, int) else repr(val)
+                for val in struct.unpack(args.format, cmd.result)
+            ]), None
+        except struct.error as e:
+            return f"Parsing format string failed: {e}", None
+        except ServerCommandError as e:
+            return f"Reading memory failed: {e}", None
 
 
 class CliInspect(CliCommand):
@@ -303,12 +339,12 @@ class CliSingleStep(CliCommand):
 
 
 # TODO: Align commands with GDB
-# TODO: Implement connect / disconnect commands
 # TODO: Implement command to inspect / disassemble memory (like 'x' in GDB)
 # TODO: Implement 'backtrace' command
 CLI_COMMANDS = [
     CliClearBreakpoint(),
     CliContinue(),
+    CliExamine(),
     CliInspect(),
     CliKill(),
     CliNextInstr(),
