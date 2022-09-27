@@ -13,7 +13,7 @@
 //
 // constants
 //
-#define MAX_MSG_DATA_LEN 256
+#define MAX_MSG_DATA_LEN 255
 #define MAX_FRAME_SIZE 512      // should be large enough to hold a SLIP-encoded message + data
 
 

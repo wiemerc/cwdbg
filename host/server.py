@@ -13,14 +13,17 @@ from ctypes import BigEndianStructure, c_uint8, c_uint16, sizeof
 from enum import IntEnum
 from loguru import logger
 
+# We can't use from target import ... because of the circular import target.py <-> server.py.
+import target
+
 from errors import ErrorCodes
-from target import TargetInfo
 
 
 #
 # constants
 #
 MAX_FRAME_SIZE = 4096       # maximum number of bytes we try to read at once
+MAX_MSG_DATA_LEN = 255      # maximum number of bytes a message can carry
 
 M68K_UINT16 = '>H'
 M68K_UINT32 = '>I'
@@ -55,7 +58,7 @@ class ProtoMessage(BigEndianStructure):
         ("checksum", c_uint16),
         ("type", c_uint8),
         ("length", c_uint8)
-        # field data omitted because we just append the data
+        # field 'data' omitted because we just append the data
     )
 
 
@@ -162,7 +165,7 @@ class ServerCommand:
     msg_type: c_uint8
     data: bytes | None = None
     error_code: int = -1
-    target_info: TargetInfo | None = None
+    target_info: target.TargetInfo | None = None
 
     def execute(self, server_conn: ServerConnection) -> 'ServerCommand':
         logger.debug(f"Sending message {MsgTypes(self.msg_type).name}")
@@ -184,7 +187,9 @@ class ServerCommand:
             if msg_type == MsgTypes.MSG_TARGET_STOPPED:
                 logger.debug("Received MSG_TARGET_STOPPED message from server, sending ACK")
                 server_conn.send_message(MsgTypes.MSG_ACK)
-                self.target_info = TargetInfo.from_buffer(data)
+                # TODO: Should we let the caller create a TargetInfo object from the data? This way we wouldn't have
+                #       to import target.py here and thus prevent circular imports.
+                self.target_info = target.TargetInfo.from_buffer(data)
                 logger.info(f"Target has stopped, state = {self.target_info.target_state}")
             else:
                 raise ConnectionError(f"Received unexpected message {MsgTypes(msg_type).name} from server, expected MSG_TARGET_STOPPED")
@@ -218,6 +223,15 @@ class SrvInit(ServerCommand):
 class SrvKill(ServerCommand):
     def __init__(self):
         super().__init__(MsgTypes.MSG_KILL)
+
+
+class SrvPeekMem(ServerCommand):
+    def __init__(self, address: int, nbytes: int):
+        super().__init__(MsgTypes.MSG_PEEK_MEM, data=struct.pack(M68K_UINT32, address) + struct.pack(M68K_UINT16, nbytes))
+
+    @property
+    def result(self):
+        return self.data
 
 
 class SrvQuit(ServerCommand):

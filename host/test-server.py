@@ -13,6 +13,7 @@ from server import (
     SrvContinue,
     SrvGetBaseAddress,
     SrvKill,
+    SrvPeekMem,
     SrvQuit,
     SrvRun,
     SrvSetBreakpoint,
@@ -36,6 +37,12 @@ def test_get_base_address(server_conn: ServerConnection):
     assert cmd.result == 0x078007f8
     cmd = SrvGetBaseAddress(library_name="dos.library").execute(server_conn)
     assert cmd.result == 0x0780f8c4
+
+
+def test_peek_mem(server_conn: ServerConnection):
+    cmd = SrvPeekMem(address=4, nbytes=4).execute(server_conn)
+    # Address 0x00000004 should contain base address of exec.library, see above
+    assert cmd.result == b'\x07\x80\x07\xf8'
 
 
 def test_set_bpoint(server_conn: ServerConnection):

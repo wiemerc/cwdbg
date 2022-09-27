@@ -56,6 +56,7 @@ struct HostConnection {
 // | sequence number | checksum | message type | data length | data |
 //  ----------------------------------------------------------------
 // The checksum is calculated in the same way as with IP / UDP headers.
+// TODO: Make length field 16 bits wide to support bigger messages
 struct ProtoMessage {
     uint16_t seqnum;
     uint16_t checksum;
@@ -76,6 +77,7 @@ static int is_correct_target_state_for_command(uint32_t state, uint8_t msg_type)
 static void handle_set_bpoint_msg(ProtoMessage *p_msg);
 static void handle_clear_bpoint_msg(ProtoMessage *p_msg);
 static void handle_get_base_address_msg(ProtoMessage *p_msg);
+static void handle_peek_mem_msg(ProtoMessage *p_msg);
 
 
 // keep aligned with definitions above
@@ -214,6 +216,10 @@ void process_remote_commands()
 
             case MSG_GET_BASE_ADDRESS:
                 handle_get_base_address_msg(&msg);
+                break;
+
+            case MSG_PEEK_MEM:
+                handle_peek_mem_msg(&msg);
                 break;
 
             case MSG_QUIT:
@@ -410,8 +416,8 @@ static void handle_set_bpoint_msg(ProtoMessage *p_msg)
 
     if (unpack_data(p_msg->data, p_msg->length, "!I!H", &bpoint_offset, &bpoint_type) == DOSTRUE) {
         if ((dbg_errno = set_breakpoint(gp_dbg->p_target, bpoint_offset, bpoint_type)) == NULL) {
-        // TODO: Return breakpoint number
-        send_ack_msg(gp_dbg->p_host_conn, NULL, 0);
+            // TODO: Return breakpoint number
+            send_ack_msg(gp_dbg->p_host_conn, NULL, 0);
         }
         else {
             LOG(ERROR, "Failed to set breakpoint");
@@ -474,6 +480,31 @@ static void handle_get_base_address_msg(ProtoMessage *p_msg)
     }
     else {
         LOG(ERROR, "Failed to unpack data of MSG_GET_BASE_ADDRESS message");
+        send_nack_msg(gp_dbg->p_host_conn, ERROR_BAD_DATA);
+    }
+}
+
+
+static void handle_peek_mem_msg(ProtoMessage *p_msg)
+{
+    uint32_t address;
+    uint16_t nbytes;
+
+    if (unpack_data(p_msg->data, p_msg->length, "!I!H", &address, &nbytes) == DOSTRUE) {
+        if (nbytes > MAX_MSG_DATA_LEN) {
+            LOG(ERROR, "Number of bytes %d exceeds maximum message data size %d", nbytes, MAX_MSG_DATA_LEN);
+            send_nack_msg(gp_dbg->p_host_conn, ERROR_BAD_DATA);
+        }
+        if (address > (0xffffffff - nbytes)) {
+            LOG(ERROR, "Invalid address 0x%08x, is greater than maximum address - %d", address, nbytes);
+            send_nack_msg(gp_dbg->p_host_conn, ERROR_BAD_DATA);
+        }
+        // Due to the fact that all processes share the same address space in AmigaOS we can just pass address and
+        // number of bytes to send_ack_msg(), which will copy the data and send it to the host.
+        send_ack_msg(gp_dbg->p_host_conn, (uint8_t *) address, nbytes);
+    }
+    else {
+        LOG(ERROR, "Failed to unpack data of MSG_PEEK_MEM message");
         send_nack_msg(gp_dbg->p_host_conn, ERROR_BAD_DATA);
     }
 }
