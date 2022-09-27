@@ -5,15 +5,17 @@
 # Copyright(C) 2018-2022 Constantin Wiemer
 
 
+import capstone
 import struct
 
 from ctypes import BigEndianStructure, c_uint8, c_uint16, c_uint32
 from dataclasses import dataclass
 from enum import IntEnum
 
-import capstone
-
 from loguru import logger
+
+# We can't use from server import ... because of the circular import target.py <-> server.py.
+import server
 
 from debugger import dbg
 
@@ -26,9 +28,6 @@ NUM_TOP_STACK_DWORDS  = 8
 # format strings for pack / unpack
 M68K_UINT16 = '>H'
 M68K_INT16  = '>h'
-
-# keep in sync with instruction format in TargetInfo.get_disasm_view()
-INDENT_FOR_SYSCALL_ANNO = 27
 
 
 class TaskContext(BigEndianStructure):
@@ -146,16 +145,19 @@ class TargetInfo(BigEndianStructure):
         disasm = capstone.Cs(capstone.CS_ARCH_M68K, capstone.CS_MODE_32)
         instructions = []
         for idx, instr in enumerate(disasm.disasm(bytes(self.next_instr_bytes), self.task_context.reg_pc, NUM_NEXT_INSTRUCTIONS)):
-            instructions.append(f'0x{instr.address:08x} (PC + {instr.address - self.task_context.reg_pc:04}):    {instr.mnemonic:<10}{instr.op_str}\n')
+            instr_addr = f'0x{instr.address:08x} (PC + {instr.address - self.task_context.reg_pc:04}):    '
+            instr_repr = f'{instr.mnemonic:<10}{instr.op_str}\n'
+            instructions.append(instr_addr + instr_repr)
+
             if (idx == 0) and (syscall_info := self._get_syscall_info()):
-                instructions.append(f'{" " * INDENT_FOR_SYSCALL_ANNO}{syscall_info.name}(\n')
+                instructions.append(f'{" " * len(instr_addr)}{syscall_info.name}(\n')
                 for arg in syscall_info.args:
-                    if arg.register >= 8:
-                        arg_val = self.task_context.reg_a[arg.register - 8]
-                    else:
-                        arg_val = self.task_context.reg_d[arg.register]
-                    instructions.append(f'{" " * (INDENT_FOR_SYSCALL_ANNO + 4)}{arg.decl} = {hex(arg_val)},\n')
-                instructions.append(f'{" " * INDENT_FOR_SYSCALL_ANNO})\n')
+                    arg_int, arg_str = self._get_syscall_arg_values(syscall_info, arg)
+                    arg_repr = f'{" " * (len(instr_addr) + 4)}{arg.decl} = {hex(arg_int)}'
+                    if arg_str:
+                        arg_repr += f' => "{arg_str}"'
+                    instructions.append(arg_repr + ',\n')
+                instructions.append(f'{" " * len(instr_addr)})\n')
         return instructions
 
     def _get_syscall_info(self) -> SyscallInfo | None:
@@ -191,3 +193,22 @@ class TargetInfo(BigEndianStructure):
         # This only works if the next instruction is indeed a system call. We return the unsigned value because that's
         # how they appear in the pragmas and therefore in the syscall database.
         return abs(struct.unpack(M68K_INT16, bytes(self.next_instr_bytes)[2:4])[0])
+
+    def _get_syscall_arg_values(self, syscall_info: SyscallInfo, arg: SyscallArg) -> tuple[int, str | None]:
+        if arg.register >= 8:
+            arg_int = self.task_context.reg_a[arg.register - 8]
+        else:
+            arg_int = self.task_context.reg_d[arg.register]
+
+        arg_str = None
+        if 'STRPTR' in arg.decl:
+            # Argument is a pointer to a string. As we don't know the string length, we just get the memory block
+            # with the maximum size at the address pointed to and search for a null byte in it.
+            try:
+                cmd = server.SrvPeekMem(address=arg_int, nbytes=server.MAX_MSG_DATA_LEN).execute(dbg.server_conn)
+                if (str_len := cmd.result.find(b'\x00')) == -1:
+                    str_len = server.MAX_MSG_DATA_LEN
+                arg_str = cmd.result[0:str_len].decode(errors='replace').replace('\n', '\\n').replace('\r', '\\r')
+            except server.ServerCommandError as e:
+                raise RuntimeError(f"Getting string at address {hex(arg_int)} for arg {arg} of syscall {syscall_info} failed") from e
+        return arg_int, arg_str
