@@ -19,7 +19,7 @@ from cli import Cli, QuitDebuggerException
 from debugger import dbg
 from errors import ErrorCodes
 from hunklib import get_debug_infos_from_exe
-from server import ServerConnection, SrvGetBaseAddress
+from server import ServerCommandError, ServerConnection, SrvGetBaseAddress
 from stabslib import ProgramWithDebugInfo
 from ui import MainScreen
 
@@ -116,12 +116,12 @@ def _get_lib_base_addresses(syscall_db_dir: str):
     file_names = glob.glob(os.path.join(syscall_db_dir, '*.data'))
     lib_names = [os.path.splitext(os.path.basename(fname))[0] for fname in file_names]
     for lname in lib_names:
-        cmd = SrvGetBaseAddress(library_name=lname + '.library').execute(dbg.server_conn)
-        if cmd.error_code == ErrorCodes.ERROR_OK:
+        try:
+            cmd = SrvGetBaseAddress(library_name=lname + '.library').execute(dbg.server_conn)
             logger.debug(f"Library '{lname}.library' has address {hex(cmd.result)}")
             lib_base_addresses[cmd.result] = lname
-        else:
-            raise RuntimeError(f"Getting library base addresses failed with error code {ErrorCodes(cmd.error_code).name}")
+        except ServerCommandError as e:
+            raise RuntimeError(f"Getting library base addresses failed") from e
     return lib_base_addresses
 
 
