@@ -164,6 +164,41 @@ class CliExamine(CliCommand):
             return f"Reading memory failed: {e}", None
 
 
+class CliHexdump(CliCommand):
+    def __init__(self):
+        super().__init__(
+            'hexdump',
+            ('hd', ),
+            'Create hexdump of a block of memory',
+            (
+                CliCommandArg(
+                    name='address',
+                    help='Address of memory block',
+                    type=functools.partial(int, base=0),
+                ),
+                CliCommandArg(
+                    name='size',
+                    help='Size of memory block (currently limited to <= 255)',
+                    type=functools.partial(int, base=0),
+                ),
+            ),
+        )
+
+    def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+        try:
+            cmd = SrvPeekMem(address=args.address, nbytes=args.size).execute(dbg.server_conn)
+        except ServerCommandError as e:
+            return f"Reading memory failed: {e}", None
+
+        dump = f"Hex dump of {args.size} bytes at address {hex(args.address)}:\n"
+        pos = 0
+        while (pos < len(cmd.result)):
+            dump += f"0x{args.address + pos:08x}:  {cmd.result[pos:pos + 16].hex(sep=' '):<47}  "
+            dump += ''.join([chr(x) if x >= 0x20 and x <= 0x7e else '.' for x in cmd.result[pos:pos + 16]]) + '\n'
+            pos += 16
+        return dump, None
+
+
 class CliInspect(CliCommand):
     def __init__(self):
         super().__init__(
@@ -346,6 +381,7 @@ CLI_COMMANDS = [
     CliContinue(),
     CliExamine(),
     CliInspect(),
+    CliHexdump(),
     CliKill(),
     CliNextInstr(),
     CliQuit(),
@@ -360,6 +396,7 @@ class Cli:
         self._commands_by_name: dict[str, CliCommand] = {}
         self._parser = ThrowingArgumentParser(prog='', description="CWDebug, a source-level debugger for the AmigaOS", add_help=False)
         # TODO: Catch -h / --help in sub-parsers, probably by adding a custom action, see https://stackoverflow.com/questions/58367375/can-i-prevent-argparse-from-exiting-if-the-user-specifies-h
+        # TODO: If command exists but arguments are wrong / missing, show only help for that command
         subparsers = self._parser.add_subparsers(dest='command', help="Available commands")
         subparsers.add_parser('help', aliases=('h',), help="Show help message")
         for cmd in CLI_COMMANDS:
