@@ -9,7 +9,6 @@ import argparse
 import glob
 import os
 import pickle
-
 from dataclasses import dataclass
 from typing import Optional
 

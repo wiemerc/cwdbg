@@ -208,6 +208,7 @@ class MainScreen:
 
 
     def update_views(self, target_info: TargetInfo):
+        # TODO: Show target status in footer
         logger.debug("Updating register view")
         self._register_view.set_text(target_info.get_register_view())
         logger.debug("Updating disassembler view")

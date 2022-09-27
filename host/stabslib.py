@@ -229,7 +229,7 @@ class ProgramWithDebugInfo:
         # The stabs are emitted by the compiler (at least by GCC) in two different orders. Local variables (and nested
         # functions) appear *before* the enclosing scope. Therefore we push their nodes onto a stack when we see them
         # and pop them again when we see the beginning of the enclosing scope.
-        # Nested scopes on the other hand appear in the correct order, that is from outer toinner. We handle them by
+        # Nested scopes on the other hand appear in the correct order, that is from outer to inner. We handle them by
         # recursively calling ourselves for each range of stabs between N_LBRAC and N_RBRAC. Tricky stuff...
         node = None
         # set source directory to empty string because if there is just one compilation unit

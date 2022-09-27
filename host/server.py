@@ -7,7 +7,6 @@
 
 import socket
 import struct
-
 from dataclasses import dataclass
 from ctypes import BigEndianStructure, c_uint8, c_uint16, sizeof
 from enum import IntEnum
@@ -15,7 +14,6 @@ from loguru import logger
 
 # We can't use from target import ... because of the circular import target.py <-> server.py.
 import target
-
 from errors import ErrorCodes
 
 

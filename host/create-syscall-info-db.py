@@ -10,7 +10,6 @@ import pickle
 import os
 import re
 import sys
-
 from argparse import ArgumentParser
 
 from target import SyscallArg, SyscallInfo, TargetRegisters

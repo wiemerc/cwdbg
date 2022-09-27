@@ -8,6 +8,7 @@
 from enum import IntEnum
 
 
+# TODO: Move to debugger.py
 # keep in sync with values in target.h
 class ErrorCodes(IntEnum):
     ERROR_OK                     = 0

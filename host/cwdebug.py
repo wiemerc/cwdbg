@@ -12,7 +12,6 @@ import glob
 import os
 import pickle
 import sys
-
 from loguru import logger
 
 from cli import Cli, QuitDebuggerException

@@ -5,18 +5,16 @@
 # Copyright(C) 2018-2022 Constantin Wiemer
 
 
-import capstone
 import struct
-
 from ctypes import BigEndianStructure, c_uint8, c_uint16, c_uint32
 from dataclasses import dataclass
 from enum import IntEnum
 
+import capstone
 from loguru import logger
 
 # We can't use from server import ... because of the circular import target.py <-> server.py.
 import server
-
 from debugger import dbg
 
 
