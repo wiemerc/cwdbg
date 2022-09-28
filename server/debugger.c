@@ -36,16 +36,11 @@ Debugger *create_debugger(int f_server_mode)
         LOG(ERROR, "Could not allocate memory for debugger object");
         return NULL;
     }
-    if ((p_dbg->p_debugger_port = CreatePort(NULL, 0)) == NULL) {
-        LOG(ERROR, "Could not create message port for debugger");
-        FreeVec(p_dbg);
-        return NULL;
-    }
-    LOG(DEBUG, "Created message port for debugger");
+    p_dbg->p_task = FindTask(NULL);
+
     if (f_server_mode) {
         if ((p_dbg->p_host_conn = create_host_conn()) == NULL) {
             LOG(ERROR, "Could not create host connection object");
-            DeletePort(p_dbg->p_debugger_port);
             FreeVec(p_dbg);
             return NULL;
         }
@@ -57,10 +52,10 @@ Debugger *create_debugger(int f_server_mode)
         LOG(DEBUG, "Initialized disassembler routines");
         p_dbg->p_process_commands_func = process_cli_commands;
     }
+
     if ((p_dbg->p_target = create_target()) == NULL) {
         if (f_server_mode)
             destroy_host_conn(p_dbg->p_host_conn);
-        DeletePort(p_dbg->p_debugger_port);
         FreeVec(p_dbg);
         LOG(ERROR, "Could not create target object");
         return NULL;
@@ -72,8 +67,15 @@ Debugger *create_debugger(int f_server_mode)
 
 void destroy_debugger(Debugger *p_dbg)
 {
-    if (p_dbg->p_debugger_port)
-        DeletePort(p_dbg->p_debugger_port);
+    if (p_dbg->p_target) {
+        LOG(DEBUG, "Destroying target object");
+        destroy_target(p_dbg->p_target);
+    }
+    if (p_dbg->p_host_conn) {
+        LOG(DEBUG, "Destroying host connection object");
+        destroy_host_conn(p_dbg->p_host_conn);
+    }
+    FreeVec(p_dbg);
 }
 
 
@@ -86,14 +88,6 @@ void process_commands(Debugger *p_dbg)
 void quit_debugger(Debugger *p_dbg, int exit_code)
 {
     LOG(INFO, "Exiting...");
-    if (p_dbg->p_target) {
-        LOG(DEBUG, "Destroying target object");
-        destroy_target(p_dbg->p_target);
-    }
-    if (p_dbg->p_host_conn) {
-        LOG(DEBUG, "Destroying host connection object");
-        destroy_host_conn(p_dbg->p_host_conn);
-    }
     destroy_debugger(p_dbg);
     exit(exit_code);
 }

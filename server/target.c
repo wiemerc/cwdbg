@@ -25,11 +25,10 @@
 #define TRAP_NUM_RESTORE      1
 #define TRAP_OPCODE           0x4e40
 #define TARGET_STACK_SIZE     8192
+#define SYNC_SIGNAL_BIT       0x80000000
 
 
 struct Target {
-    struct SignalSemaphore sema;
-    struct MsgPort         *p_port;
     BPTR                   p_seglist;
     uint32_t               (*p_entry_point)();
     struct Task            *p_task;
@@ -42,19 +41,10 @@ struct Target {
     Breakpoint             *p_active_bpoint;
 };
 
-typedef struct TargetStoppedMsg {
-    struct Message  exec_msg;
-    uint32_t        stop_reason;
-    uint32_t        exit_code;
-    uint32_t        error_code;
-    TaskContext     *p_task_context;
-} TargetStoppedMsg;
-
 
 extern void exc_handler();
 
 
-static void init_target_stopped_msg(TargetStoppedMsg *p_msg, struct MsgPort *p_reply_port);
 static void wrap_target();
 static void handle_breakpoint(Target *p_target);
 static void handle_single_step(Target *p_target);
@@ -71,12 +61,6 @@ Target *create_target()
 
     if ((p_target = AllocVec(sizeof(Target), MEMF_CLEAR)) == NULL) {
         LOG(ERROR, "Could not allocate memory for target object");
-        return NULL;
-    }
-    InitSemaphore(&p_target->sema);
-    if ((p_target->p_port = CreatePort(NULL, 0)) == NULL) {
-        LOG(ERROR, "Could not create message port for target");
-        FreeVec(p_target);
         return NULL;
     }
     p_target->state = TS_IDLE;
@@ -98,8 +82,6 @@ void destroy_target(Target *p_target)
         UnLoadSeg(p_target->p_seglist);
     while ((p_bpoint = (Breakpoint *) RemHead(&p_target->bpoints)))
         FreeVec(p_bpoint);
-    if (p_target->p_port)
-        DeletePort(p_target->p_port);
     FreeVec(p_target);
 }
 
@@ -118,7 +100,6 @@ DbgError load_target(Target *p_target, const char *p_program_path)
 void run_target(Target *p_target)
 {
     Breakpoint *p_bpoint;
-    TargetStoppedMsg *p_stopped_msg = NULL;
 
     // reset breakpoint counters for each run
     if (!IsListEmpty(&p_target->bpoints)) {
@@ -132,9 +113,11 @@ void run_target(Target *p_target)
 
     // TODO: support arguments for target
     LOG(INFO, "Starting target");
-    // We must protect all changes to the target object here with a semaphore. Otherwise, the target process could
-    // access it at the same time, possibly getting an inconsistent state.
-    ObtainSemaphore(&p_target->sema);
+    // TODO: Since all processes share the same address space and we already access the target object in the target
+    //       process, we could replace the semaphore and the messages with signals and treat the target object as
+    //       shared data. But it seems we would have to use a signal without allocating it first as AllocSignal() can
+    //       only allocate signals for the current task. But this happens already anyway because CreatePorts() allocates
+    //       a signal for the debugger task but the port is then used for the target task.
     p_target->state = TS_RUNNING;
     if ((p_target->p_task = (struct Task *) CreateNewProcTags(
         NP_Name, (uint32_t) "CWDEBUG_TARGET",
@@ -156,56 +139,46 @@ void run_target(Target *p_target)
         // TS_ERROR and the error code into the MSG_TARGET_STOPPED message which is sent when this function returns.
         p_target->state = TS_ERROR;
         p_target->error_code = ERROR_CREATE_PROC_FAILED;
-        ReleaseSemaphore(&p_target->sema);
         return;
     }
-    // associate target task with the message port so that the task gets signalled when a message arrives
-    p_target->p_port->mp_SigTask = p_target->p_task;
-    ReleaseSemaphore(&p_target->sema);
 
+    // Send signal to target process that it can start executing and then wait for a signal from it. Note that we use
+    // the signal bit without allocating it first because AllocSignal() can only allocate signals for the current task.
+    Signal(p_target->p_task, SYNC_SIGNAL_BIT);
     while (TRUE) {
-        LOG(DEBUG, "Waiting for messages from target...");
-        do {
-            WaitPort(gp_dbg->p_debugger_port);
-            p_stopped_msg = (TargetStoppedMsg *) GetMsg(gp_dbg->p_debugger_port);
-        } while (p_stopped_msg == NULL);
-        LOG(DEBUG, "Received message from target process, stop reason = %d", p_stopped_msg->stop_reason);
-        p_target->p_task_context = p_stopped_msg->p_task_context;
+        LOG(DEBUG, "Waiting for signal from target...");
+        Wait(SYNC_SIGNAL_BIT);
+        LOG(DEBUG, "Received signal from target process, target state = %d", p_target->state);
 
-        // messages from wrap_target()
-        if (p_stopped_msg->stop_reason == TS_EXITED) {
-            p_target->state = p_stopped_msg->stop_reason;
-            p_target->exit_code = p_stopped_msg->exit_code;
-            LOG(INFO, "Target terminated with exit code %d", p_stopped_msg->exit_code);
-            ReplyMsg((struct Message *) p_stopped_msg);
+        // signal from wrap_target()
+        if (p_target->state == TS_EXITED) {
+            LOG(INFO, "Target terminated with exit code %d", p_target->exit_code);
+            Signal(p_target->p_task, SYNC_SIGNAL_BIT);
             return;
         }
-        else if (p_stopped_msg->stop_reason == TS_ERROR) {
-            p_target->state = p_stopped_msg->stop_reason;
-            p_target->error_code = p_stopped_msg->error_code;
-            LOG(CRIT, "Running target failed with error code %d", p_stopped_msg->error_code);
-            ReplyMsg((struct Message *) p_stopped_msg);
+        else if (p_target->state == TS_ERROR) {
+            LOG(CRIT, "Running target failed with error code %d", p_target->error_code);
+            Signal(p_target->p_task, SYNC_SIGNAL_BIT);
             return;
         }
 
-        // messages from handle_stopped_target()
+        // signal from handle_stopped_target()
         else {
-            p_target->state |= p_stopped_msg->stop_reason;
-            if (p_stopped_msg->stop_reason == TS_STOPPED_BY_BPOINT) {
+            if (p_target->state & TS_STOPPED_BY_BPOINT) {
                 handle_breakpoint(p_target);
                 process_commands(gp_dbg);
             }
-            else if (p_stopped_msg->stop_reason == TS_STOPPED_BY_SINGLE_STEP) {
+            else if (p_target->state & TS_STOPPED_BY_SINGLE_STEP) {
                 handle_single_step(p_target);
                 if (p_target->state & TS_SINGLE_STEPPING)
                     process_commands(gp_dbg);
             }
-            else if (p_stopped_msg->stop_reason == TS_STOPPED_BY_EXCEPTION) {
+            else if (p_target->state & TS_STOPPED_BY_EXCEPTION) {
                 handle_exception(p_target);
                 process_commands(gp_dbg);
             }
             else {
-                LOG(CRIT, "Internal error: unknown stop reason %d", p_stopped_msg->stop_reason);
+                LOG(CRIT, "Internal error: unknown stop reason %d", p_target->state);
                 p_target->state = TS_ERROR;
                 p_target->error_code = ERROR_UNKNOWN_STOP_REASON;
                 return;
@@ -215,8 +188,8 @@ void run_target(Target *p_target)
                 // Target has been killed after it stopped and process no longer exists.
                 break;
             else {
-                p_target->state &= ~p_stopped_msg->stop_reason;
-                ReplyMsg((struct Message *) p_stopped_msg);
+                // send signal to target process that it can resume executing
+                Signal(p_target->p_task, SYNC_SIGNAL_BIT);
             }
         }
     }
@@ -362,26 +335,22 @@ void kill_target(Target *p_target)
 
 
 // This routine is the entry point into the debugger called by the exception handler in the context of the target process.
-// It sends sends a message to the debugger process, informing it that the target has stopped. This message is received
+// It sends sends a signal to the debugger process, informing it that the target has stopped. This signal is received
 // by run_target() which then calls one of the handle_* routines below (in the context of the debugger process).
-// This routine is necessary because an exception handler runs in supervisor mode and therefore can't send and receive
-// messages. It has to run in the context of the target process so that WaitPort() blocks the target until the user
-// requests to continue it. Note that it accesses the global variable gp_dbg, which is possible because all processes
-// share the same address space in AmigaOS (the same goes for wrap_target() below).
+// This routine is necessary because an exception handler runs in supervisor mode and therefore can't use Signal() and
+// Wait(). It has to run in the context of the target process so that Wait() blocks the target until the user requests
+// to continue it. Note that it accesses the global variable gp_dbg, which is possible because all processes share the
+// same address space in AmigaOS (the same goes for wrap_target() below).
 void handle_stopped_target(uint32_t stop_reason, TaskContext *p_task_context)
 {
-    TargetStoppedMsg msg;
-
     LOG(DEBUG, "handle_stopped_target() has been called, stop reason = %d", stop_reason);
-    init_target_stopped_msg(&msg, gp_dbg->p_target->p_port);
-    msg.stop_reason = stop_reason;
-    msg.p_task_context = p_task_context;
-    LOG(DEBUG, "Sending message to debugger process");
-    PutMsg(gp_dbg->p_debugger_port, (struct Message *) &msg);
-    do {
-        WaitPort(gp_dbg->p_target->p_port);
-    } while (GetMsg(gp_dbg->p_target->p_port) == NULL);
-    LOG(DEBUG, "Received message from debugger process - resuming target");
+    gp_dbg->p_target->state |= stop_reason;
+    gp_dbg->p_target->p_task_context = p_task_context;
+    LOG(DEBUG, "Sending signal to debugger process");
+    Signal(gp_dbg->p_task, SYNC_SIGNAL_BIT);
+    Wait(SYNC_SIGNAL_BIT);
+    LOG(DEBUG, "Received signal from debugger process - resuming target");
+    gp_dbg->p_target->state &= ~stop_reason;
 }
 
 
@@ -392,16 +361,10 @@ void handle_stopped_target(uint32_t stop_reason, TaskContext *p_task_context)
 // This routine is the entry point for the target process (used by run_target() when creating the target process).
 static void wrap_target()
 {
-    TargetStoppedMsg stopped_msg;
     int result;
 
-    // Once the debugger process has released the semaphore, it will no longer modify the target object until it
-    // receives a message from us (sent here or in handle_stopped_target()). So we can release the semaphore
-    // immediately after we obtained it.
-    ObtainSemaphore(&gp_dbg->p_target->sema);
-    ReleaseSemaphore(&gp_dbg->p_target->sema);
-
-    init_target_stopped_msg(&stopped_msg, gp_dbg->p_target->p_port);
+    // wait for signal from debugger process that we can start executing
+    Wait(SYNC_SIGNAL_BIT);
 
     // install exception handler
     gp_dbg->p_target->p_task->tc_TrapCode = exc_handler;
@@ -409,15 +372,15 @@ static void wrap_target()
     // allocate traps
     if (AllocTrap(TRAP_NUM_BPOINT) == -1) {
         LOG(CRIT, "Internal error: could not allocate trap for breakpoints");
-        stopped_msg.stop_reason = TS_ERROR;
-        stopped_msg.error_code = ERROR_NO_TRAP;
-        goto send_msg;
+        gp_dbg->p_target->state = TS_ERROR;
+        gp_dbg->p_target->error_code = ERROR_NO_TRAP;
+        goto send_signal;
     }
     if (AllocTrap(TRAP_NUM_RESTORE) == -1) {
         LOG(CRIT, "Internal error: could not allocate trap for restoring the task context");
-        stopped_msg.stop_reason = TS_ERROR;
-        stopped_msg.error_code = ERROR_NO_TRAP;
-        goto send_msg;
+        gp_dbg->p_target->state = TS_ERROR;
+        gp_dbg->p_target->error_code = ERROR_NO_TRAP;
+        goto send_signal;
     }
 
     LOG(
@@ -430,32 +393,23 @@ static void wrap_target()
     // otherwise we get a crash. The argument string (3rd argument) has to be terminated by a newline character.
     if ((result = RunCommand(gp_dbg->p_target->p_seglist, TARGET_STACK_SIZE, "\n", 1)) == -1) {
         LOG(CRIT, "Running target with RunCommand() failed");
-        stopped_msg.stop_reason = TS_ERROR;
-        stopped_msg.error_code = ERROR_RUN_COMMAND_FAILED;
-        goto send_msg;
+        gp_dbg->p_target->state = TS_ERROR;
+        gp_dbg->p_target->error_code = ERROR_RUN_COMMAND_FAILED;
+        goto send_signal;
     }
     else {
-        stopped_msg.stop_reason = TS_EXITED;
-        stopped_msg.exit_code = (uint32_t) result;
-        goto send_msg;
+        gp_dbg->p_target->state = TS_EXITED;
+        gp_dbg->p_target->exit_code = (uint32_t) result;
+        goto send_signal;
     }
 
-    // Send message to debugger to inform it that target has finished or an error occurred
-    send_msg:
-        LOG(DEBUG, "Sending message to debugger process");
-        PutMsg(gp_dbg->p_debugger_port, (struct Message *) &stopped_msg);
-        do {
-            WaitPort(gp_dbg->p_target->p_port);
-        } while (GetMsg(gp_dbg->p_target->p_port) == NULL);
-        LOG(DEBUG, "Received message from debugger process - exiting target");
-}
-
-
-static void init_target_stopped_msg(TargetStoppedMsg *p_msg, struct MsgPort *p_reply_port)
-{
-    memset(p_msg, 0, sizeof(TargetStoppedMsg));
-    p_msg->exec_msg.mn_Length = sizeof(TargetStoppedMsg);
-    p_msg->exec_msg.mn_ReplyPort = p_reply_port;
+    // send signal to debugger process to inform it that target has finished or an error occurred and then wait for
+    // signal from it before we exit
+    send_signal:
+        LOG(DEBUG, "Sending signal to debugger process");
+        Signal(gp_dbg->p_task, SYNC_SIGNAL_BIT);
+        Wait(SYNC_SIGNAL_BIT);
+        LOG(DEBUG, "Received signal from debugger process - exiting target");
 }
 
 

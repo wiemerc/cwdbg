@@ -16,7 +16,7 @@
 // type declarations
 //
 typedef struct Debugger {
-    struct MsgPort *p_debugger_port;
+    struct Task    *p_task;
     HostConnection *p_host_conn;
     Target         *p_target;
     // function that handles either CLI or remote commands, called by run_target()
