@@ -226,7 +226,6 @@ DbgError set_breakpoint(Target *p_target, uint32_t offset, uint16_t f_is_one_sho
     void       *p_baddr;
 
     // TODO: Check if offset is valid
-    // TODO: One-shot breakpoints sometimes seem to cause a AN_MemCorrupt guru
     if ((p_bpoint = AllocVec(sizeof(Breakpoint), 0)) == NULL) {
         LOG(ERROR, "Could not allocate memory for breakpoint");
         return ERROR_NOT_ENOUGH_MEMORY;
@@ -329,7 +328,10 @@ void kill_target(Target *p_target)
 {
     // TODO: restore breakpoint if necessary
     p_target->state = TS_KILLED;
+    // We wrap RemTask() in Forbid() / Permit() to hopefully prevent the AN_MemCorrupt guru that sometimes occured before.
+    Forbid();
     RemTask(p_target->p_task);
+    Permit();
     LOG(INFO, "Target has been killed");
 }
 
