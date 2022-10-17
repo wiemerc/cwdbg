@@ -6,6 +6,7 @@
 
 
 import struct
+import sys
 from ctypes import BigEndianStructure, c_uint8, c_uint16, c_uint32
 from dataclasses import dataclass
 from enum import IntEnum
@@ -108,6 +109,7 @@ class TargetInfo(BigEndianStructure):
         ('bpoint', Breakpoint)
     )
 
+
     def next_instr_is_jsr(self) -> bool:
         # check if next instruction is JSR, see Musashi's opcode info table in m68kdasm.c and Motorola's
         # M68000 Family Programmer’s Reference Manual for details
@@ -115,6 +117,7 @@ class TargetInfo(BigEndianStructure):
             return True
         else:
             return False
+
 
     def get_bytes_used_by_jsr(self) -> int:
         # This only works if the next instruction is indeed a JSR. We use the disassembler here to get the size of the
@@ -126,6 +129,7 @@ class TargetInfo(BigEndianStructure):
         ))
         return jsr_instr.size
 
+
     def get_register_view(self) -> list[str]:
         regs = []
         for i in range(7):
@@ -133,11 +137,13 @@ class TargetInfo(BigEndianStructure):
         regs.append(f'A7=0x{self.task_context.reg_sp:08x}        D7=0x{self.task_context.reg_d[7]:08x}\n')
         return regs
 
+
     def get_stack_view(self) -> list[str]:
         stack_dwords = []
         for i in range(NUM_TOP_STACK_DWORDS):
             stack_dwords.append(f'SP + {i * 4:02}:    0x{self.top_stack_dwords[i]:08x}\n')
         return stack_dwords
+
 
     def get_disasm_view(self) -> list[str]:
         disasm = capstone.Cs(capstone.CS_ARCH_M68K, capstone.CS_MODE_32)
@@ -157,6 +163,46 @@ class TargetInfo(BigEndianStructure):
                     instructions.append(arg_repr + ',\n')
                 instructions.append(f'{" " * len(instr_addr)})\n')
         return instructions
+
+
+    def get_source_view(self) -> list[str]:
+        source_fname = dbg.program.get_source_fname_for_addr(self.task_context.reg_pc - self.initial_pc)
+        if source_fname is None:
+            logger.warning("No source file available for current PC")
+            return []
+        # Ugly hack for the case that the program was built on Linux but the debugger runs on macOS...
+        if sys.platform == 'darwin' and source_fname.startswith('/home'):
+            source_fname = '/Users' + source_fname.removeprefix('/home')
+
+        try:
+            with open(source_fname) as f:
+                source_lines = [f'{lineno + 1:<4}:    {line}' for lineno, line in enumerate(f.readlines())]
+        except Exception as e:
+            logger.warning(f"Could not read source file '{source_fname}': {e}")
+            return []
+
+        current_lineno = dbg.program.get_lineno_for_addr(self.task_context.reg_pc - self.initial_pc)
+        if current_lineno is None:
+            logger.warning("No line number available for current PC")
+            return []
+
+        if current_lineno > len(source_lines):
+            raise AssertionError(
+                f"Current line number in source file '{source_fname}' is {current_lineno} but file contains "
+                f"only {len(source_lines)} lines"
+            )
+
+        # prepend current line with '=> '
+        source_lines[current_lineno - 1] = source_lines[current_lineno - 1][0:6] + '=> ' + source_lines[current_lineno - 1][9:]
+
+        start_lineno = current_lineno - 5
+        if start_lineno < 1:
+            start_lineno = 1
+        end_lineno = current_lineno + 5
+        if end_lineno > len(source_lines):
+            end_lineno = len(source_lines)
+        return [source_fname + ':\n'] + source_lines[start_lineno - 1: end_lineno -1]
+
 
     def _get_syscall_info(self) -> SyscallInfo | None:
         if self._next_instr_is_syscall():
@@ -180,6 +226,7 @@ class TargetInfo(BigEndianStructure):
         else:
             return None
 
+
     def _next_instr_is_syscall(self) -> bool:
         # check if next instruction is JSR with an effective address of register A6 + 16-bit offset
         if (struct.unpack(M68K_UINT16, bytes(self.next_instr_bytes)[0:2])[0] & 0xffff) == 0x4eae:
@@ -187,10 +234,12 @@ class TargetInfo(BigEndianStructure):
         else:
             return False
 
+
     def _get_syscall_offset(self) -> int:
         # This only works if the next instruction is indeed a system call. We return the unsigned value because that's
         # how they appear in the pragmas and therefore in the syscall database.
         return abs(struct.unpack(M68K_INT16, bytes(self.next_instr_bytes)[2:4])[0])
+
 
     def _get_syscall_arg_values(self, syscall_info: SyscallInfo, arg: SyscallArg) -> tuple[int, str | None]:
         if arg.register >= 8:

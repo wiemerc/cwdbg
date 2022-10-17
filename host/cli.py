@@ -137,7 +137,7 @@ class CliDisassemble(CliCommand):
     def __init__(self):
         super().__init__(
             'disassemble',
-            ('di', ),
+            ('di', 'dis'),
             'Create disassembly of a block of memory',
             (
                 CliCommandArg(
@@ -202,7 +202,7 @@ class CliHexdump(CliCommand):
     def __init__(self):
         super().__init__(
             'hexdump',
-            ('hd', ),
+            ('hx', ),
             'Create hexdump of a block of memory',
             (
                 CliCommandArg(
@@ -242,8 +242,8 @@ class CliInspect(CliCommand):
             (
                 CliCommandArg(
                     name='what',
-                    help='Type of object to inspect: d(issambly), r(egisters) or s(tack)',
-                    choices=('d', 'r', 's'),
+                    help='Type of object to inspect: d(issambly), r(egisters), s(tack) or source (c)ode',
+                    choices=('d', 'r', 's', 'c'),
                 ),
             ),
         )
@@ -255,6 +255,8 @@ class CliInspect(CliCommand):
             return ''.join(dbg.target_info.get_register_view()), None
         elif args.what == 's':
             return ''.join(dbg.target_info.get_stack_view()), None
+        elif args.what == 'c':
+            return ''.join(dbg.target_info.get_source_view()), None
 
     def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
         if not dbg.target_info or not (dbg.target_info.target_state & TargetStates.TS_RUNNING):
@@ -290,6 +292,7 @@ class CliNextInstr(CliCommand):
         try:
             # Check if next instruction is a JSR. If yes, set one-shot breakpoint at the instruction following the JSR
             # and continue. If no, just single-step.
+            # TODO: Should we stop if we reach the end of the program (here and when single-stepping)?
             if dbg.target_info.next_instr_is_jsr():
                 offset = (
                     dbg.target_info.task_context.reg_pc
@@ -368,19 +371,19 @@ class CliSetBreakpoint(CliCommand):
     def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
         if re.search(r'^0x[0-9a-fA-F]+$', args.location):
             offset = int(args.location, 16)
-        elif re.search('^\d+$', args.location):
-            if dbg.program:
-                offset = dbg.program.get_addr_for_lineno(int(args.location, 10))
-            else:
+        else:
+            if dbg.program is None:
                 return "Program not loaded on host, source-level debugging not available", None
-        elif re.search(r'^[a-zA-Z_]\w+$', args.location):
-            if dbg.program:
+            if re.search('^\d+$', args.location):
+                offset = dbg.program.get_addr_for_lineno(int(args.location, 10))
+            elif re.search(r'^[a-zA-Z_]\w+$', args.location):
                 offset = dbg.program.get_addr_for_func_name(args.location)
             else:
-                return "Program not loaded on host, source-level debugging not available", None
-        else:
-            # TODO: Implement <file name>:<line number> as location
-            return "Invalid format of breakpoint location", None
+                # TODO: Implement <file name>:<line number> as location
+                return "Invalid format of breakpoint location", None
+        if offset is None:
+            return f"No address available for breakpoint location {args.location}", None
+        
         try:
             SrvSetBreakpoint(offset).execute(dbg.server_conn)
             return "Breakpoint set", None

@@ -209,6 +209,9 @@ class MainScreen:
 
     def update_views(self, target_info: TargetInfo):
         # TODO: Show target status in footer
+        # TODO: Clear views when target has exited
+        logger.debug("Updating source view")
+        self._source_view.set_text(target_info.get_source_view())
         logger.debug("Updating register view")
         self._register_view.set_text(target_info.get_register_view())
         logger.debug("Updating disassembler view")
