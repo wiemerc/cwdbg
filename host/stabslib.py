@@ -119,13 +119,16 @@ class ProgramNode:
 class ProgramWithDebugInfo:
     def __init__(self, stabs: list[Stab]):
         self._addr_by_lineno: dict[int, int] = {}
+        self._lineno_by_addr: dict[int, int] = {}
         for stab, string in stabs:
             if stab.type == StabTypes.N_SLINE:
                 # For some reason unknown to me, there are multiple addresses for one line sometimes. However,
                 # it seems the first is always the start of code block for the line, so we store only the first.
+                # TODO: Store line numbers and addresses per compilation unit
                 if not stab.desc in self._addr_by_lineno:
                     logger.debug(f"Line #{stab.desc} at address {hex(stab.value)}")
                     self._addr_by_lineno[stab.desc] = stab.value
+                    self._lineno_by_addr[stab.value] = stab.desc
 
         # We build a tree structure from the stabs describing the program (sort of a simplified AST) because we need
         # to know which local variables a scope contains.
@@ -212,18 +215,15 @@ class ProgramWithDebugInfo:
         return ProgramWithDebugInfo(stabs)
 
 
-    def get_addr_for_lineno(self, lineno: int) -> int:
-        if lineno in self._addr_by_lineno:
-            return self._addr_by_lineno[lineno]
-        else:
-            raise ValueError(f"No address available for line #{lineno}")
+    def get_addr_for_lineno(self, lineno: int) -> int | None:
+        return self._addr_by_lineno[lineno] if lineno in self._addr_by_lineno else None
 
 
-    def get_addr_for_func_name(self, name: str) -> int:
+    def get_addr_for_func_name(self, name: str) -> int | None:
         raise NotImplementedError
 
 
-    def get_source_fname_for_addr(self, addr: int) -> str:
+    def get_source_fname_for_addr(self, addr: int) -> str | None:
         for child in self._program_tree.children:
             if child.type == StabTypes.N_SO:
                 if addr >= child.start_addr:
@@ -232,7 +232,11 @@ class ProgramWithDebugInfo:
             else:
                 raise AssertionError(f"Found top-level node that is not a compilation unit, type = {StabTypes(child.type).name}")
         else:
-            raise ValueError(f"No compilation unit contains address {addr:08x}")
+            return None
+
+
+    def get_lineno_for_addr(self, addr: int) -> int | None:
+        return self._lineno_by_addr[addr] if addr in self._lineno_by_addr else None
 
 
     @staticmethod
