@@ -286,7 +286,7 @@ class CliKill(CliCommand):
 
 class CliNextInstr(CliCommand):
     def __init__(self):
-        super().__init__('next', ('n',), 'Execute target until next instruction (step over sub-routines)')
+        super().__init__('nexti', ('ni',), 'Execute target until next instruction (step over sub-routines)')
 
     def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
         try:
@@ -312,7 +312,26 @@ class CliNextInstr(CliCommand):
 
     def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
         if not dbg.target_info or not (dbg.target_info.target_state & TargetStates.TS_RUNNING):
-            return False, "Incorrect state for command 'step': target is not yet running"
+            return False, "Incorrect state for command 'nexti': target is not yet running"
+        else:
+            return True, None
+
+
+class CliNextLine(CliCommand):
+    def __init__(self):
+        super().__init__('next', ('n',), 'Execute target until next line (step over function calls)')
+
+    def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+        try:
+            # TODO: Store address ranges per line in ProgramWithDebugInfo and single-step instructions until we're
+            #       outside of the range of the current line or in the parent stack frame (that's how LLDB does it).
+            raise NotImplementedError
+        except ServerCommandError as e:
+            return f"Executing target until next line failed: {e}", None
+
+    def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
+        if not dbg.target_info or not (dbg.target_info.target_state & TargetStates.TS_RUNNING):
+            return False, "Incorrect state for command 'next': target is not yet running"
         else:
             return True, None
 
@@ -391,9 +410,9 @@ class CliSetBreakpoint(CliCommand):
             return f"Setting breakpoint failed: {e}", None
 
 
-class CliSingleStep(CliCommand):
+class CliStepInstr(CliCommand):
     def __init__(self):
-        super().__init__('step', ('s',), 'Single-step target')
+        super().__init__('stepi', ('si',), 'Step one instruction')
 
     def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
         try:
@@ -401,7 +420,25 @@ class CliSingleStep(CliCommand):
             dbg.target_info = cmd.target_info
             return self._get_target_status_for_ui(cmd.target_info)
         except ServerCommandError as e:
-            return f"Single-stepping target failed: {e}", None
+            return f"Stepping one instruction failed: {e}", None
+
+    def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
+        if not dbg.target_info or not (dbg.target_info.target_state & TargetStates.TS_RUNNING):
+            return False, "Incorrect state for command 'stepi': target is not yet running"
+        else:
+            return True, None
+
+
+class CliStepLine(CliCommand):
+    def __init__(self):
+        super().__init__('step', ('s',), 'Step one line')
+
+    def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+        try:
+            # TODO: Single-step instructions until we're outside of the range of the current line or in a new stack frame
+            raise NotImplementedError
+        except ServerCommandError as e:
+            return f"Stepping one line failed: {e}", None
 
     def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
         if not dbg.target_info or not (dbg.target_info.target_state & TargetStates.TS_RUNNING):
@@ -421,10 +458,12 @@ CLI_COMMANDS = [
     CliHexdump(),
     CliKill(),
     CliNextInstr(),
+    CliNextLine(),
     CliQuit(),
     CliRun(),
     CliSetBreakpoint(),
-    CliSingleStep(),
+    CliStepInstr(),
+    CliStepLine(),
 ]
 
 
