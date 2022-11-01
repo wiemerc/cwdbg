@@ -7,6 +7,7 @@
 
 
 from copy import copy
+from dataclasses import dataclass
 from enum import IntEnum
 from ctypes import BigEndianStructure, c_uint8, c_uint16, c_uint32, sizeof
 from loguru import logger
@@ -96,6 +97,7 @@ class Stab(BigEndianStructure):
     ]
 
 
+# TODO: Turn into dataclass
 class ProgramNode:
     def __init__(self, type: int, name: str, typeid: str = '', start_addr: int = 0, end_addr: int = 0, lineno: int = 0):
         self.type       = type
@@ -114,6 +116,15 @@ class ProgramNode:
             f"start_addr=0x{self.start_addr:08x}, " \
             f"end_addr=0x{self.end_addr:08x}, " \
             f"lineno={self.lineno})" \
+
+
+@dataclass
+class Type:
+    name: str
+    referenced_type: int = None
+    min_val: int = None
+    max_val: int = None
+    num_bits: int = None
 
 
 class ProgramWithDebugInfo:
@@ -196,8 +207,15 @@ class ProgramWithDebugInfo:
 
             # process stab
             if stab.type == StabTypes.N_LSYM and stab.value == 0:
-                # TODO: type definition => add it to data dictionary
-                pass
+                # type definition => add it to data dictionary
+                type_name, type_info = string.split(':', maxsplit=1)
+                if type_info[0] == 't':
+                    type_num, type_def_or_ref = type_info.split('=', maxsplit=1)
+                    type_num = type_num[1:]  # skip 't'
+                    logger.debug(f"Type '{type_name}' has number {type_num}")
+                else:
+                    logger.warning(f"Stab with type N_LSYM and value = 0 doesn't contain type definition")
+
             elif stab.type in (
                 StabTypes.N_SO,
                 StabTypes.N_GSYM,
@@ -227,6 +245,8 @@ class ProgramWithDebugInfo:
         for child in self._program_tree.children:
             if child.type == StabTypes.N_SO:
                 if addr >= child.start_addr:
+                    # TODO: How to get end address for the last compilation unit so that we can correctly tell if an address is contained in it?
+                    # TODO: Compile startup code (from libnix) with debug information so that it shows up as compilation unit
                     if child.end_addr == 0 or addr < child.end_addr:
                         return child.name
             else:
@@ -237,6 +257,10 @@ class ProgramWithDebugInfo:
 
     def get_lineno_for_addr(self, addr: int) -> int | None:
         return self._lineno_by_addr[addr] if addr in self._lineno_by_addr else None
+
+
+    def get_func_name_for_addr(self, addr: int) -> str | None:
+        raise NotImplementedError
 
 
     @staticmethod
