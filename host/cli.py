@@ -91,6 +91,31 @@ class CliCommand:
             return None, target_info
 
 
+class CliBacktrace(CliCommand):
+    def __init__(self):
+        super().__init__('backtrace', ('bt', ), 'Print a backtrace or call stack')
+
+    def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+        call_stack_repr = ""
+        for idx, frame in enumerate(dbg.target_info.get_call_stack()):
+            if frame.program_counter >= dbg.target_info.initial_pc:
+                addr_offset = frame.program_counter - dbg.target_info.initial_pc
+            else:
+                addr_offset = -1
+            if (source_fname := dbg.program.get_source_fname_for_addr(addr_offset)) is None:
+                source_fname = '???'
+            if (lineno := dbg.program.get_lineno_for_addr(addr_offset)) is None:
+                lineno = '???'
+            call_stack_repr += f"Frame #{idx}: 0x{frame.program_counter:08x} {source_fname}:{lineno}\n"
+        return call_stack_repr, None
+
+    def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
+        if not dbg.target_info or not (dbg.target_info.target_state & TargetStates.TS_RUNNING):
+            return False, "Incorrect state for command 'backtrace': target is not yet running"
+        else:
+            return True, None
+
+
 class CliClearBreakpoint(CliCommand):
     def __init__(self):
         super().__init__(
@@ -177,6 +202,7 @@ class CliExamine(CliCommand):
                     name='format',
                     help='Format string as understood by the unpack() function in the Python "struct" module',
                 ),
+                # TODO: Accept register name (prefixed with $) in addition to address, also in CliDisassemble and CliHexdump
                 CliCommandArg(
                     name='address',
                     help='Memory address',
@@ -448,8 +474,8 @@ class CliStepLine(CliCommand):
 
 
 # TODO: Align commands with GDB
-# TODO: Implement 'backtrace' command
 CLI_COMMANDS = [
+    CliBacktrace(),
     CliClearBreakpoint(),
     CliContinue(),
     CliDisassemble(),

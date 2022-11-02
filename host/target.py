@@ -27,18 +27,7 @@ NUM_TOP_STACK_DWORDS  = 8
 # format strings for pack / unpack
 M68K_UINT16 = '>H'
 M68K_INT16  = '>h'
-
-
-class TaskContext(BigEndianStructure):
-    _pack_ = 2
-    _fields_ = (
-        ('reg_sp', c_uint32),
-        ('exc_num', c_uint32),
-        ('reg_sr', c_uint16),
-        ('reg_pc', c_uint32),
-        ('reg_d', c_uint32 * 8),
-        ('reg_a', c_uint32 * 7)
-    )
+M68K_UINT32 = '>I'
 
 
 class Breakpoint(BigEndianStructure):
@@ -49,6 +38,27 @@ class Breakpoint(BigEndianStructure):
         ('opcode', c_uint16),
         ('hit_count', c_uint32)
     )
+
+
+@dataclass
+class StackFrame:
+    frame_ptr: int
+    program_counter: int
+    return_addr: int
+    # TODO: Add function args and local vars once we process the corresponding stabs
+
+
+@dataclass
+class SyscallArg:
+    decl: str
+    register: int = None
+
+
+@dataclass
+class SyscallInfo:
+    name: str
+    args: list[SyscallArg]
+    ret_type: str
 
 
 class TargetRegisters(IntEnum):
@@ -82,17 +92,16 @@ class TargetStates(IntEnum):
     TS_ERROR                       = 65536
 
 
-@dataclass
-class SyscallArg:
-    decl: str
-    register: int = None
-
-
-@dataclass
-class SyscallInfo:
-    name: str
-    args: list[SyscallArg]
-    ret_type: str
+class TaskContext(BigEndianStructure):
+    _pack_ = 2
+    _fields_ = (
+        ('reg_sp', c_uint32),
+        ('exc_num', c_uint32),
+        ('reg_sr', c_uint16),
+        ('reg_pc', c_uint32),
+        ('reg_d', c_uint32 * 8),
+        ('reg_a', c_uint32 * 7)
+    )
 
 
 class TargetInfo(BigEndianStructure):
@@ -202,6 +211,29 @@ class TargetInfo(BigEndianStructure):
         if end_lineno > len(source_lines):
             end_lineno = len(source_lines)
         return [source_fname + ':\n'] + source_lines[start_lineno - 1: end_lineno -1]
+
+
+    def get_call_stack(self) -> list[StackFrame]:
+        stack_frames: list[StackFrame] = []
+        frame_ptr = self.task_context.reg_a[5]
+        program_counter = self.task_context.reg_pc
+        while frame_ptr != 0xffffffff:
+            # Previous frame pointer is stored at the address pointed to by the current frame pointer, return
+            # address is at current frame pointer + 4. We get them both at once to save a roundtrip to the server.
+            # A previous frame pointer 0xffffffff indicates that we've reached the initial frame.
+            try:
+                cmd = server.SrvPeekMem(address=frame_ptr, nbytes=8).execute(dbg.server_conn)
+            except server.ServerCommandError as e:
+                raise RuntimeError(f"Getting return address / previous frame pointer failed") from e
+            stack_frames.append(StackFrame(
+                frame_ptr=frame_ptr,
+                program_counter=program_counter,
+                return_addr=struct.unpack(M68K_UINT32, cmd.result[4:])[0],
+            ))
+            frame_ptr = struct.unpack(M68K_UINT32, cmd.result[0:4])[0]
+            program_counter = struct.unpack(M68K_UINT32, cmd.result[4:])[0]
+        return stack_frames
+
 
 
     def _get_syscall_info(self) -> SyscallInfo | None:
