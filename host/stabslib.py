@@ -135,6 +135,7 @@ class ProgramWithDebugInfo:
             if stab.type == StabTypes.N_SLINE:
                 # For some reason unknown to me, there are multiple addresses for one line sometimes. However,
                 # it seems the first is always the start of code block for the line, so we store only the first.
+                # TODO: Store address ranges for line numbers (all instructions that make up that line)
                 # TODO: Store line numbers and addresses per compilation unit
                 if not stab.desc in self._addr_by_lineno:
                     logger.debug(f"Line #{stab.desc} at address {hex(stab.value)}")
@@ -206,6 +207,7 @@ class ProgramWithDebugInfo:
                     continue
 
             # process stab
+            # TODO: Move processing to constructor
             if stab.type == StabTypes.N_LSYM and stab.value == 0:
                 # type definition => add it to data dictionary
                 type_name, type_info = string.split(':', maxsplit=1)
@@ -264,12 +266,21 @@ class ProgramWithDebugInfo:
 
 
     @staticmethod
-    def _build_program_tree(stabs: list[Stab], nodes_on_stack: list[ProgramNode] = []) -> ProgramNode:
+    def _build_program_tree(
+        stabs: list[Stab],
+        nodes_stack: list[ProgramNode] = [],
+        func_nodes_stack: list[ProgramNode] = [],
+        current_func_lineno: int = None
+    ) -> ProgramNode:
         # The stabs are emitted by the compiler (at least by GCC) in two different orders. Local variables (and nested
-        # functions) appear *before* the enclosing scope. Therefore we push their nodes onto a stack when we see them
-        # and pop them again when we see the beginning of the enclosing scope.
-        # Nested scopes on the other hand appear in the correct order, that is from outer to inner. We handle them by
-        # recursively calling ourselves for each range of stabs between N_LBRAC and N_RBRAC. Tricky stuff...
+        # functions) appear *before* the enclosing scope. The same is true for line number - address pairs, they appear
+        # before the function definition. Therefore we push their nodes onto a stack when we see them and pop them again
+        # when we see the beginning of the enclosing scope / the function definition. Function parameters and nested
+        # scopes on the other hand appear in the correct order, the parameters after the function definition, the scopes
+        # from outer to inner.
+        # The nodes for functions and scopes (with all their children) are created be recursively calling this function.
+        # Note that nodes_stack and func_nodes_stack are in-out parameters, they are modified by these recursive calls.
+
         node = None
         # set source directory to empty string because if there is just one compilation unit
         # there is no N_SO stab for the directory
@@ -287,73 +298,101 @@ class ProgramWithDebugInfo:
                         node = ProgramNode(StabTypes.N_SO, srcdir + string, start_addr=stab.value)
                 else:
                     # end of compilation unit => use start address of next compilation unit as end address of this one,
-                    # push stab back onto stack, add any functions on the stack to current scope and return node for compilation unit
+                    # add any functions on the stack to current node and return it
                     # TODO: Can we get an end address if there is only one compilation unit?
                     stabs.append((stab, string))
                     node.end_addr = stab.value
-                    node.children.extend(nodes_on_stack)
+                    node.children.extend(func_nodes_stack)
+                    func_nodes_stack.clear()
                     return node
 
             elif stab.type in (StabTypes.N_GSYM, StabTypes.N_STSYM, StabTypes.N_LCSYM):
-                # global or file-scoped variable => store it in current node (compilation unit)
+                # global or file-scoped variable => add it to the current node (a compilation unit)
                 symbol, typeid = string.split(':', 1)
                 if node is None:
                     raise AssertionError("Stab for global or file-scoped variable but no current node")
                 node.children.append(ProgramNode(stab.type, symbol, typeid=typeid, start_addr=stab.value))
 
-            elif stab.type in (StabTypes.N_LSYM, StabTypes.N_PSYM, StabTypes.N_RSYM):
-                # local variable or function parameter => put it on the stack, the stab for the
-                # scope (N_LBRAC) comes later. In case of register variables (N_RSYM), the value
-                # is the register number with 0..7 = D0..D7 and 8..15 = A0..A7.
+            elif stab.type in (StabTypes.N_LSYM, StabTypes.N_RSYM):
+                # local variable => put it on the stack, the stab for the scope (N_LBRAC) comes later. In case of
+                # register variables (N_RSYM), the value is the register number with 0..7 = D0..D7 and 8..15 = A0..A7.
                 symbol, typeid = string.split(':', 1)
-                nodes_on_stack.append(ProgramNode(stab.type, symbol, typeid=typeid, start_addr=stab.value))
+                nodes_stack.append(ProgramNode(stab.type, symbol, typeid=typeid, start_addr=stab.value))
+
+            elif stab.type == StabTypes.N_PSYM:
+                # function parameter => add it to the current node (a function)
+                symbol, typeid = string.split(':', 1)
+                if node is None:
+                    raise AssertionError("Stab for function parameter but no current node")
+                node.children.append(ProgramNode(stab.type, symbol, typeid=typeid, start_addr=stab.value))
 
             elif stab.type  == StabTypes.N_FUN:
-                # function => put it on the stack, the stab for the scope (N_LBRAC) comes later
-                # We change the type to N_FNAME so that we can differentiate between a node with
-                # the scope of the function (N_FUN) and a node with just its name and start address (N_FNAME).
-                # TODO: Maybe it would be better to use our own types for the program nodes.
-                symbol, typeid = string.split(':', 1)
-                nodes_on_stack.append(ProgramNode(StabTypes.N_FNAME, symbol, typeid=typeid, start_addr=stab.value))
+                # beginning of function
+                if node is not None:
+                    stabs.append((stab, string))
+                    if node.type == StabTypes.N_FUN:
+                        # use start address of the next function as end address of the one just created and return it
+                        node.end_addr = stab.value
+                        return node
+                    elif node.type in (StabTypes.N_SO, StabTypes.N_LBRAC):
+                        # call ourselves to create new function and push it onto the stack
+                        child = ProgramWithDebugInfo._build_program_tree(stabs, nodes_stack)
+                        if child.type == StabTypes.N_FUN:
+                            func_nodes_stack.append(child)
+                        else:
+                            raise AssertionError(
+                                f"Encountered N_FUN stab but created child is not a function, "
+                                f"type = {StabTypes(child.type).name}"
+                            )
+                    else:
+                        raise AssertionError(f"Encountered N_FUN stab but current node is not any of N_FUN / N_SO / N_LBRAC")
+                else:
+                    # no current node => we've just been called to create new function
+                    symbol, typeid = string.split(':', 1)
+                    node = ProgramNode(StabTypes.N_FUN, symbol, lineno=stab.desc, start_addr=stab.value)
+                    node.children.extend(nodes_stack)
+                    nodes_stack.clear()
 
             elif stab.type  == StabTypes.N_SLINE:
-                # line number / address tuple => put it on the stack, the stab for the scope (N_LBRAC) comes later
-                nodes_on_stack.append(ProgramNode(StabTypes.N_SLINE, '', lineno=stab.desc, start_addr=stab.value))
+                # line number / address tuple => put it on the stack, the stab for the function (N_FUN) comes later
+                nodes_stack.append(ProgramNode(StabTypes.N_SLINE, '', lineno=stab.desc, start_addr=stab.value))
 
             elif stab.type == StabTypes.N_LBRAC:
                 # beginning of scope
                 if node is not None:
-                    # current scope exists => we call ourselves to create new scope
-                    stabs.append((stab, string))                        # push current stab onto stack again
-                    child = ProgramWithDebugInfo._build_program_tree(stabs, nodes_on_stack)
-                    if child.type == StabTypes.N_FUN:
-                        # child is function => push it onto stack because nested functions appear *before* the enclosing scope
-                        nodes_on_stack.append(child)
-                    elif child.type == StabTypes.N_LBRAC:
-                        # child is scope => add it to current scope because nested scopes appear *after* the enclosing scope
+                    # function / scope exists => call ourselves to create new scope
+                    stabs.append((stab, string))
+                    child = ProgramWithDebugInfo._build_program_tree(stabs, nodes_stack, current_func_lineno=node.lineno)
+                    if child.type == StabTypes.N_LBRAC:
                         node.children.append(child)
                     else:
-                        raise AssertionError(f"Child is neither function nor scope, type = {StabTypes(child.type).name}")
+                        raise AssertionError(
+                            f"Encountered N_LBRAC stab but created child is not a scope, "
+                            f"type = {StabTypes(child.type).name}"
+                        )
                 else:
-                    # current scope does not exist => we've just been called to create new scope
+                    # no current node => we've just been called to create new scope
                     node = ProgramNode(StabTypes.N_LBRAC, f'SCOPE@0x{stab.value:08x}', start_addr=stab.value)
-                    # add all nodes on the stack as children
-                    while nodes_on_stack:
-                        child = nodes_on_stack.pop()
-                        node.children.append(child)
-                        if child.type == StabTypes.N_FNAME:
-                            # change name to the function's name and node type to N_FUN so that our caller will put
-                            # this scope onto the stack
-                            node.type = StabTypes.N_FUN
-                            node.name = child.name
+                    node.children.extend(nodes_stack)
+                    nodes_stack.clear()
+                    assert current_func_lineno is not None, "Encountered N_LBRAC stab but line number of current function is not set"
+                    if func_nodes_stack and func_nodes_stack[0].lineno > current_func_lineno:
+                        # function on stack is a nested function => add it to current scope
+                        node.children.extend(func_nodes_stack)
+                        func_nodes_stack.clear()
 
             elif stab.type == StabTypes.N_RBRAC:
                 # end of scope => add end address and return created scope
                 node.end_addr = stab.value
                 return node
 
-        # add any functions on the stack to current scope and return node for compilation unit
-        node.children.extend(nodes_on_stack)
+            else:
+                raise AssertionError(f"Unknown stab type {StabTypes(stab.type).name}")
+
+        # add any functions on the stack to compilation unit and return it
+        if node.type == StabTypes.N_SO:
+            node.children.extend(func_nodes_stack)
+            func_nodes_stack.clear()
         return node
 
 
