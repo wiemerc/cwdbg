@@ -7,7 +7,7 @@
 
 
 from copy import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum
 from ctypes import BigEndianStructure, c_uint8, c_uint16, c_uint32, sizeof
 from loguru import logger
@@ -97,16 +97,15 @@ class Stab(BigEndianStructure):
     ]
 
 
-# TODO: Turn into dataclass
+@dataclass
 class ProgramNode:
-    def __init__(self, type: int, name: str, typeid: str = '', start_addr: int = 0, end_addr: int = 0, lineno: int = 0):
-        self.type       = type
-        self.name       = name
-        self.typeid     = typeid
-        self.start_addr = start_addr
-        self.end_addr   = end_addr
-        self.lineno     = lineno
-        self.children   = []
+    type: int
+    name: str
+    typeid: str = ''
+    start_addr: int = 0
+    end_addr: int = 0
+    lineno: int = 0
+    children: list['ProgramNode'] = field(default_factory=list)
 
     def __str__(self) -> str:
         # TODO: look up type id in data dictionary => typeid_to_type()
