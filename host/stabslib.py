@@ -130,8 +130,10 @@ class ProgramWithDebugInfo:
     def __init__(self, stabs: list[Stab]):
         self._addr_by_lineno: dict[int, int] = {}
         self._lineno_by_addr: dict[int, int] = {}
-        for stab, string in stabs:
+
+        for idx, stab in enumerate(stabs):
             if stab.type == StabTypes.N_SLINE:
+                # line number - adress pair => store it
                 # For some reason unknown to me, there are multiple addresses for one line sometimes. However,
                 # it seems the first is always the start of code block for the line, so we store only the first.
                 # TODO: Store address ranges for line numbers (all instructions that make up that line)
@@ -140,17 +142,26 @@ class ProgramWithDebugInfo:
                     logger.debug(f"Line #{stab.desc} at address {hex(stab.value)}")
                     self._addr_by_lineno[stab.desc] = stab.value
                     self._lineno_by_addr[stab.value] = stab.desc
+            elif stab.type == StabTypes.N_LSYM and stab.value == 0:
+                # type definition => add it to data dictionary
+                type_name, type_info = stab.string.split(':', maxsplit=1)
+                if type_info[0] == 't':
+                    type_num, type_def_or_ref = type_info.split('=', maxsplit=1)
+                    type_num = type_num[1:]  # skip 't'
+                    logger.debug(f"Type '{type_name}' has number {type_num}")
+                else:
+                    logger.warning(f"Stab with type N_LSYM and value = 0 doesn't contain type definition")
 
         # We build a tree structure from the stabs describing the program (sort of a simplified AST) because we need
         # to know which local variables a scope contains.
-        # root node of program
         self._program_tree = ProgramNode(StabTypes.N_UNDF, '')
-        # reverse list of stabs first so _build_program_tree() can use pop()
-        stabs = copy(stabs)
-        stabs.reverse()
-        while stabs:
+        # remove type definitions from list as we don't need them for the program tree and reverse list so
+        # _build_program_tree() can use pop()
+        filtered_stabs = [stab for stab in stabs if not (stab.type == StabTypes.N_LSYM and stab.value == 0)]
+        filtered_stabs.reverse()
+        while filtered_stabs:
             # loop over all compilation units
-            node = ProgramWithDebugInfo._build_program_tree(stabs)
+            node = ProgramWithDebugInfo._build_program_tree(filtered_stabs)
             self._program_tree.children.append(node)
         logger.debug("Program tree:")
         ProgramWithDebugInfo._print_program_node(self._program_tree)
@@ -165,24 +176,24 @@ class ProgramWithDebugInfo:
         offset = 0
         stab = Stab.from_buffer_copy(data[offset:])
         if stab.type == StabTypes.N_UNDF:
-            nstabs  = int(stab.desc / sizeof(Stab))
+            num_stabs  = int(stab.desc / sizeof(Stab))
             offset += sizeof(Stab)
-            stab_table = data[offset:]                             # stab table without first stab
-            str_table  = data[offset + sizeof(Stab) * nstabs:]     # string table
-            logger.debug(f"Stab table contains {nstabs} entries")
+            stab_table = data[offset:]  # stab table without first stab
+            string_table  = data[offset + sizeof(Stab) * num_stabs:]
+            logger.debug(f"Stab table contains {num_stabs} entries")
         else:
             raise ValueError("Stab table does not start with stab N_UNDF")
 
         offset  = 0
-        stabs   = []
-        for i in range(0, nstabs - 1):
+        stabs: list[Stab] = []
+        for i in range(0, num_stabs - 1):
             stab = Stab.from_buffer_copy(stab_table[offset:])
-            string = ProgramWithDebugInfo._get_string_from_buffer(str_table[stab.offset:])
+            stab.string = ProgramWithDebugInfo._get_string_from_buffer(string_table[stab.offset:])
             offset += sizeof(stab)
             try:
-                logger.debug("Stab: type = {}, string = '{}' (at 0x{:x}), other = 0x{:x}, desc = 0x{:x}, value = 0x{:08x}".format(
+                logger.debug("Stab(type={}, string='{}' (at 0x{:x}), other=0x{:x}, desc=0x{:x}, value=0x{:08x})".format(
                     StabTypes(stab.type).name,
-                    string,
+                    stab.string,
                     stab.offset,
                     stab.other,
                     stab.desc,
@@ -191,10 +202,9 @@ class ProgramWithDebugInfo:
             except ValueError:
                 try:
                     # stab probably contains external symbol => clear N_EXT bit to look up name
-                    logger.debug(
-                        "Stab: type = {} (external), string = '{}' (at 0x{:x}), other = 0x{:x}, desc = 0x{:x}, value = 0x{:08x}".format(
+                    logger.debug("Stab(type={}, string='{}' (at 0x{:x}), other=0x{:x}, desc=0x{:x}, value=0x{:08x})".format(
                             StabTypes(stab.type & ~StabTypes.N_EXT).name,
-                            string,
+                            stab.string,
                             stab.offset,
                             stab.other,
                             stab.desc,
@@ -205,19 +215,7 @@ class ProgramWithDebugInfo:
                     logger.error(f"Stab with unknown type 0x{stab.type:02x} found")
                     continue
 
-            # process stab
-            # TODO: Move processing to constructor
-            if stab.type == StabTypes.N_LSYM and stab.value == 0:
-                # type definition => add it to data dictionary
-                type_name, type_info = string.split(':', maxsplit=1)
-                if type_info[0] == 't':
-                    type_num, type_def_or_ref = type_info.split('=', maxsplit=1)
-                    type_num = type_num[1:]  # skip 't'
-                    logger.debug(f"Type '{type_name}' has number {type_num}")
-                else:
-                    logger.warning(f"Stab with type N_LSYM and value = 0 doesn't contain type definition")
-
-            elif stab.type in (
+            if stab.type in (
                 StabTypes.N_SO,
                 StabTypes.N_GSYM,
                 StabTypes.N_STSYM,
@@ -227,10 +225,9 @@ class ProgramWithDebugInfo:
                 StabTypes.N_LBRAC,
                 StabTypes.N_RBRAC,
                 StabTypes.N_SLINE
+                # The other types are not relevant for us.
             ):
-                # add stab to list for building tree structure
-                stabs.append((stab, string))
-
+                stabs.append((stab))
         return ProgramWithDebugInfo(stabs)
 
 
@@ -277,29 +274,31 @@ class ProgramWithDebugInfo:
         # when we see the beginning of the enclosing scope / the function definition. Function parameters and nested
         # scopes on the other hand appear in the correct order, the parameters after the function definition, the scopes
         # from outer to inner.
-        # The nodes for functions and scopes (with all their children) are created be recursively calling this function.
-        # Note that nodes_stack and func_nodes_stack are in-out parameters, they are modified by these recursive calls.
+        # The nodes for functions and scopes (with all their children) are created by recursively calling this function.
+        # Note that stabs, nodes_stack and func_nodes_stack are in-out parameters, they are modified by these recursive
+        # calls. We also don't need to pass nodes_stack and func_nodes_stack on these calls as all invocations of this
+        # function share the same lists (mutable default parameters).
 
         node = None
         # set source directory to empty string because if there is just one compilation unit
         # there is no N_SO stab for the directory
         srcdir = ''
         while stabs:
-            stab, string = stabs.pop()
+            stab = stabs.pop()
             if stab.type == StabTypes.N_SO:
                 if node is None:
                     # new compilation unit => create new node
-                    if string.endswith('/'):
+                    if stab.string.endswith('/'):
                         # stab for source directory
-                        srcdir = string
+                        srcdir = stab.string
                     else:
                         # stab for file name
-                        node = ProgramNode(StabTypes.N_SO, srcdir + string, start_addr=stab.value)
+                        node = ProgramNode(StabTypes.N_SO, srcdir + stab.string, start_addr=stab.value)
                 else:
                     # end of compilation unit => use start address of next compilation unit as end address of this one,
                     # add any functions on the stack to current node and return it
                     # TODO: Can we get an end address if there is only one compilation unit?
-                    stabs.append((stab, string))
+                    stabs.append((stab, stab.string))
                     node.end_addr = stab.value
                     node.children.extend(func_nodes_stack)
                     func_nodes_stack.clear()
@@ -307,35 +306,33 @@ class ProgramWithDebugInfo:
 
             elif stab.type in (StabTypes.N_GSYM, StabTypes.N_STSYM, StabTypes.N_LCSYM):
                 # global or file-scoped variable => add it to the current node (a compilation unit)
-                symbol, typeid = string.split(':', 1)
-                if node is None:
-                    raise AssertionError("Stab for global or file-scoped variable but no current node")
+                symbol, typeid = stab.string.split(':', 1)
+                assert node is not None, "Encountered stab for global or file-scoped variable but no current node"
                 node.children.append(ProgramNode(stab.type, symbol, typeid=typeid, start_addr=stab.value))
 
             elif stab.type in (StabTypes.N_LSYM, StabTypes.N_RSYM):
                 # local variable => put it on the stack, the stab for the scope (N_LBRAC) comes later. In case of
                 # register variables (N_RSYM), the value is the register number with 0..7 = D0..D7 and 8..15 = A0..A7.
-                symbol, typeid = string.split(':', 1)
+                symbol, typeid = stab.string.split(':', 1)
                 nodes_stack.append(ProgramNode(stab.type, symbol, typeid=typeid, start_addr=stab.value))
 
             elif stab.type == StabTypes.N_PSYM:
                 # function parameter => add it to the current node (a function)
-                symbol, typeid = string.split(':', 1)
-                if node is None:
-                    raise AssertionError("Stab for function parameter but no current node")
+                symbol, typeid = stab.string.split(':', 1)
+                assert node is not None, "Encountered stab for function parameter but no current node"
                 node.children.append(ProgramNode(stab.type, symbol, typeid=typeid, start_addr=stab.value))
 
             elif stab.type  == StabTypes.N_FUN:
                 # beginning of function
                 if node is not None:
-                    stabs.append((stab, string))
+                    stabs.append(stab)
                     if node.type == StabTypes.N_FUN:
                         # use start address of the next function as end address of the one just created and return it
                         node.end_addr = stab.value
                         return node
                     elif node.type in (StabTypes.N_SO, StabTypes.N_LBRAC):
                         # call ourselves to create new function and push it onto the stack
-                        child = ProgramWithDebugInfo._build_program_tree(stabs, nodes_stack)
+                        child = ProgramWithDebugInfo._build_program_tree(stabs)
                         if child.type == StabTypes.N_FUN:
                             func_nodes_stack.append(child)
                         else:
@@ -347,7 +344,7 @@ class ProgramWithDebugInfo:
                         raise AssertionError(f"Encountered N_FUN stab but current node is not any of N_FUN / N_SO / N_LBRAC")
                 else:
                     # no current node => we've just been called to create new function
-                    symbol, typeid = string.split(':', 1)
+                    symbol, typeid = stab.string.split(':', 1)
                     node = ProgramNode(StabTypes.N_FUN, symbol, lineno=stab.desc, start_addr=stab.value)
                     node.children.extend(nodes_stack)
                     nodes_stack.clear()
@@ -360,8 +357,8 @@ class ProgramWithDebugInfo:
                 # beginning of scope
                 if node is not None:
                     # function / scope exists => call ourselves to create new scope
-                    stabs.append((stab, string))
-                    child = ProgramWithDebugInfo._build_program_tree(stabs, nodes_stack, current_func_lineno=node.lineno)
+                    stabs.append(stab)
+                    child = ProgramWithDebugInfo._build_program_tree(stabs, current_func_lineno=node.lineno)
                     if child.type == StabTypes.N_LBRAC:
                         node.children.append(child)
                     else:
