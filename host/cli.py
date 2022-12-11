@@ -40,6 +40,10 @@ class ArgumentParserError(RuntimeError):
     pass
 
 
+class NoDebugInfoError(RuntimeError):
+    pass
+
+
 class ThrowingArgumentParser(argparse.ArgumentParser):
     def error(self, message):
         raise ArgumentParserError(message)
@@ -349,8 +353,8 @@ class CliNextLine(CliCommand):
 
     def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
         try:
-            # TODO: Store address ranges per line in ProgramWithDebugInfo and single-step instructions until we're
-            #       outside of the range of the current line or in the parent stack frame (that's how LLDB does it).
+            # TODO: Single-step instructions until we're outside of the range of the current line or in the
+            # parent stack frame (that's how LLDB does it as well)
             raise NotImplementedError
         except ServerCommandError as e:
             return f"Executing target until next line failed: {e}", None
@@ -466,16 +470,48 @@ class CliStepLine(CliCommand):
 
     def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
         try:
-            # TODO: Single-step instructions until we're outside of the range of the current line or in a new stack frame
-            raise NotImplementedError
+            self._execute_one_line()
+            return self._get_target_status_for_ui(dbg.target_info)
         except ServerCommandError as e:
             return f"Stepping one line failed: {e}", None
+        except NoDebugInfoError as e:
+            return f"Can't step one line: {e}", None
 
     def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
         if not dbg.target_info or not (dbg.target_info.target_state & TargetStates.TS_RUNNING):
             return False, "Incorrect state for command 'step': target is not yet running"
         else:
             return True, None
+
+    def _execute_one_line(self):
+        # Single-step instructions until we're outside of the range of the current line
+        current_comp_unit = dbg.program.get_comp_unit_for_addr(
+            dbg.target_info.task_context.reg_pc - dbg.target_info.initial_pc
+        )
+        if current_comp_unit is None:
+            raise NoDebugInfoError("No compilation unit available for current PC")
+        current_lineno = dbg.program.get_lineno_for_addr(
+            dbg.target_info.task_context.reg_pc - dbg.target_info.initial_pc,
+            comp_unit=current_comp_unit
+        )
+        if current_lineno is None:
+            raise NoDebugInfoError("No line number available for current PC")
+        addr_range_of_current_line = dbg.program.get_addr_range_for_lineno(current_lineno, comp_unit=current_comp_unit)
+        if addr_range_of_current_line is None:
+            raise AssertionError(
+                f"Found line #{current_lineno} for PC={dbg.target_info.task_context.reg_pc - dbg.target_info.initial_pc} "
+                f"but looking up address range for that line failed"
+            )
+
+        call_stack = dbg.target_info.get_call_stack()
+        curr_frame_ptr = call_stack[0].frame_ptr
+        prev_frame_ptr = call_stack[1].frame_ptr if len(call_stack) > 1 else None
+        while addr_range_of_current_line[0] <= (dbg.target_info.task_context.reg_pc - dbg.target_info.initial_pc) < addr_range_of_current_line[1]:
+            cmd = SrvSingleStep().execute(dbg.server_conn)
+            dbg.target_info = cmd.target_info
+        if dbg.target_info.task_context.reg_a[5] == prev_frame_ptr:
+            # returned from callee to caller => continue stepping until the end of the line containing the function call
+            self._execute_one_line()
 
 
 # TODO: Align commands with GDB
