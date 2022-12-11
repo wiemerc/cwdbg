@@ -102,7 +102,7 @@ class CliBacktrace(CliCommand):
                 addr_offset = frame.program_counter - dbg.target_info.initial_pc
             else:
                 addr_offset = -1
-            if (source_fname := dbg.program.get_source_fname_for_addr(addr_offset)) is None:
+            if (source_fname := dbg.program.get_comp_unit_for_addr(addr_offset)) is None:
                 source_fname = '???'
             if (lineno := dbg.program.get_lineno_for_addr(addr_offset)) is None:
                 lineno = '???'

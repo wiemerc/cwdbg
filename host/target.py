@@ -175,7 +175,7 @@ class TargetInfo(BigEndianStructure):
 
 
     def get_source_view(self) -> list[str]:
-        source_fname = dbg.program.get_source_fname_for_addr(self.task_context.reg_pc - self.initial_pc)
+        source_fname = dbg.program.get_comp_unit_for_addr(self.task_context.reg_pc - self.initial_pc)
         if source_fname is None:
             logger.warning("No source file available for current PC")
             return []

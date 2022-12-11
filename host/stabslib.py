@@ -226,7 +226,7 @@ class ProgramWithDebugInfo:
         raise NotImplementedError
 
 
-    def get_source_fname_for_addr(self, addr: int) -> str | None:
+    def get_comp_unit_for_addr(self, addr: int) -> str | None:
         for child in self._program_tree.children:
             if child.type == StabTypes.N_SO:
                 if addr >= child.start_addr:
