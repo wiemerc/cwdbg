@@ -417,18 +417,23 @@ class CliSetBreakpoint(CliCommand):
         if re.search(r'^0x[0-9a-fA-F]+$', args.location):
             offset = int(args.location, 16)
         else:
-            if dbg.program is None:
-                return "Program not loaded on host, source-level debugging not available", None
-            if re.search('^\d+$', args.location):
-                offset = dbg.program.get_addr_for_lineno(int(args.location, 10))
-            elif re.search(r'^[a-zA-Z_]\w+$', args.location):
-                offset = dbg.program.get_addr_for_func_name(args.location)
+            try:
+                if dbg.program is None:
+                    return "Program not loaded on host, source-level debugging not available", None
+                if re.search('^\d+$', args.location):
+                    addr_range = dbg.program.get_addr_range_for_lineno(int(args.location, 10))
+                elif re.search(r'^[a-zA-Z_]\w+$', args.location):
+                    addr_range = dbg.program.get_addr_range_for_func_name(args.location)
+                else:
+                    # TODO: Implement <file name>:<line number> as location
+                    return "Invalid format of breakpoint location", None
+            except ValueError as e:
+                return f"Failed to find address for breakpoint location {args.location}: {e}", None
+            if addr_range is not None:
+                offset, _ = addr_range
             else:
-                # TODO: Implement <file name>:<line number> as location
-                return "Invalid format of breakpoint location", None
-        if offset is None:
-            return f"No address available for breakpoint location {args.location}", None
-        
+                return f"No address available for breakpoint location {args.location}", None
+
         try:
             SrvSetBreakpoint(offset).execute(dbg.server_conn)
             return "Breakpoint set", None
