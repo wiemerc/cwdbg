@@ -79,7 +79,7 @@ class MainScreen:
                 logger.error(f"Function key '{key}' not implemented")
 
 
-        self._source_view = Text("Source code will be shown here...")
+        self._source_view = Text("*** NOT AVAILABLE ***")
         source_widget = LineBox(
             Padding(
                 Filler(
@@ -99,7 +99,7 @@ class MainScreen:
             )
         )
 
-        self._disasm_view = Text("Dissambled code will be shown here...")
+        self._disasm_view = Text("*** NOT AVAILABLE ***")
         disasm_widget = LineBox(
             Padding(
                 Filler(
@@ -119,7 +119,7 @@ class MainScreen:
             )
         )
 
-        self._register_view = Text("Registers will be shown here...")
+        self._register_view = Text("*** NOT AVAILABLE ***")
         register_widget = LineBox(
             Padding(
                 Filler(
@@ -139,7 +139,7 @@ class MainScreen:
             )
         )
 
-        self._stack_view = Text("Stack will be shown here...")
+        self._stack_view = Text("*** NOT AVAILABLE ***")
         stack_widget = LineBox(
             Padding(
                 Filler(
@@ -171,7 +171,7 @@ class MainScreen:
             )
         )
 
-        self._log_view = Text("Log messages will be shown here...")
+        self._log_view = Text("")
         log_widget = LineBox(
             Padding(
                 Filler(
