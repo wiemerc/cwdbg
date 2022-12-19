@@ -171,14 +171,18 @@ class TargetInfo(BigEndianStructure):
                         arg_repr += f' => "{arg_str}"'
                     instructions.append(arg_repr + ',\n')
                 instructions.append(f'{" " * len(instr_addr)})\n')
-        return instructions
+        if instructions:
+            return instructions
+        else:
+            return ['*** NOT AVAILABLE ***\n']
+
 
 
     def get_source_view(self) -> list[str]:
         source_fname = dbg.program.get_comp_unit_for_addr(self.task_context.reg_pc - self.initial_pc)
         if source_fname is None:
             logger.warning("No source file available for current PC")
-            return []
+            return ['*** NOT AVAILABLE ***\n']
         # Ugly hack for the case that the program was built on Linux but the debugger runs on macOS...
         if sys.platform == 'darwin' and source_fname.startswith('/home'):
             source_fname = '/Users' + source_fname.removeprefix('/home')
@@ -188,12 +192,12 @@ class TargetInfo(BigEndianStructure):
                 source_lines = [f'{lineno + 1:<4}:    {line}' for lineno, line in enumerate(f.readlines())]
         except Exception as e:
             logger.warning(f"Could not read source file '{source_fname}': {e}")
-            return []
+            return ['*** NOT AVAILABLE ***\n']
 
         current_lineno = dbg.program.get_lineno_for_addr(self.task_context.reg_pc - self.initial_pc)
         if current_lineno is None:
             logger.warning("No line number available for current PC")
-            return []
+            return ['*** NOT AVAILABLE ***\n']
 
         if current_lineno > len(source_lines):
             raise AssertionError(
