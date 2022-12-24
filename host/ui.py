@@ -41,6 +41,7 @@ class CommandInput(Edit):
         self._history = []
 
     def keypress(self, size, key):
+        # TODO: Implement readline functionality including history
         if key == 'enter':
             cmd_line = self.get_edit_text().strip()
             try:
@@ -64,6 +65,7 @@ class CommandInput(Edit):
 
 
 class MainScreen:
+    # TODO: Allow copy & paste via mouse
     def __init__(self, verbose: bool):
         def _handle_global_input(key: str):
             if key == 'f5':
