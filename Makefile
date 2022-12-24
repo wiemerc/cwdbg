@@ -17,4 +17,4 @@ examples:
 	$(MAKE) --directory=$@
 
 stats:
-	cloc --not-match-d='\.venv|misc' --not-match-f='m68k.+' --fullpath --exclude-ext=d,json --force-lang=C,h .
+	cloc --not-match-d='\.venv|misc' --not-match-f='m68k.+' --fullpath --exclude-ext=d,json,csv,svg --force-lang=C,h .
