@@ -15,6 +15,7 @@ from abc import abstractmethod
 from dataclasses import dataclass
 
 import capstone
+from loguru import logger
 
 from debugger import dbg
 from errors import ErrorCodes
@@ -353,17 +354,67 @@ class CliNextLine(CliCommand):
 
     def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
         try:
-            # TODO: Single-step instructions until we're outside of the range of the current line or in the
-            # parent stack frame (that's how LLDB does it as well)
-            raise NotImplementedError
+            self._execute_until_next_line()
+            return self._get_target_status_for_ui(dbg.target_info)
         except ServerCommandError as e:
             return f"Executing target until next line failed: {e}", None
+        except NoDebugInfoError as e:
+            return f"Can't execute target until next line: {e}", None
 
     def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
         if not dbg.target_info or not (dbg.target_info.target_state & TargetStates.TS_RUNNING):
             return False, "Incorrect state for command 'next': target is not yet running"
         else:
             return True, None
+
+    def _execute_until_next_line(self):
+        current_comp_unit = dbg.program.get_comp_unit_for_addr(
+            dbg.target_info.task_context.reg_pc - dbg.target_info.initial_pc
+        )
+        if current_comp_unit is None:
+            raise NoDebugInfoError("No compilation unit available for current PC")
+        current_lineno = dbg.program.get_lineno_for_addr(
+            dbg.target_info.task_context.reg_pc - dbg.target_info.initial_pc,
+            comp_unit=current_comp_unit
+        )
+        if current_lineno is None:
+            raise NoDebugInfoError("No line number available for current PC")
+        addr_range_of_current_line = dbg.program.get_addr_range_for_lineno(current_lineno, comp_unit=current_comp_unit)
+        if addr_range_of_current_line is None:
+            raise AssertionError(
+                f"Found line #{current_lineno} for PC={dbg.target_info.task_context.reg_pc - dbg.target_info.initial_pc} "
+                f"but looking up address range for that line failed"
+            )
+
+        disasm = capstone.Cs(capstone.CS_ARCH_M68K, capstone.CS_MODE_32)
+        while (
+            addr_range_of_current_line[0] <=
+            (dbg.target_info.task_context.reg_pc - dbg.target_info.initial_pc) <
+            addr_range_of_current_line[1]
+        ):
+            # execute all instructions that are part of the current line
+            instr = next(disasm.disasm(bytes(dbg.target_info.next_instr_bytes), dbg.target_info.task_context.reg_pc, 1))
+            logger.debug(f"Next instruction: 0x{instr.address:08x} :    {instr.mnemonic:<10}{instr.op_str}")
+            if dbg.target_info.next_instr_is_jsr():
+                # function call => set breakpoint on the return address (the instruction following the JSR) and continue
+                # TODO: For some reason GCC sometimes generates a BSR instead of a JSR instruction. Can we catch these cases as well?
+                SrvSetBreakpoint(
+                    bpoint_offset=dbg.target_info.task_context.reg_pc - dbg.target_info.initial_pc + instr.size,
+                    is_one_shot=True,
+                ).execute(dbg.server_conn)
+                cmd = SrvContinue().execute(dbg.server_conn)
+                dbg.target_info = cmd.target_info
+            elif dbg.target_info.next_instr_is_rts():
+                # return from the current function => execute the RTS and then the rest of the line
+                #                                     containing the function call in the parent
+                # We can't rely on the stack pointer / stack frames to determine that we're in parent function
+                # because not all functions use them.
+                cmd = SrvSingleStep().execute(dbg.server_conn)
+                dbg.target_info = cmd.target_info
+                return self._execute_until_next_line()
+            else:
+                cmd = SrvSingleStep().execute(dbg.server_conn)
+                dbg.target_info = cmd.target_info
 
 
 class CliQuit(CliCommand):
