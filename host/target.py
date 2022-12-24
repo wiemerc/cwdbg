@@ -128,6 +128,14 @@ class TargetInfo(BigEndianStructure):
             return False
 
 
+    def next_instr_is_rts(self) -> bool:
+        # check if next instruction is RTS
+        if struct.unpack(M68K_UINT16, bytes(self.next_instr_bytes)[0:2])[0] == 0x4e75:
+            return True
+        else:
+            return False
+
+
     def get_bytes_used_by_jsr(self) -> int:
         # This only works if the next instruction is indeed a JSR. We use the disassembler here to get the size of the
         # JSR instruction so we don't have to decode the different address modes ourselves.
@@ -225,6 +233,7 @@ class TargetInfo(BigEndianStructure):
             # Previous frame pointer is stored at the address pointed to by the current frame pointer, return
             # address is at current frame pointer + 4. We get them both at once to save a roundtrip to the server.
             # A previous frame pointer 0xffffffff indicates that we've reached the initial frame.
+            # TODO: How do we get out of this loop if a function doesn't use the frame pointer?
             try:
                 cmd = server.SrvPeekMem(address=frame_ptr, nbytes=8).execute(dbg.server_conn)
             except server.ServerCommandError as e:
