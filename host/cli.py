@@ -556,15 +556,22 @@ class CliStepLine(CliCommand):
                 f"but looking up address range for that line failed"
             )
 
-        call_stack = dbg.target_info.get_call_stack()
-        curr_frame_ptr = call_stack[0].frame_ptr
-        prev_frame_ptr = call_stack[1].frame_ptr if len(call_stack) > 1 else None
-        while addr_range_of_current_line[0] <= (dbg.target_info.task_context.reg_pc - dbg.target_info.initial_pc) < addr_range_of_current_line[1]:
-            cmd = SrvSingleStep().execute(dbg.server_conn)
-            dbg.target_info = cmd.target_info
-        if dbg.target_info.task_context.reg_a[5] == prev_frame_ptr:
-            # returned from callee to caller => continue stepping until the end of the line containing the function call
-            self._execute_one_line()
+        while (
+            addr_range_of_current_line[0] <=
+            (dbg.target_info.task_context.reg_pc - dbg.target_info.initial_pc) <
+            addr_range_of_current_line[1]
+        ):
+            if dbg.target_info.next_instr_is_rts():
+                # return from the current function => execute the RTS and then the rest of the line
+                #                                     containing the function call in the parent
+                # We can't rely on the stack pointer / stack frames to determine that we're in parent function
+                # because not all functions use them.
+                cmd = SrvSingleStep().execute(dbg.server_conn)
+                dbg.target_info = cmd.target_info
+                return self._execute_one_line()
+            else:
+                cmd = SrvSingleStep().execute(dbg.server_conn)
+                dbg.target_info = cmd.target_info
 
 
 # TODO: Align commands with GDB
