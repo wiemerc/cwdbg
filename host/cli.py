@@ -107,11 +107,13 @@ class CliBacktrace(CliCommand):
                 addr_offset = frame.program_counter - dbg.target_info.initial_pc
             else:
                 addr_offset = -1
-            if (source_fname := dbg.program.get_comp_unit_for_addr(addr_offset)) is None:
-                source_fname = '???'
-            if (lineno := dbg.program.get_lineno_for_addr(addr_offset)) is None:
+            if (comp_unit := dbg.program.get_comp_unit_for_addr(addr_offset)) is not None:
+                if (lineno := dbg.program.get_lineno_for_addr(addr_offset, comp_unit=comp_unit)) is None:
+                    lineno = '???'
+            else:
+                comp_unit = '???'
                 lineno = '???'
-            call_stack_repr += f"Frame #{idx}: 0x{frame.program_counter:08x} {source_fname}:{lineno}\n"
+            call_stack_repr += f"Frame #{idx}: 0x{frame.program_counter:08x} {comp_unit}:{lineno}\n"
         return call_stack_repr, None
 
     def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
