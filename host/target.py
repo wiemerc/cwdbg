@@ -187,6 +187,9 @@ class TargetInfo(BigEndianStructure):
 
 
     def get_source_view(self) -> list[str]:
+        if dbg.program is None:
+            logger.debug("Program not loaded on host, source-level debugging not available")
+            return ['*** NOT AVAILABLE ***\n']
         source_fname = dbg.program.get_comp_unit_for_addr(self.task_context.reg_pc - self.initial_pc)
         if source_fname is None:
             logger.warning("No source file available for current PC")
