@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #
-# create-syscall-info-db.py - part of CWDebug, a source-level debugger for the AmigaOS
+# create-syscall-info-db.py - part of cwdbg, a debugger for the AmigaOS
 #                             This scripts creates a database with syscall information from the prototypes and pragmas.
 #
 # Copyright(C) 2018-2022 Constantin Wiemer

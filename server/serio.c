@@ -1,5 +1,5 @@
 //
-// serio.c - part of CWDebug, a source-level debugger for the AmigaOS
+// serio.c - part of cwdbg, a debugger for the AmigaOS
 //           This file contains the routines for the serial communication with the remote host.
 //
 // Copyright(C) 2018-2022 Constantin Wiemer

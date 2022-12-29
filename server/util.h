@@ -1,7 +1,7 @@
-#ifndef CWDEBUG_UTIL_H
-#define CWDEBUG_UTIL_H
+#ifndef CWDBG_UTIL_H
+#define CWDBG_UTIL_H
 //
-// util.h - part of CWDebug, a source-level debugger for the AmigaOS
+// util.h - part of cwdbg, a debugger for the AmigaOS
 //
 // Copyright(C) 2018-2022 Constantin Wiemer
 //
@@ -45,4 +45,4 @@ int unpack_data(const uint8_t *p_buffer, size_t buf_size, const char *p_fmt_str,
 //
 extern UBYTE g_loglevel;
 
-#endif // CWDEBUG_UTIL_H
+#endif // CWDBG_UTIL_H

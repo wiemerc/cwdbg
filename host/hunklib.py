@@ -1,5 +1,5 @@
 #
-# hunklib.py - part of CWDebug, a source-level debugger for the AmigaOS
+# hunklib.py - part of cwdbg, a debugger for the AmigaOS
 #              This file contains the routines to read executables in the Amiga Hunk format,
 #              including the debug information.
 #

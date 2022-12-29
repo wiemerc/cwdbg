@@ -1,5 +1,5 @@
 #
-# errors.py - part of CWDebug, a source-level debugger for the AmigaOS
+# errors.py - part of cwdbg, a debugger for the AmigaOS
 #             This file contains the error codes.
 #
 # Copyright(C) 2018-2022 Constantin Wiemer

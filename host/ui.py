@@ -1,5 +1,5 @@
 #
-# ui.py - part of CWDebug, a source-level debugger for the AmigaOS
+# ui.py - part of cwdbg, a debugger for the AmigaOS
 #         This file contains the classes for the terminal UI on the host machine.
 #
 # Copyright(C) 2018-2022 Constantin Wiemer
@@ -186,7 +186,7 @@ class MainScreen:
             )
         )
 
-        title = AttrMap(Text("CWDebug - a source-level debugger for the AmigaOS", align='center'), 'banner')
+        title = AttrMap(Text("cwdbg - a debugger for the AmigaOS", align='center'), 'banner')
         menu = AttrMap(Text("F5 = Continue, F8 = Single-step over, F10 = Quit"), 'banner')
         main_widget = Frame(
             header=title,

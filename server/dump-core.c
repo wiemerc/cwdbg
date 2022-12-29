@@ -1,5 +1,5 @@
 /*
- * dump-core.c - part of CWDebug, a source-level debugger for the AmigaOS
+ * dump-core.c - part of cwdbg, a debugger for the AmigaOS
  *               This file contains the routine dump_core() that can be linked with an executable to write a
  *               "core dump" and terminate the program in case of an exception. It will be called by the
  *               exception handler in catch-exc.s. It was inspired by catch.o and the "tb" utility written by the

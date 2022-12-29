@@ -1,5 +1,5 @@
 #
-# cli.py - part of CWDebug, a source-level debugger for the AmigaOS
+# cli.py - part of cwdbg, a debugger for the AmigaOS
 #          This file contains the classes for the CLI on the host machine.
 #
 # Copyright(C) 2018-2022 Constantin Wiemer
@@ -597,7 +597,7 @@ CLI_COMMANDS = [
 class Cli:
     def __init__(self):
         self._commands_by_name: dict[str, CliCommand] = {}
-        self._parser = ThrowingArgumentParser(prog='', description="CWDebug, a source-level debugger for the AmigaOS", add_help=False)
+        self._parser = ThrowingArgumentParser(prog='', description="cwdbg, a debugger for the AmigaOS", add_help=False)
         # TODO: Catch -h / --help in sub-parsers, probably by adding a custom action, see https://stackoverflow.com/questions/58367375/can-i-prevent-argparse-from-exiting-if-the-user-specifies-h
         # TODO: If command exists but arguments are wrong / missing, show only help for that command
         subparsers = self._parser.add_subparsers(dest='command', help="Available commands")

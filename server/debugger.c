@@ -1,5 +1,5 @@
 /*
- * debugger.c - part of CWDebug, a source-level debugger for the AmigaOS
+ * debugger.c - part of cwdbg, a debugger for the AmigaOS
  *              This file contains the core routines of the debugger.
  *
  * Copyright(C) 2018-2022 Constantin Wiemer

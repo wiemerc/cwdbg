@@ -1,5 +1,5 @@
 #
-# server.py - part of CWDebug, a source-level debugger for the AmigaOS
+# server.py - part of cwdbg, a debugger for the AmigaOS
 #             This file contains the classes for the serial communication with the server.
 #
 # Copyright(C) 2018-2021 Constantin Wiemer

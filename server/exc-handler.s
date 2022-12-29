@@ -1,5 +1,5 @@
 /*
- * exc-handler.s - part of CWDebug, a source-level debugger for AmigaOS
+ * exc-handler.s - part of cwdbg, a debugger for AmigaOS
  *                 This file contains the exception handler that does the "low level" work.
  *
  * Copyright(C) 2018-2022 Constantin Wiemer

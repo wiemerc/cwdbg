@@ -1,5 +1,5 @@
 //
-// main.c - part of CWDebug, a source-level debugger for the AmigaOS
+// main.c - part of cwdbg, a debugger for the AmigaOS
 //
 // Copyright(C) 2018-2022 Constantin Wiemer
 //
@@ -36,7 +36,7 @@ int main()
 
     g_loglevel = INFO;
     if ((p_rdargs = ReadArgs("-d=--debug/S,-s=--server/S,target/A", args, NULL)) == NULL) {
-        LOG(ERROR, "wrong usage - usage: cwdebug [-d/--debug] [-s/--server] <target>");
+        LOG(ERROR, "wrong usage - usage: cwdbg [-d/--debug] [-s/--server] <target>");
         exit(RETURN_FAIL);
     }
     f_debug_mode  = args[0] == DOSTRUE ? 1 : 0;

@@ -31,4 +31,4 @@ def test_get_lineno_for_addr(program):
 
 
 def test_get_comp_unit_for_addr(program):
-    assert program.get_comp_unit_for_addr(0x0000017c) == '/home/consti/Programmieren/Amiga/CWDebug/examples/numbers.c'
+    assert program.get_comp_unit_for_addr(0x0000017c) == '/home/consti/Programmieren/Amiga/cwdbg/examples/numbers.c'

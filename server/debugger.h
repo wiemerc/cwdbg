@@ -1,7 +1,7 @@
-#ifndef CWDEBUG_DEBUGGER_H
-#define CWDEBUG_DEBUGGER_H
+#ifndef CWDBG_DEBUGGER_H
+#define CWDBG_DEBUGGER_H
 //
-// debugger.h - part of CWDebug, a source-level debugger for the AmigaOS
+// debugger.h - part of cwdbg, a debugger for the AmigaOS
 //
 // Copyright(C) 2018-2022 Constantin Wiemer
 //
@@ -38,4 +38,4 @@ void destroy_debugger(Debugger *p_dbg);
 void process_commands(Debugger *p_dbg);
 void quit_debugger(Debugger *p_dbg, int exit_code);
 
-#endif  // CWDEBUG_DEBUGGER_H
+#endif  // CWDBG_DEBUGGER_H

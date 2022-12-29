@@ -1,5 +1,5 @@
 #
-# target.py - part of CWDebug, a source-level debugger for the AmigaOS
+# target.py - part of cwdbg, a debugger for the AmigaOS
 #             This file contains all target-related classes
 #
 # Copyright(C) 2018-2022 Constantin Wiemer

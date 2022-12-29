@@ -1,7 +1,7 @@
-#ifndef CWDEBUG_SERIO_H
-#define CWDEBUG_SERIO_H
+#ifndef CWDBG_SERIO_H
+#define CWDBG_SERIO_H
 //
-// serio.h - part of CWDebug, a source-level debugger for the AmigaOS
+// serio.h - part of cwdbg, a debugger for the AmigaOS
 //
 // Copyright(C) 2018-2022 Constantin Wiemer
 //
@@ -43,4 +43,4 @@ int get_data_from_slip_frame(SerialConnection *p_conn, Buffer *pb_data, const Bu
 int send_slip_frame(SerialConnection *p_conn, const Buffer *pb_frame);
 int recv_slip_frame(SerialConnection *p_conn, Buffer *pb_frame);
 
-#endif  // CWDEBUG_SERIO_H
+#endif  // CWDBG_SERIO_H

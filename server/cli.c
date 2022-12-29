@@ -1,5 +1,5 @@
 /*
- * cli.c - part of CWDebug, a source-level debugger for the AmigaOS
+ * cli.c - part of cwdbg, a debugger for the AmigaOS
  *         This files contains the routines for the CLI on AmigaOS.
  *
  * Copyright(C) 2018-2021 Constantin Wiemer

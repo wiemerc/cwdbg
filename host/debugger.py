@@ -1,5 +1,5 @@
 #
-# debugger.py - part of CWDebug, a source-level debugger for the AmigaOS
+# debugger.py - part of cwdbg, a debugger for the AmigaOS
 #               This file contains the debugger functionality on the host side.
 #
 # Copyright(C) 2018-2022 Constantin Wiemer
@@ -14,7 +14,7 @@ from typing import Optional
 
 
 # This is the global debugger object used to pass around all other objects that are needed by the other modules. It
-# will be populated in cwdebug.py. We can't do this here because this would require us to import several things from
+# will be populated in cwdbg.py. We can't do this here because this would require us to import several things from
 # other modules, and thus would cause circular imports. It's basically a form of dependency injection.
 @dataclass
 class Debugger:

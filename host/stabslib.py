@@ -1,5 +1,5 @@
 #
-# stabslib.py - part of CWDebug, a source-level debugger for the AmigaOS
+# stabslib.py - part of cwdbg, a debugger for the AmigaOS
 #               This file contains the classes to read and process the debug information in STABS format and
 #               provide this information to the debugger.
 #

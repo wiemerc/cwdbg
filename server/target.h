@@ -1,7 +1,7 @@
-#ifndef CWDEBUG_TARGET_H
-#define CWDEBUG_TARGET_H
+#ifndef CWDBG_TARGET_H
+#define CWDBG_TARGET_H
 //
-// target.h - part of CWDebug, a source-level debugger for the AmigaOS
+// target.h - part of cwdbg, a debugger for the AmigaOS
 //
 // Copyright(C) 2018-2022 Constantin Wiemer
 //
@@ -110,4 +110,4 @@ void get_target_info(Target *p_target, TargetInfo *p_target_info);
 void kill_target(Target *p_target);
 void handle_stopped_target(uint32_t stop_reason, TaskContext *p_task_ctx);
 
-#endif  // CWDEBUG_TARGET_H
+#endif  // CWDBG_TARGET_H

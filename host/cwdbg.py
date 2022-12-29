@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 #
-# cwdebug.py - part of CWDebug, a source-level debugger for the AmigaOS
-#              This is the debugger host that contains all the logic for source-level
-#              debugging and talks to the remote server.
+# cwdbg.py - part of cwdbg, a debugger for the AmigaOS
+#            This is the debugger host that contains all the logic for source-level
+#            debugging and talks to the remote server.
 #
 # Copyright(C) 2018-2022 Constantin Wiemer
 
@@ -55,7 +55,7 @@ def main():
 
 def _parse_command_line() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="CWDebug, a source-level debugger for the AmigaOS",
+        description="cwdbg, a debugger for the AmigaOS",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument('--prog', help="Program you want to debug (with debug information)")
@@ -79,6 +79,7 @@ def _setup_logging(verbose: bool):
     )
 
 
+# TODO: Change banner
 def _print_banner():
     print("""
    _______       ______       __               

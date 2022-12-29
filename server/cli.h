@@ -1,7 +1,7 @@
-#ifndef CWDEBUG_CLI_H
-#define CWDEBUG_CLI_H
+#ifndef CWDBG_CLI_H
+#define CWDBG_CLI_H
 /*
- * cli.h - part of CWDebug, a source-level debugger for the AmigaOS
+ * cli.h - part of cwdbg, a debugger for the AmigaOS
  *
  * Copyright(C) 2018-2021 Constantin Wiemer
  */
@@ -15,4 +15,4 @@
  */
 void process_cli_commands();
 
-#endif /* CWDEBUG_CLI_H */
+#endif /* CWDBG_CLI_H */

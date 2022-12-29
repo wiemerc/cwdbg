@@ -1,5 +1,5 @@
 //
-// server.c - part of CWDebug, a source-level debugger for the AmigaOS
+// server.c - part of cwdbg, a debugger for the AmigaOS
 //            This file contains the routines for the debugger server.
 //
 // Copyright(C) 2018-2022 Constantin Wiemer

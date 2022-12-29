@@ -1,5 +1,5 @@
 /*
- * target.c - part of CWDebug, a source-level debugger for the AmigaOS
+ * target.c - part of cwdbg, a debugger for the AmigaOS
  *            This file contains the core routines of the debugger.
  *
  * Copyright(C) 2018-2022 Constantin Wiemer
@@ -120,7 +120,7 @@ void run_target(Target *p_target)
     //       a signal for the debugger task but the port is then used for the target task.
     p_target->state = TS_RUNNING;
     if ((p_target->p_task = (struct Task *) CreateNewProcTags(
-        NP_Name, (uint32_t) "CWDEBUG_TARGET",
+        NP_Name, (uint32_t) "CWDBG_TARGET",
         NP_Entry, (uint32_t) wrap_target,
         NP_StackSize, TARGET_STACK_SIZE,
         NP_Input, Input(),

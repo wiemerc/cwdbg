@@ -1,5 +1,5 @@
 //
-// util.h - part of CWDebug, a source-level debugger for the AmigaOS
+// util.h - part of cwdbg, a debugger for the AmigaOS
 //          This file contains some utility routines.
 //
 // Copyright(C) 2018-2022 Constantin Wiemer

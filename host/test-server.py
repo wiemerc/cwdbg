@@ -1,5 +1,5 @@
 #
-# test-server.py - part of CWDebug, a source-level debugger for the AmigaOS
+# test-server.py - part of cwdbg, a debugger for the AmigaOS
 #                  This file contains tests for the server based on protocol messages.
 #
 # Copyright(C) 2018-2022 Constantin Wiemer

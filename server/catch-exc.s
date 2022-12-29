@@ -1,5 +1,5 @@
 /*
- * catch-exc.s - part of CWDebug, a source-level debugger for AmigaOS
+ * catch-exc.s - part of cwdbg, a debugger for AmigaOS
  *               This file contains the exception handler that can be linked with an executable to write a
  *               "core dump" and terminate the program in case of an exception. It was inspired by catch.o and the
  *               "tb" utility written by the Software Distillery and distributed with the SAS C compiler.
