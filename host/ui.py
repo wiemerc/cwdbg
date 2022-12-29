@@ -65,9 +65,9 @@ class CommandInput(Edit):
 
 
 class MainScreen:
-    # TODO: Allow copy & paste via mouse
+    # TODO: Disable mouse reporting to allow copy & paste via mouse without pressing the alt key
     def __init__(self, verbose: bool):
-        def _handle_global_input(key: str):
+        def _handle_global_input(key: str) -> bool:
             if key == 'f5':
                 self._input_view.set_edit_text('cont')
                 self._input_view.keypress(0, 'enter')
@@ -79,6 +79,7 @@ class MainScreen:
                 self._input_view.keypress(0, 'enter')
             else:
                 logger.error(f"Function key '{key}' not implemented")
+            return True
 
 
         self._source_view = Text("*** NOT AVAILABLE ***")
@@ -187,7 +188,7 @@ class MainScreen:
 
         title = AttrMap(Text("CWDebug - a source-level debugger for the AmigaOS", align='center'), 'banner')
         menu = AttrMap(Text("F5 = Continue, F8 = Single-step over, F10 = Quit"), 'banner')
-        screen = Frame(
+        main_widget = Frame(
             header=title,
             body=Pile([
                 Columns([
@@ -205,13 +206,15 @@ class MainScreen:
         logger.add(UrwidHandler(self._log_view))
         logger.info("Created main screen, starting event loop")
 
-        loop = MainLoop(screen, PALETTE, unhandled_input=_handle_global_input)
+        loop = MainLoop(main_widget, PALETTE, unhandled_input=_handle_global_input)
         loop.run()
 
 
     def update_views(self, target_info: TargetInfo):
         # TODO: Show target status in footer
         # TODO: Clear views when target has exited
+        # TODO: Introduce view classes that get the necessary information from TargetInfo, track and highlight
+        #       changes and generate the content for the widgets via a render() method
         logger.debug("Updating source view")
         self._source_view.set_text(target_info.get_source_view())
         logger.debug("Updating register view")
