@@ -25,6 +25,7 @@ Debugger *gp_dbg;
 // - start all log messages with an uppercase letter
 // - consistent log levels for errors
 // - run clang-format / clang-tidy on all files
+// - make arguments `const` where appropriate
 
 int main()
 {
