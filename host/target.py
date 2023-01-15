@@ -291,6 +291,30 @@ class TargetInfo(BigEndianStructure):
         return stack_frames
 
 
+    def get_call_stack_view(self) -> list[str]:
+        if not (self.target_state & TargetStates.TS_RUNNING):
+            return ['*** NOT AVAILABLE ***\n']
+
+        stack_frames = []
+        for idx, frame in enumerate(dbg.target_info.get_call_stack()):
+            if frame.program_counter >= dbg.target_info.initial_pc:
+                addr_offset = frame.program_counter - dbg.target_info.initial_pc
+            else:
+                addr_offset = -1
+            if (comp_unit := dbg.program.get_comp_unit_for_addr(addr_offset)) is not None:
+                if (lineno := dbg.program.get_lineno_for_addr(addr_offset, comp_unit=comp_unit)) is None:
+                    lineno = '???'
+            else:
+                comp_unit = '???'
+                lineno = '???'
+            stack_frames.append(f"Frame #{idx}: 0x{frame.program_counter:08x} {comp_unit}:{lineno}\n")
+
+        if stack_frames:
+            return stack_frames
+        else:
+            return ['*** NOT AVAILABLE ***\n']
+
+
     def _get_syscall_info(self) -> SyscallInfo | None:
         if self._next_instr_is_syscall():
             lib_base_addr = self.task_context.reg_a[6]

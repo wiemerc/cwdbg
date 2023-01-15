@@ -149,6 +149,26 @@ class MainScreen:
             )
         )
 
+        self._variable_view = Text("*** NOT AVAILABLE ***")
+        variable_widget = LineBox(
+            Padding(
+                Filler(
+                    Pile([
+                        Text(
+                            ('banner', "Variables"),
+                            align='center'
+                        ),
+                        self._variable_view
+                    ]),
+                    valign='top',
+                    top=1,
+                    bottom=1
+                ),
+                left=1,
+                right=1
+            )
+        )
+
         self._stack_view = Text("*** NOT AVAILABLE ***")
         stack_widget = LineBox(
             Padding(
@@ -159,6 +179,26 @@ class MainScreen:
                             align='center'
                         ),
                         self._stack_view
+                    ]),
+                    valign='top',
+                    top=1,
+                    bottom=1
+                ),
+                left=1,
+                right=1
+            )
+        )
+
+        self._call_stack_view = Text("*** NOT AVAILABLE ***")
+        call_stack_widget = LineBox(
+            Padding(
+                Filler(
+                    Pile([
+                        Text(
+                            ('banner', "Call Stack"),
+                            align='center'
+                        ),
+                        self._call_stack_view
                     ]),
                     valign='top',
                     top=1,
@@ -203,7 +243,10 @@ class MainScreen:
             body=Pile([
                 Columns([
                     Pile([source_widget, disasm_widget]),
-                    Pile([register_widget, stack_widget])
+                    Columns([
+                        Pile([register_widget, stack_widget]),
+                        Pile([variable_widget, call_stack_widget])
+                    ])
                 ]),
                 # 2 needs to be added for the line box
                 (INPUT_WIDGET_HEIGHT + 2, input_widget),
@@ -233,14 +276,11 @@ class MainScreen:
 
 
     def update_views(self):
-        # TODO: Clear views when target has exited / has been killed
         # TODO: Introduce view classes that get the necessary information from TargetInfo, track and highlight
         #       changes and generate the content for the widgets via a render() method
-        logger.debug("Updating source view")
+        logger.debug("Updating views")
         self._source_view.set_text(dbg.target_info.get_source_view())
-        logger.debug("Updating register view")
         self._register_view.set_text(dbg.target_info.get_register_view())
-        logger.debug("Updating disassembler view")
         self._disasm_view.set_text(dbg.target_info.get_disasm_view())
-        logger.debug("Updating stack view")
         self._stack_view.set_text(dbg.target_info.get_stack_view())
+        self._call_stack_view.set_text(dbg.target_info.get_call_stack_view())
