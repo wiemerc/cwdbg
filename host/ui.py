@@ -5,6 +5,7 @@
 # Copyright(C) 2018-2022 Constantin Wiemer
 
 
+import sys
 from loguru import logger
 from typing import Any
 from urwid import AttrMap, Columns, Edit, ExitMainLoop, Filler, Frame, LineBox, MainLoop, Padding, Pile, Text
@@ -208,7 +209,12 @@ class MainScreen:
         logger.info("Created main screen, starting event loop")
 
         loop = MainLoop(main_widget, PALETTE, unhandled_input=_handle_global_input)
-        loop.run()
+        try:
+            loop.run()
+        except BaseException:
+            logger.remove()
+            logger.add(sys.stderr)
+            logger.exception("INTERNAL ERROR OCCURRED:")
 
 
     def update_status_line(self):
