@@ -17,6 +17,7 @@ from loguru import logger
 # We can't use from server import ... because of the circular import target.py <-> server.py.
 import server
 from debugger import dbg
+from errors import ErrorCodes
 
 
 # keep in sync with values in target.h
@@ -51,7 +52,7 @@ class StackFrame:
 @dataclass
 class SyscallArg:
     decl: str
-    register: int = None
+    register: int | None = None
 
 
 @dataclass
@@ -145,6 +146,30 @@ class TargetInfo(BigEndianStructure):
             NUM_NEXT_INSTRUCTIONS,
         ))
         return jsr_instr.size
+
+
+    def get_status_str(self) -> str:
+        if self.target_state & TargetStates.TS_STOPPED_BY_BPOINT:
+            return (
+                f"Hit breakpoint #{self.bpoint.num} at entry + "
+                f"{hex(self.bpoint.address - self.initial_pc)}, hit count = {self.bpoint.hit_count}"
+            )
+        if self.target_state & TargetStates.TS_STOPPED_BY_ONE_SHOT_BPOINT:
+            return (
+                f"Hit one-shot breakpoint #{self.bpoint.num} at entry + {hex(self.bpoint.address - self.initial_pc)}"
+            )
+        elif self.target_state & TargetStates.TS_STOPPED_BY_SINGLE_STEP:
+            return "Stopped after single-stepping"
+        elif self.target_state & TargetStates.TS_STOPPED_BY_EXCEPTION:
+            return f"Stopped by exception #{self.task_context.exc_num}"
+        elif self.target_state == TargetStates.TS_EXITED:
+            return f"Exited with code {self.exit_code}"
+        elif self.target_state == TargetStates.TS_KILLED:
+            return "Killed"
+        elif self.target_state == TargetStates.TS_ERROR:
+            return f"Error {ErrorCodes(self.error_code).name} occured"
+        else:
+            raise AssertionError(f"Target has stopped with invalid state {self.target_state}")
 
 
     def get_register_view(self) -> list[str]:

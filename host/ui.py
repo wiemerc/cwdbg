@@ -45,12 +45,13 @@ class CommandInput(Edit):
         if key == 'enter':
             cmd_line = self.get_edit_text().strip()
             try:
-                result, target_info = dbg.cli.process_command(cmd_line)
+                result = dbg.cli.process_command(cmd_line)
             except QuitDebuggerException:
                 logger.debug("Exiting debugger...")
                 raise ExitMainLoop()
-            if target_info:
-                self._main_screen.update_views(target_info)
+            if dbg.target_info:
+                self._main_screen.update_status_line()
+                self._main_screen.update_views()
 
             self._history.append(f"> {cmd_line}")
             if result:
@@ -187,7 +188,7 @@ class MainScreen:
         )
 
         title = AttrMap(Text("cwdbg - a debugger for the AmigaOS", align='center'), 'banner')
-        menu = AttrMap(Text("F5 = Continue, F8 = Single-step over, F10 = Quit"), 'banner')
+        self._status_line = AttrMap(Text("* Idle *"), 'banner')
         main_widget = Frame(
             header=title,
             body=Pile([
@@ -199,7 +200,7 @@ class MainScreen:
                 (INPUT_WIDGET_HEIGHT + 2, input_widget),
                 (MAX_NUM_OF_LOG_MESSAGES + 2, log_widget)
             ]),
-            footer=menu
+            footer=self._status_line
         )
 
         logger.remove()
@@ -210,16 +211,19 @@ class MainScreen:
         loop.run()
 
 
-    def update_views(self, target_info: TargetInfo):
-        # TODO: Show target status in footer
-        # TODO: Clear views when target has exited
+    def update_status_line(self):
+        self._status_line.original_widget.set_text(f'* {dbg.target_info.get_status_str()} *')
+
+
+    def update_views(self):
+        # TODO: Clear views when target has exited / has been killed
         # TODO: Introduce view classes that get the necessary information from TargetInfo, track and highlight
         #       changes and generate the content for the widgets via a render() method
         logger.debug("Updating source view")
-        self._source_view.set_text(target_info.get_source_view())
+        self._source_view.set_text(dbg.target_info.get_source_view())
         logger.debug("Updating register view")
-        self._register_view.set_text(target_info.get_register_view())
+        self._register_view.set_text(dbg.target_info.get_register_view())
         logger.debug("Updating disassembler view")
-        self._disasm_view.set_text(target_info.get_disasm_view())
+        self._disasm_view.set_text(dbg.target_info.get_disasm_view())
         logger.debug("Updating stack view")
-        self._stack_view.set_text(target_info.get_stack_view())
+        self._stack_view.set_text(dbg.target_info.get_stack_view())

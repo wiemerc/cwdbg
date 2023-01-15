@@ -38,7 +38,7 @@ def main():
             while True:
                 cmd_line = input('> ')
                 try:
-                    result_str, target_info = dbg.cli.process_command(cmd_line)
+                    result_str = dbg.cli.process_command(cmd_line)
                     if result_str:
                         print(result_str)
                 except QuitDebuggerException:

@@ -18,7 +18,6 @@ import capstone
 from loguru import logger
 
 from debugger import dbg
-from errors import ErrorCodes
 from server import (
     ServerCommandError,
     SrvClearBreakpoint,
@@ -30,7 +29,7 @@ from server import (
     SrvSetBreakpoint,
     SrvSingleStep
 )
-from target import MAX_INSTR_BYTES, TargetInfo, TargetStates
+from target import MAX_INSTR_BYTES, TargetStates
 
 
 class QuitDebuggerException(RuntimeError):
@@ -55,7 +54,7 @@ class CliCommandArg:
     name: str
     help: str
     type: type = str
-    choices: list = None
+    choices: list[str] | None = None
 
 
 #
@@ -66,41 +65,22 @@ class CliCommandArg:
 @dataclass
 class CliCommand:
     command: str
-    aliases: tuple[str]
+    aliases: tuple[str, ...]
     help: str
-    arg_spec: tuple[CliCommandArg] = tuple()
+    arg_spec: tuple[CliCommandArg, ...] = tuple()
 
     @abstractmethod
-    def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+    def execute(self, args: argparse.Namespace) -> str | None:
         pass
 
     def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
         return True, None
 
-    def _get_target_status_for_ui(self, target_info: TargetInfo) -> tuple[str | None, TargetInfo | None]:
-        if target_info.target_state & TargetStates.TS_STOPPED_BY_BPOINT:
-            return (
-                f"Target has hit breakpoint #{target_info.bpoint.num} at entry + "
-                f"{hex(target_info.bpoint.address - target_info.initial_pc)}, hit count = {target_info.bpoint.hit_count}",
-                target_info
-            )
-        elif target_info.target_state & TargetStates.TS_STOPPED_BY_EXCEPTION:
-            return f"Target has been stopped by exception #{target_info.task_context.exc_num}", target_info
-        elif target_info.target_state == TargetStates.TS_EXITED:
-            return f"Target exited with code {target_info.exit_code}", None
-        elif target_info.target_state == TargetStates.TS_KILLED:
-            return f"Target has been killed", None
-        elif target_info.target_state == TargetStates.TS_ERROR:
-            return f"Error {ErrorCodes(target_info.error_code).name} occured while running target", None
-        else:
-            return None, target_info
-
-
 class CliBacktrace(CliCommand):
     def __init__(self):
         super().__init__('backtrace', ('bt', ), 'Print a backtrace or call stack')
 
-    def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+    def execute(self, args: argparse.Namespace) -> str | None:
         call_stack_repr = ""
         for idx, frame in enumerate(dbg.target_info.get_call_stack()):
             if frame.program_counter >= dbg.target_info.initial_pc:
@@ -114,7 +94,7 @@ class CliBacktrace(CliCommand):
                 comp_unit = '???'
                 lineno = '???'
             call_stack_repr += f"Frame #{idx}: 0x{frame.program_counter:08x} {comp_unit}:{lineno}\n"
-        return call_stack_repr, None
+        return call_stack_repr
 
     def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
         if not dbg.target_info or not (dbg.target_info.target_state & TargetStates.TS_RUNNING):
@@ -138,25 +118,24 @@ class CliClearBreakpoint(CliCommand):
             ),
         )
 
-    def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+    def execute(self, args: argparse.Namespace) -> str | None:
         try:
             SrvClearBreakpoint(args.number).execute(dbg.server_conn)
-            return "Breakpoint cleared", None
+            return f"Breakpoint #{args.number} cleared"
         except ServerCommandError as e:
-            return f"Clearing breakpoint failed: {e}", None
+            return f"Clearing breakpoint failed: {e}"
 
 
 class CliContinue(CliCommand):
     def __init__(self):
         super().__init__('continue', ('c', 'cont'), 'Continue target')
 
-    def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+    def execute(self, args: argparse.Namespace) -> str | None:
         try:
             cmd = SrvContinue().execute(dbg.server_conn)
             dbg.target_info = cmd.target_info
-            return self._get_target_status_for_ui(cmd.target_info)
         except ServerCommandError as e:
-            return f"Continuing target failed: {e}", None
+            return f"Continuing target failed: {e}"
 
     def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
         if not dbg.target_info or not (dbg.target_info.target_state & TargetStates.TS_RUNNING):
@@ -185,17 +164,17 @@ class CliDisassemble(CliCommand):
             ),
         )
 
-    def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+    def execute(self, args: argparse.Namespace) -> str | None:
         try:
             cmd = SrvPeekMem(address=args.address, nbytes=args.ninstr * MAX_INSTR_BYTES).execute(dbg.server_conn)
         except ServerCommandError as e:
-            return f"Reading memory failed: {e}", None
+            return f"Reading memory failed: {e}"
 
         disasm = capstone.Cs(capstone.CS_ARCH_M68K, capstone.CS_MODE_32)
         listing = ''
         for instr in disasm.disasm(cmd.result, args.address, args.ninstr):
             listing += f"0x{instr.address:08x}:  {instr.mnemonic:<10}{instr.op_str}\n"
-        return listing, None
+        return listing
 
 
 class CliExamine(CliCommand):
@@ -218,17 +197,17 @@ class CliExamine(CliCommand):
             ),
         )
 
-    def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+    def execute(self, args: argparse.Namespace) -> str | None:
         try:
             cmd = SrvPeekMem(address=args.address, nbytes=struct.calcsize(args.format)).execute(dbg.server_conn)
             return '\n'.join([
                 hex(val) if isinstance(val, int) else repr(val)
                 for val in struct.unpack(args.format, cmd.result)
-            ]), None
+            ])
         except struct.error as e:
-            return f"Parsing format string failed: {e}", None
+            return f"Parsing format string failed: {e}"
         except ServerCommandError as e:
-            return f"Reading memory failed: {e}", None
+            return f"Reading memory failed: {e}"
 
 
 class CliHexdump(CliCommand):
@@ -251,11 +230,11 @@ class CliHexdump(CliCommand):
             ),
         )
 
-    def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+    def execute(self, args: argparse.Namespace) -> str | None:
         try:
             cmd = SrvPeekMem(address=args.address, nbytes=args.size).execute(dbg.server_conn)
         except ServerCommandError as e:
-            return f"Reading memory failed: {e}", None
+            return f"Reading memory failed: {e}"
 
         dump = f"Hex dump of {args.size} bytes at address {hex(args.address)}:\n"
         pos = 0
@@ -263,7 +242,7 @@ class CliHexdump(CliCommand):
             dump += f"0x{args.address + pos:08x}:  {cmd.result[pos:pos + 16].hex(sep=' '):<47}  "
             dump += ''.join([chr(x) if x >= 0x20 and x <= 0x7e else '.' for x in cmd.result[pos:pos + 16]]) + '\n'
             pos += 16
-        return dump, None
+        return dump
 
 
 class CliInspect(CliCommand):
@@ -281,15 +260,15 @@ class CliInspect(CliCommand):
             ),
         )
 
-    def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+    def execute(self, args: argparse.Namespace) -> str | None:
         if args.what == 'd':
-            return ''.join(dbg.target_info.get_disasm_view()), None
+            return ''.join(dbg.target_info.get_disasm_view())
         elif args.what == 'r':
-            return ''.join(dbg.target_info.get_register_view()), None
+            return ''.join(dbg.target_info.get_register_view())
         elif args.what == 's':
-            return ''.join(dbg.target_info.get_stack_view()), None
+            return ''.join(dbg.target_info.get_stack_view())
         elif args.what == 'c':
-            return ''.join(dbg.target_info.get_source_view()), None
+            return ''.join(dbg.target_info.get_source_view())
 
     def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
         if not dbg.target_info or not (dbg.target_info.target_state & TargetStates.TS_RUNNING):
@@ -302,13 +281,12 @@ class CliKill(CliCommand):
     def __init__(self):
         super().__init__('kill', ('k',), 'Kill target')
 
-    def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+    def execute(self, args: argparse.Namespace) -> str | None:
         try:
             cmd = SrvKill().execute(dbg.server_conn)
             dbg.target_info = cmd.target_info
-            return self._get_target_status_for_ui(cmd.target_info)
         except ServerCommandError as e:
-            return f"Killing target failed: {e}", None
+            return f"Killing target failed: {e}"
 
     def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
         if not dbg.target_info or not (dbg.target_info.target_state & TargetStates.TS_RUNNING):
@@ -321,7 +299,7 @@ class CliNextInstr(CliCommand):
     def __init__(self):
         super().__init__('nexti', ('ni',), 'Execute target until next instruction (step over sub-routines)')
 
-    def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+    def execute(self, args: argparse.Namespace) -> str | None:
         try:
             # Check if next instruction is a JSR. If yes, set one-shot breakpoint at the instruction following the JSR
             # and continue. If no, just single-step.
@@ -335,13 +313,11 @@ class CliNextInstr(CliCommand):
                 SrvSetBreakpoint(bpoint_offset=offset, is_one_shot=True).execute(dbg.server_conn)
                 cmd = SrvContinue().execute(dbg.server_conn)
                 dbg.target_info = cmd.target_info
-                return self._get_target_status_for_ui(cmd.target_info)
             else:
                 cmd = SrvSingleStep().execute(dbg.server_conn)
                 dbg.target_info = cmd.target_info
-                return self._get_target_status_for_ui(cmd.target_info)
         except ServerCommandError as e:
-            return f"Executing target until next instruction failed: {e}", None
+            return f"Executing target until next instruction failed: {e}"
 
     def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
         if not dbg.target_info or not (dbg.target_info.target_state & TargetStates.TS_RUNNING):
@@ -354,14 +330,13 @@ class CliNextLine(CliCommand):
     def __init__(self):
         super().__init__('next', ('n',), 'Execute target until next line (step over function calls)')
 
-    def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+    def execute(self, args: argparse.Namespace) -> str | None:
         try:
             self._execute_until_next_line()
-            return self._get_target_status_for_ui(dbg.target_info)
         except ServerCommandError as e:
-            return f"Executing target until next line failed: {e}", None
+            return f"Executing target until next line failed: {e}"
         except NoDebugInfoError as e:
-            return f"Can't execute target until next line: {e}", None
+            return f"Can't execute target until next line: {e}"
 
     def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
         if not dbg.target_info or not (dbg.target_info.target_state & TargetStates.TS_RUNNING):
@@ -423,7 +398,7 @@ class CliQuit(CliCommand):
     def __init__(self):
         super().__init__('quit', ('q', ), 'Quit debugger')
 
-    def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+    def execute(self, args: argparse.Namespace) -> str | None:
         SrvQuit().execute(dbg.server_conn)
         raise QuitDebuggerException()
 
@@ -438,13 +413,12 @@ class CliRun(CliCommand):
     def __init__(self):
         super().__init__('run', ('r', ), 'Run target')
 
-    def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+    def execute(self, args: argparse.Namespace) -> str | None:
         try:
             cmd = SrvRun().execute(dbg.server_conn)
             dbg.target_info = cmd.target_info
-            return self._get_target_status_for_ui(cmd.target_info)
         except ServerCommandError as e:
-            return f"Running target failed: {e}", None
+            return f"Running target failed: {e}"
 
     def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
         if dbg.target_info and dbg.target_info.target_state & TargetStates.TS_RUNNING:
@@ -470,45 +444,44 @@ class CliSetBreakpoint(CliCommand):
             ),
         )
 
-    def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+    def execute(self, args: argparse.Namespace) -> str | None:
         if re.search(r'^0x[0-9a-fA-F]+$', args.location):
             offset = int(args.location, 16)
         else:
             try:
                 if dbg.program is None:
-                    return "Program not loaded on host, source-level debugging not available", None
+                    return "Program not loaded on host, source-level debugging not available"
                 if re.search('^\d+$', args.location):
                     addr_range = dbg.program.get_addr_range_for_lineno(int(args.location, 10))
                 elif re.search(r'^[a-zA-Z_]\w+$', args.location):
                     addr_range = dbg.program.get_addr_range_for_func_name(args.location)
                 else:
                     # TODO: Implement <file name>:<line number> as location
-                    return "Invalid format of breakpoint location", None
+                    return "Invalid format of breakpoint location"
             except ValueError as e:
-                return f"Failed to find address for breakpoint location {args.location}: {e}", None
+                return f"Failed to find address for breakpoint location {args.location}: {e}"
             if addr_range is not None:
                 offset, _ = addr_range
             else:
-                return f"No address available for breakpoint location {args.location}", None
+                return f"No address available for breakpoint location {args.location}"
 
         try:
             SrvSetBreakpoint(offset).execute(dbg.server_conn)
-            return "Breakpoint set", None
+            return "Breakpoint set"
         except ServerCommandError as e:
-            return f"Setting breakpoint failed: {e}", None
+            return f"Setting breakpoint failed: {e}"
 
 
 class CliStepInstr(CliCommand):
     def __init__(self):
         super().__init__('stepi', ('si',), 'Step one instruction')
 
-    def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+    def execute(self, args: argparse.Namespace) -> str | None:
         try:
             cmd = SrvSingleStep().execute(dbg.server_conn)
             dbg.target_info = cmd.target_info
-            return self._get_target_status_for_ui(cmd.target_info)
         except ServerCommandError as e:
-            return f"Stepping one instruction failed: {e}", None
+            return f"Stepping one instruction failed: {e}"
 
     def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
         if not dbg.target_info or not (dbg.target_info.target_state & TargetStates.TS_RUNNING):
@@ -521,14 +494,13 @@ class CliStepLine(CliCommand):
     def __init__(self):
         super().__init__('step', ('s',), 'Step one line')
 
-    def execute(self, args: argparse.Namespace) -> tuple[str | None, TargetInfo | None]:
+    def execute(self, args: argparse.Namespace) -> str | None:
         try:
             self._execute_one_line()
-            return self._get_target_status_for_ui(dbg.target_info)
         except ServerCommandError as e:
-            return f"Stepping one line failed: {e}", None
+            return f"Stepping one line failed: {e}"
         except NoDebugInfoError as e:
-            return f"Can't step one line: {e}", None
+            return f"Can't step one line: {e}"
 
     def is_correct_target_state_for_command(self) -> tuple[bool, str | None]:
         if not dbg.target_info or not (dbg.target_info.target_state & TargetStates.TS_RUNNING):
@@ -618,7 +590,7 @@ class Cli:
 
 
     # TODO: Pass server connection explicitly instead of accessing it via the global debugger object to break the circular import
-    def process_command(self, cmd_line: str) -> tuple[str | None, TargetInfo | None]:
+    def process_command(self, cmd_line: str) -> str | None:
         try:
             try:
                 if cmd_line:
