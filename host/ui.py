@@ -67,7 +67,6 @@ class CommandInput(Edit):
 
 
 class MainScreen:
-    # TODO: Disable mouse reporting to allow copy & paste via mouse without pressing the alt key
     def __init__(self, verbose: bool):
         def _handle_global_input(key: str) -> bool:
             if key == 'f5':
@@ -208,7 +207,7 @@ class MainScreen:
         logger.add(UrwidHandler(self._log_view))
         logger.info("Created main screen, starting event loop")
 
-        loop = MainLoop(main_widget, PALETTE, unhandled_input=_handle_global_input)
+        loop = MainLoop(main_widget, palette=PALETTE, handle_mouse=False, unhandled_input=_handle_global_input)
         try:
             loop.run()
         except BaseException:
