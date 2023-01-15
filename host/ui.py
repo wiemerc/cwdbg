@@ -72,11 +72,17 @@ class MainScreen:
             if key == 'f5':
                 self._input_view.set_edit_text('cont')
                 self._input_view.keypress(0, 'enter')
-            elif key == 'f8':
+            elif key == 'f10':
+                self._input_view.set_edit_text('next')
+                self._input_view.keypress(0, 'enter')
+            elif key == 'f11':
                 self._input_view.set_edit_text('step')
                 self._input_view.keypress(0, 'enter')
-            elif key == 'f10':
-                self._input_view.set_edit_text('quit')
+            elif key == 'shift f10':
+                self._input_view.set_edit_text('nexti')
+                self._input_view.keypress(0, 'enter')
+            elif key == 'shift f11':
+                self._input_view.set_edit_text('stepi')
                 self._input_view.keypress(0, 'enter')
             else:
                 logger.error(f"Function key '{key}' not implemented")
@@ -188,7 +194,10 @@ class MainScreen:
         )
 
         title = AttrMap(Text("cwdbg - a debugger for the AmigaOS", align='center'), 'banner')
-        self._status_line = AttrMap(Text("* Idle *"), 'banner')
+        self._status_line = AttrMap(
+            Text("F5 = continue, F10 = next, F11 = step, Shift + F10 = nexti, Shift + F11 = stepi    Status: * Idle *"),
+            'banner'
+        )
         main_widget = Frame(
             header=title,
             body=Pile([
@@ -217,7 +226,10 @@ class MainScreen:
 
 
     def update_status_line(self):
-        self._status_line.original_widget.set_text(f'* {dbg.target_info.get_status_str()} *')
+        self._status_line.original_widget.set_text(
+            f"F5 = continue, F10 = next, F11 = step, Shift + F10 = nexti, Shift + F11 = stepi    "
+            f"Status: * {dbg.target_info.get_status_str()} *"
+        )
 
 
     def update_views(self):
