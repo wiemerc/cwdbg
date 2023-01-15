@@ -173,6 +173,9 @@ class TargetInfo(BigEndianStructure):
 
 
     def get_register_view(self) -> list[str]:
+        if not (self.target_state & TargetStates.TS_RUNNING):
+            return ['*** NOT AVAILABLE ***\n']
+
         regs = []
         for i in range(7):
             regs.append(f'A{i}=0x{self.task_context.reg_a[i]:08x}        D{i}=0x{self.task_context.reg_d[i]:08x}\n')
@@ -181,6 +184,9 @@ class TargetInfo(BigEndianStructure):
 
 
     def get_stack_view(self) -> list[str]:
+        if not (self.target_state & TargetStates.TS_RUNNING):
+            return ['*** NOT AVAILABLE ***\n']
+
         stack_dwords = []
         for i in range(NUM_TOP_STACK_DWORDS):
             stack_dwords.append(f'SP + {i * 4:02}:    0x{self.top_stack_dwords[i]:08x}\n')
@@ -188,6 +194,9 @@ class TargetInfo(BigEndianStructure):
 
 
     def get_disasm_view(self) -> list[str]:
+        if not (self.target_state & TargetStates.TS_RUNNING):
+            return ['*** NOT AVAILABLE ***\n']
+
         disasm = capstone.Cs(capstone.CS_ARCH_M68K, capstone.CS_MODE_32)
         instructions = []
         for idx, instr in enumerate(disasm.disasm(bytes(self.next_instr_bytes), self.task_context.reg_pc, NUM_NEXT_INSTRUCTIONS)):
@@ -212,6 +221,9 @@ class TargetInfo(BigEndianStructure):
 
 
     def get_source_view(self) -> list[str]:
+        if not (self.target_state & TargetStates.TS_RUNNING):
+            return ['*** NOT AVAILABLE ***\n']
+
         if dbg.program is None:
             logger.debug("Program not loaded on host, source-level debugging not available")
             return ['*** NOT AVAILABLE ***\n']
@@ -254,6 +266,9 @@ class TargetInfo(BigEndianStructure):
 
 
     def get_call_stack(self) -> list[StackFrame]:
+        if not (self.target_state & TargetStates.TS_RUNNING):
+            return []
+
         stack_frames: list[StackFrame] = []
         frame_ptr = self.task_context.reg_a[5]
         program_counter = self.task_context.reg_pc
@@ -274,7 +289,6 @@ class TargetInfo(BigEndianStructure):
             frame_ptr = struct.unpack(M68K_UINT32, cmd.result[0:4])[0]
             program_counter = struct.unpack(M68K_UINT32, cmd.result[4:])[0]
         return stack_frames
-
 
 
     def _get_syscall_info(self) -> SyscallInfo | None:
